@@ -92,7 +92,7 @@ Nachprüfung durch denselben Agenten: Neun der zehn Befunde sind bestätigt beho
 - **Keine doppelte Prüfung beim Start:** Das Ergebnis der Startprüfung geht direkt ins Öffnen.
 - **Neustart im Testmodus:** Er wird nur aufgezeichnet (`relaunch`); im Testmodus startet kein Prozess ausserhalb der Kontrolle des Tests.
 - **Pfad ohne Laufwerk:** Unter Windows gilt nur ein Pfad mit Laufwerk (`C:\`) oder Freigabe (`\\server\share`) als absolut; `\foo` lehnen die Befehle mit `INVALID_PARAMS` ab.
-- **Fehlerdialog im Testmodus:** Der Handler für nicht abgefangene Ausnahmen im Testmodus ist ganz an den Anfang gerückt (`earlyStart.ts`), damit auch eine Ausnahme beim Laden eines Moduls keinen Dialog auf dem Desktop zeigt. Anlass war ein Prüfskript des umsetzenden Agenten, das direkt mit Electron gestartet wurde und wegen eines Syntaxfehlers zweimal einen Dialog auf dem Desktop zeigte. Solche Starts sind nach den Spielregeln nicht erlaubt; Prüfungen der echten App laufen nur über die Starthilfe der Tests.
+- **Fehlerdialog im Testmodus (Vorfall):** Der Handler für nicht abgefangene Ausnahmen im Testmodus ist ganz an den Anfang gerückt (`earlyStart.ts`), damit auch eine Ausnahme beim Laden eines Moduls keinen Dialog auf dem Desktop zeigt. Anlass war ein Prüfskript des umsetzenden Agenten, das direkt mit Electron gestartet wurde und wegen eines Syntaxfehlers zweimal einen Dialog auf dem Desktop zeigte. Solche Starts sind nach den Spielregeln nicht erlaubt; Prüfungen der echten App laufen nur über die Starthilfe der Tests.
 
 Entscheidungen bei der Umsetzung, die Ticket und Spezifikation nicht vorgeben:
 
@@ -103,3 +103,11 @@ Entscheidungen bei der Umsetzung, die Ticket und Spezifikation nicht vorgeben:
 - **Fenstergrössen ohne gespeicherte Lage:** Projektfenster 1280 × 800, Willkommensfenster 820 × 560, zentriert. Das Willkommensfenster heisst „Welcome to Codium“.
 - **Zuletzt geöffnete Projekte:** Das Wiederöffnen beim Start ändert ihre Reihenfolge nicht; ein erneutes Öffnen eines offenen Projekts setzt es nach vorne.
 - **Wer Codium beendet:** Nur das Willkommensfenster und Projektfenster beenden Codium beim Schliessen; `window-all-closed` im Hauptprozess bleibt als Absicherung.
+
+Letzte Prüfung: Alle vier Punkte der Nachprüfung sind bestätigt behoben, `earlyStart.ts` läuft im Bündel zuerst. Zwei kleine Punkte sind noch eingearbeitet:
+
+- **Ein langsamer Pfad sperrte das ganze Laufwerk:** Antwortete ein einziger Pfad auf `C:` nicht (etwa ein Link auf eine tote Freigabe), galt das ganze Laufwerk 30 s als nicht erreichbar, und eine späte Antwort hob das nicht auf. Jetzt:
+  - Nach einem Zeitlimit wird einmal die Wurzel des Laufwerks gefragt. Antwortet sie, ist nur dieser Pfad 30 s gesperrt; nur wenn auch die Wurzel hängt, ist es das ganze Laufwerk. Je nicht erreichbarem Laufwerk hängen so höchstens zwei Abfragen.
+  - Kommt eine hängende Abfrage doch noch zurück, mit Ergebnis oder mit einem Fehler, der die Datei betrifft (etwa „fehlt“, fehlende Rechte), hat das Laufwerk geantwortet: Die Sperren von Pfad und Laufwerk fallen sofort weg. Ein Netzwerkfehler ist keine Antwort; die Sperre läuft dann bis zu ihrem Ende.
+  - Tests mit echt belegten Threads: Ein hängender lokaler Pfad sperrt nur sich selbst; nach einer späten Antwort sind Laufwerk und Pfad wieder erreichbar; hängt auch die Wurzel, ist das Laufwerk mit genau zwei hängenden Abfragen gesperrt. Ohne Rückfrage an die Wurzel bzw. ohne Aufheben nach einer späten Antwort schlagen diese Tests fehl.
+- **`UV_THREADPOOL_SIZE` vererbte sich an Kindprozesse:** Hat Codium die Variable selbst gesetzt, entfernt `earlyStart.ts` sie gleich nach der ersten Abfrage im Threadpool wieder; libuv hat die Grösse da schon gelesen. Die erste Abfrage gilt dem Programm selbst (`process.execPath`), denn Dateien in `app.asar` beantwortet Electron ohne Threadpool, und im gebauten Paket hätte die Einstellung sonst nicht gewirkt. Der Oberflächentest prüft weiterhin die Wirkung und zusätzlich, dass die Variable danach im Hauptprozess nicht mehr gesetzt ist.
