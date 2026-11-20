@@ -1,4 +1,5 @@
-// Platzhalter, bis die Oberfläche spezifiziert ist. Zeigt, dass Renderer, Preload und Hauptprozess verbunden sind.
+// Platzhalter, bis die Oberfläche in den folgenden Tickets entsteht. Zeigt, dass Renderer, Preload und Kern
+// über den Vertrag verbunden sind.
 
 import { useEffect, useState } from 'react';
 import type { AppInfo } from '../shared/types';
@@ -9,7 +10,7 @@ export function App() {
   const [info, setInfo] = useState<AppInfo | null>(null);
 
   useEffect(() => {
-    void api.appInfo().then(setInfo);
+    void api.request('app.info').then(setInfo);
   }, []);
 
   return (

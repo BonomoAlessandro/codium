@@ -11,6 +11,9 @@
     "dev": "node build.mjs --dev && electron .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
+    "test:slow": "vitest run --config vitest.slow.config.mts",
+    "test:ui": "node build.mjs && vitest run --config vitest.ui.config.mts",
+    "test:packaged": "node build.mjs && electron-builder --win --dir && node scripts/test-packaged.mjs",
     "dist": "node build.mjs && electron-builder --win"
   },
   "build": {
@@ -44,6 +47,7 @@
     "electron": "^45.4.1",
     "electron-builder": "^26.18.0",
     "esbuild": "^0.28.2",
+    "playwright-core": "^1.65.1",
     "typescript": "^7.0.2",
     "vitest": "^5.1.1"
   }

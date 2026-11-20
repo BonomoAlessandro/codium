@@ -1,21 +1,36 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeTheme } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import * as path from 'node:path';
-import { IPC, type AppInfo } from '../shared/types';
+import { IPC, type EventMessage, type RequestMessage, type ResponseMessage } from '../shared/types';
+import { AppCore } from './core/appCore';
+import type { EventSink } from './core/ports';
 import { dataFolder } from './dataFolder';
 import { DEV_MENU } from './devMenu';
+import { ElectronFolderPicker, ElectronSecrets, ElectronShellActions } from './electron/otherPorts';
+import { ElectronWindowPort } from './electron/windowPort';
+import { NodeSystem } from './system/nodeSystem';
+import { readTestMode, TEST_RECORDER_GLOBAL, TestRecorder } from './testMode';
+
+// Testmodus für automatische Prüfungen (siehe testMode.ts). Gilt auch für die gebaute App.
+const testMode = readTestMode(process.env);
+const recorder = new TestRecorder();
+if (testMode.hidden) (globalThis as Record<string, unknown>)[TEST_RECORDER_GLOBAL] = recorder;
 
 // Datenordner %APPDATA%\Codium, unpaketiert (npm start) %APPDATA%\Codium-dev, damit die Entwicklung eine
-// installierte App nie berührt. Muss vor dem ersten Zugriff auf userData und vor der Einzelinstanz-Sperre
-// passieren: Die hängt am Datenordner, so hat die Entwicklung ihre eigene.
-app.setPath('userData', dataFolder(app.getPath('appData'), app.isPackaged));
+// installierte App nie berührt. Im Testmodus ersetzt CODIUM_TEST_DATA_DIR die Wurzel %APPDATA%; Electron selbst
+// ignoriert ein umgeleitetes APPDATA. Muss vor dem ersten Zugriff auf userData und vor der
+// Einzelinstanz-Sperre passieren: Die hängt am Datenordner, so hat jede Umgebung ihre eigene.
+const dataDir = dataFolder(testMode.dataDir ?? app.getPath('appData'), app.isPackaged);
+app.setPath('userData', dataDir);
 
-let mainWindow: BrowserWindow | null = null;
+let core: AppCore | null = null;
+let quitState: 'running' | 'stopping' | 'done' = 'running';
 
 // Nur eine Instanz: Ein zweiter Start gibt sofort auf, die laufende holt ihr Fenster nach vorne.
 if (app.requestSingleInstanceLock()) {
   app.on('second-instance', bringWindowToFront);
   app.whenReady().then(start);
   app.on('window-all-closed', () => app.quit());
+  app.on('before-quit', onBeforeQuit);
 } else {
   app.quit();
 }
@@ -23,49 +38,58 @@ if (app.requestSingleInstanceLock()) {
 function start(): void {
   // Im Dev-Modus ein Menü mit DevTools und Neu laden; die installierte App hat keines.
   Menu.setApplicationMenu(app.isPackaged ? null : Menu.buildFromTemplate(DEV_MENU));
-  registerIpc();
-  createWindow();
-}
 
-function registerIpc(): void {
-  ipcMain.handle(IPC.appInfo, (): AppInfo => ({ name: app.getName(), version: app.getVersion() }));
+  const events: EventSink = {
+    send(windowId, name, payload) {
+      const win = BrowserWindow.fromId(windowId);
+      if (win && !win.isDestroyed()) win.webContents.send(IPC.event, { name, payload } satisfies EventMessage);
+    },
+  };
+  core = new AppCore({
+    dataDir,
+    events,
+    appInfo: { name: app.getName(), version: app.getVersion() },
+    ports: {
+      windows: new ElectronWindowPort({
+        preloadFile: path.join(__dirname, '..', 'preload', 'preload.js'),
+        indexFile: path.join(__dirname, '..', 'renderer', 'index.html'),
+        testMode,
+        recorder,
+      }),
+      folderPicker: new ElectronFolderPicker(testMode, recorder),
+      secrets: new ElectronSecrets(),
+      shell: new ElectronShellActions(testMode, recorder, path.join(dataDir, 'test-trash')),
+      system: new NodeSystem(process.env, { noGit: testMode.noGit }),
+    },
+  });
+  const appCore = core;
+
+  ipcMain.handle(IPC.request, (event, message: RequestMessage): Promise<ResponseMessage> => {
+    const windowId = BrowserWindow.fromWebContents(event.sender)?.id ?? -1;
+    return appCore.router.dispatch({ windowId }, message?.name, message?.params);
+  });
+  appCore.ports.windows.onClosed((windowId) => void appCore.closeProjectCore(windowId));
+
+  // Vorerst ein einziges Fenster ohne Projekt; Projekt- und Willkommensfenster folgen mit Ticket 02.
+  appCore.ports.windows.open({ kind: 'welcome', title: 'Codium' });
 }
 
 function bringWindowToFront(): void {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
-  mainWindow.focus();
+  const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+  if (win && core) core.ports.windows.focus(win.id);
 }
 
-function createWindow(): void {
-  const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 720,
-    minHeight: 400,
-    show: false,
-    // Deckende Fensterfarbe passend zum Design von Windows, damit beim Öffnen nichts aufblitzt.
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1f22' : '#ffffff',
-    title: 'Codium',
-    webPreferences: {
-      preload: path.join(__dirname, '..', 'preload', 'preload.js'),
-      contextIsolation: true,
-      sandbox: true,
-      nodeIntegration: false,
-    },
-  });
-  mainWindow = win;
-
-  // Das Fenster zeigt nur die eigene Oberfläche. Ein auf das Fenster gezogener Link oder eine Datei würde
-  // sonst wegnavigieren, und eine fremde Seite bekäme Zugriff auf die API aus dem Preload.
-  win.webContents.on('will-navigate', (event) => event.preventDefault());
-  win.webContents.on('will-redirect', (event) => event.preventDefault());
-  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-
-  win.on('closed', () => {
-    mainWindow = null;
-  });
-  win.once('ready-to-show', () => win.show());
-  win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+/** Geordnetes Beenden: Der Kern baut die Projekt-Kerne ab und schreibt den Zustand, erst dann endet die App. */
+function onBeforeQuit(event: Electron.Event): void {
+  if (quitState === 'done' || !core) return;
+  event.preventDefault();
+  if (quitState === 'stopping') return;
+  quitState = 'stopping';
+  void core
+    .shutdown()
+    .catch((err: unknown) => console.error('Beenden des Kerns fehlgeschlagen:', err))
+    .finally(() => {
+      quitState = 'done';
+      app.quit();
+    });
 }

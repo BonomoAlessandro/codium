@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
-// Tests in Node, ohne Electron und ohne Fenster.
+// Schneller Testlauf (npm test): Kern und reine Logik in Node, ohne Electron und ohne Fenster.
 export default defineConfig({
   resolve: {
     // Lädt getesteter Code doch Electron, schlägt der Test laut fehl, statt still weiterzulaufen.
@@ -9,6 +9,7 @@ export default defineConfig({
   },
   test: {
     include: ['test/**/*.test.ts'],
+    exclude: ['test/slow/**', 'test/ui/**', '**/node_modules/**'],
     environment: 'node',
   },
 });
