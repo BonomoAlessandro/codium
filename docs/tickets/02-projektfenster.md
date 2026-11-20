@@ -49,6 +49,7 @@ Spezifikation: „Fenster, Projekte und gespeicherter Zustand“, „Präzisieru
 - [ ] Ein Fenster auf einen zweiten Bildschirm schieben, „Exit“, den Bildschirm abziehen, neu starten: Das Fenster liegt zentriert auf dem Hauptbildschirm.
 - [ ] Das Willkommensfenster verschieben und in der Grösse ändern, schliessen, neu starten: Es erscheint an derselben Stelle.
 - [ ] Einen Projektordner umbenennen, während Codium beendet ist, dann starten: Hinweis „Project folder not found“, die übrigen Projekte öffnen.
+- [ ] Ein Projekt auf einem Netzlaufwerk offen lassen, „Exit“, das Netzlaufwerk trennen, starten: Hinweis „Project folder not reachable“, Codium bleibt bedienbar, auch die Liste der zuletzt geöffneten Projekte. Nach dem Verbinden und einem weiteren Neustart öffnet das Projekt wieder.
 - [ ] Mit zwei offenen Projekten von Windows abmelden, wieder anmelden, Codium starten: Beide Projekte sind offen.
 - [ ] Ein zuletzt geöffnetes Projekt löschen und im Willkommensfenster anklicken: Es erscheint ein Hinweis, „Remove from List“ entfernt den Eintrag.
 - [ ] Ein weiteres Projekt ohne gespeicherte Lage öffnen: Es öffnet um etwa 30 px versetzt zum zuletzt benutzten Projektfenster.
@@ -77,8 +78,21 @@ Unabhängiges Review durch einen zweiten Agenten am 2026-11-20. Kein schwerer Be
 
 Bewusst so geblieben:
 
-- **Fehlender oder nicht erreichbarer Projektordner beim Start:** Das Projekt wird übersprungen und gemeldet, fällt aus den beim Beenden offenen Projekten und bleibt unter den zuletzt geöffneten. Ein Netzlaufwerk, das beim Start noch nicht verbunden ist (etwa weil das VPN erst danach steht), führt deshalb dazu, dass das Projekt beim nächsten Start nicht von selbst aufgeht; man öffnet es über die zuletzt geöffneten Projekte. Dafür bringt ein endgültig verschwundener Ordner nicht bei jedem Start erneut eine Meldung.
 - **Interne Fehlermeldungen ohne Code** (etwa aus `openProjectCore`) bleiben deutsch. Sie sind für Entwickler gedacht und erreichen die Oberfläche nicht als Meldung.
+
+Nachprüfung durch denselben Agenten: Neun der zehn Befunde sind bestätigt behoben. Der Umbau auf asynchrone Abfragen hatte einen neuen Fehler eingeführt; er und drei kleinere Punkte sind eingearbeitet:
+
+- **Hängende Abfragen füllten den Threadpool:** Ein Zeitlimit beendet nur das Warten, die Abfrage belegt weiter einen Thread im Threadpool von libuv (4 Threads). Hingen dort Abfragen auf ein nicht erreichbares Netzlaufwerk, galten danach auch lokale Ordner als fehlend. Jetzt (`src/main/core/folderQueries.ts`):
+  - Pro Laufwerk bzw. Freigabe (`\\server\share`) läuft höchstens eine Abfrage gleichzeitig. Gleichzeitige Abfragen auf denselben Pfad teilen sich eine.
+  - Läuft eine Abfrage ins Zeitlimit, gilt ihr Laufwerk 30 s als nicht erreichbar, und solange die hängende Abfrage nicht zurück ist, bekommen weitere Abfragen auf dasselbe Laufwerk sofort „nicht erreichbar“. So belegt jedes nicht erreichbare Laufwerk höchstens einen Thread.
+  - Die Schlüssel der zuletzt geöffneten Projekte werden erst nach den Prüfungen fürs Wiederöffnen aufgelöst.
+  - Der Hauptprozess setzt `UV_THREADPOOL_SIZE` auf 16, bevor die erste Abfrage läuft (`src/main/earlyStart.ts`, erster Import in `main.ts`). Ein Oberflächentest prüft, dass das in Electron wirkt.
+  - Die Tests belegen Threads echt: Abfragen auf das Laufwerk Z: lesen von einer Named Pipe, die nie antwortet. Lokale Ordner bleiben dabei erreichbar, und vom hängenden Laufwerk liest nur eine einzige Abfrage. Ohne die Regeln oben schlagen diese Tests fehl.
+- **Startregel verfeinert** (Entscheidung des Hauptagenten): Ein fehlender Ordner wird übersprungen, gemeldet („Project folder not found“) und fällt aus den beim Beenden offenen Projekten; er bleibt unter den zuletzt geöffneten. Ein nicht erreichbarer Ordner wird nur diesmal übersprungen und gemeldet („Project folder not reachable“), bleibt aber unter den offenen und wird beim nächsten Start wieder versucht, etwa ein Netzlaufwerk, das beim Start noch nicht verbunden ist. Als nicht erreichbar gilt ein Ordner, dessen Abfrage ins Zeitlimit läuft oder mit einem anderen Fehler als „fehlt“ scheitert, und ein fehlender Ordner, dessen Laufwerk ebenfalls fehlt. `app.openProject` unterscheidet entsprechend `PROJECT_NOT_FOUND` und `PROJECT_UNREACHABLE`.
+- **Keine doppelte Prüfung beim Start:** Das Ergebnis der Startprüfung geht direkt ins Öffnen.
+- **Neustart im Testmodus:** Er wird nur aufgezeichnet (`relaunch`); im Testmodus startet kein Prozess ausserhalb der Kontrolle des Tests.
+- **Pfad ohne Laufwerk:** Unter Windows gilt nur ein Pfad mit Laufwerk (`C:\`) oder Freigabe (`\\server\share`) als absolut; `\foo` lehnen die Befehle mit `INVALID_PARAMS` ab.
+- **Fehlerdialog im Testmodus:** Der Handler für nicht abgefangene Ausnahmen im Testmodus ist ganz an den Anfang gerückt (`earlyStart.ts`), damit auch eine Ausnahme beim Laden eines Moduls keinen Dialog auf dem Desktop zeigt. Anlass war ein Prüfskript des umsetzenden Agenten, das direkt mit Electron gestartet wurde und wegen eines Syntaxfehlers zweimal einen Dialog auf dem Desktop zeigte. Solche Starts sind nach den Spielregeln nicht erlaubt; Prüfungen der echten App laufen nur über die Starthilfe der Tests.
 
 Entscheidungen bei der Umsetzung, die Ticket und Spezifikation nicht vorgeben:
 
