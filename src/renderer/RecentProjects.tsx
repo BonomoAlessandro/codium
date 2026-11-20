@@ -38,10 +38,11 @@ export function useProjectActions(api: CodiumApi, notify: Notify): ProjectAction
 
   const showError = useCallback(
     (err: unknown, project?: RecentProject) => {
-      if (err instanceof CodiumError && err.code === ErrorCode.projectNotFound && project) {
+      const folderGone = err instanceof CodiumError && (err.code === ErrorCode.projectNotFound || err.code === ErrorCode.projectUnreachable);
+      if (folderGone && project) {
         notify({
           level: 'error',
-          text: err.message,
+          text: errorText(err),
           actions: [{ label: 'Remove from List', run: () => void removeRecent(project) }],
         });
         void refresh();
@@ -84,7 +85,7 @@ export function RecentProjectList({ actions }: { actions: ProjectActions }) {
           <button
             type="button"
             className="recent-open"
-            title={project.exists ? project.path : `${project.path} (folder not found)`}
+            title={project.exists ? project.path : `${project.path} (folder not found or not reachable)`}
             onClick={() => void actions.openRecent(project)}
           >
             <span className="recent-name">{project.name}</span>

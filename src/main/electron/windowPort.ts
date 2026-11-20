@@ -142,8 +142,12 @@ export class ElectronWindowPort implements WindowPort {
   }
 
   quit(options: { relaunch?: boolean } = {}): void {
-    // app.relaunch merkt nur vor: Gestartet wird erst, wenn dieser Prozess endet und die Sperre freigibt.
-    if (options.relaunch) app.relaunch();
+    if (options.relaunch) {
+      // Im Testmodus startet nie ein Prozess ausserhalb der Kontrolle des Tests; der Neustart wird nur aufgezeichnet.
+      if (this.options.testMode.hidden) this.options.recorder.record('relaunch');
+      // app.relaunch merkt nur vor: Gestartet wird erst, wenn dieser Prozess endet und die Sperre freigibt.
+      else app.relaunch();
+    }
     app.quit();
   }
 

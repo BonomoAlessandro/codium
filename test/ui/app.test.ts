@@ -48,6 +48,42 @@ describe('App im Testmodus', () => {
     }
   });
 
+  it('hat im Hauptprozess einen grösseren Threadpool, damit hängende Dateiabfragen nicht alles aufhalten', async () => {
+    const codium = await launchCodium({ dataRoot: tempDir() });
+    try {
+      await codium.page('Welcome to Codium');
+      // Sechs Lesevorgänge auf eine Pipe, die nie antwortet, belegen sechs Threads. Mit den 4 Threads, die libuv
+      // ohne Einstellung hat, käme eine Dateiabfrage danach nicht mehr durch.
+      const result = await codium.app.evaluate(async () => {
+        const fs = process.getBuiltinModule('node:fs') as typeof import('node:fs');
+        const net = process.getBuiltinModule('node:net') as typeof import('node:net');
+        const pipePath = `\\\\.\\pipe\\codium-ui-test-${process.pid}`;
+        const sockets: Array<import('node:net').Socket> = [];
+        const server = net.createServer((socket) => {
+          socket.on('error', () => {});
+          sockets.push(socket);
+        });
+        await new Promise<void>((resolve) => server.listen(pipePath, resolve));
+        const handles = [];
+        for (let i = 0; i < 6; i++) handles.push(await fs.promises.open(pipePath, 'r'));
+        const reads = handles.map((h) => h.read(Buffer.alloc(1), 0, 1, null).catch(() => undefined));
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        const stat = await Promise.race([
+          fs.promises.stat(process.execPath).then(() => 'ok'),
+          new Promise<string>((resolve) => setTimeout(() => resolve('timeout'), 2000)),
+        ]);
+        for (const socket of sockets) socket.destroy();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+        await Promise.all(reads);
+        for (const handle of handles) await handle.close().catch(() => undefined);
+        return { stat, pool: process.env.UV_THREADPOOL_SIZE };
+      });
+      expect(result).toEqual({ stat: 'ok', pool: '16' });
+    } finally {
+      await codium.close();
+    }
+  });
+
   it('verweigert den Start ohne Testmodus oder mit einem Datenordner ausserhalb des Temp-Ordners', async () => {
     await expect(launchCodium({ dataRoot: tempDir(), env: { CODIUM_TEST_HIDDEN: '' } })).rejects.toThrow(/Testmodus/);
     await expect(launchCodium({ dataRoot: tempDir(), env: { CODIUM_TEST_DATA_DIR: '' } })).rejects.toThrow(/Testmodus/);

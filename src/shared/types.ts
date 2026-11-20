@@ -26,7 +26,7 @@ export interface RecentProject {
   /** Normalisierter absoluter Pfad des Projektordners. */
   path: string;
   name: string;
-  /** Ob der Ordner beim Abfragen da war. */
+  /** Ob der Ordner beim Abfragen da und erreichbar war. */
   exists: boolean;
 }
 
@@ -48,8 +48,10 @@ export const ErrorCode = {
   invalidParams: 'INVALID_PARAMS',
   /** Der Befehl braucht ein offenes Projekt, das anfragende Fenster hat keines. */
   noProject: 'NO_PROJECT',
-  /** Der Projektordner fehlt oder ist nicht erreichbar; `data.path` ist der Pfad. */
+  /** Der Projektordner fehlt; `data.path` ist der Pfad. */
   projectNotFound: 'PROJECT_NOT_FOUND',
+  /** Der Projektordner ist nicht erreichbar (etwa ein Netzlaufwerk, das nicht antwortet); `data.path` ist der Pfad. */
+  projectUnreachable: 'PROJECT_UNREACHABLE',
   /** Codium wird gerade beendet und öffnet nichts mehr. */
   shuttingDown: 'SHUTTING_DOWN',
 } as const;
@@ -81,7 +83,8 @@ export interface Commands {
   'app.openFolder': { params: void; result: ProjectInfo | null };
   /**
    * Öffnet ein Projekt (absoluter Pfad) in einem neuen Fenster. Ist es schon offen, kommt sein Fenster nach vorne.
-   * Ein offenes Willkommensfenster schliesst sich. Fehlt der Ordner, scheitert der Befehl mit `PROJECT_NOT_FOUND`.
+   * Ein offenes Willkommensfenster schliesst sich. Fehlt der Ordner, scheitert der Befehl mit `PROJECT_NOT_FOUND`,
+   * ist er nicht erreichbar, mit `PROJECT_UNREACHABLE`.
    */
   'app.openProject': { params: { path: string }; result: ProjectInfo };
   /** Entfernt ein Projekt (absoluter Pfad) aus den zuletzt geöffneten und liefert die neue Liste. */

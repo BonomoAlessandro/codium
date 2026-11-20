@@ -42,7 +42,8 @@ src/
   shared/types.ts      Vertrag Renderer ↔ Kern: Befehle, Ereignisse, API unter window.codium, IPC-Kanäle
   main/main.ts         Electron-Hauptprozess: Einzelinstanz, Testmodus, verbindet Kern, Ports und IPC
   main/core/           Kern ohne Electron: App-Kern (Fenster, Projekte, Beenden), Projekt-Kern, Ports,
-                       Zustandsdateien, Fensterlage, Befehlsverteilung
+                       Zustandsdateien, Fensterlage, Abfragen auf Projektordnern, Befehlsverteilung
+  main/earlyStart.ts   Was vor allem anderen läuft: Fehlerbehandlung im Testmodus, Grösse des Threadpools
   main/electron/       Echte Ports mit Electron (Fenster, Ordnerauswahl, Geheimnisse, Shell-Aktionen)
   main/system/         Echter Port „System“ ohne Electron
   main/testMode.ts     Testmodus und Aufzeichnung

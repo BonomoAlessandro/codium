@@ -2,8 +2,9 @@
 // Er entscheidet, welche Fenster beim Start aufgehen, dass ein Projekt nur einmal offen ist und wann Codium
 // endet. Spätere Tickets ergänzen Einstellungen und Voraussetzungen. Lädt nie Electron.
 //
-// Dateiabfragen auf Projektordnern laufen asynchron und mit Zeitlimit (siehe projectPath.ts). Vergleiche von
-// Projektpfaden gehen ohne Dateizugriff über einen Zwischenspeicher der echten Schlüssel.
+// Abfragen auf Projektordnern laufen asynchron, mit Zeitlimit und mit Rücksicht auf nicht erreichbare
+// Netzlaufwerke (siehe folderQueries.ts). Vergleiche von Projektpfaden gehen ohne Dateizugriff über einen
+// Zwischenspeicher der echten Schlüssel.
 
 import * as path from 'node:path';
 import {
@@ -21,15 +22,8 @@ import {
 import { BufferedEventSink } from './bufferedEvents';
 import type { EventSink, Ports, WindowPlacement } from './ports';
 import { DEFAULT_CLEANUP_TIMEOUT_MS, ProjectCore } from './projectCore';
-import {
-  FOLDER_QUERY_TIMEOUT_MS,
-  lexicalProjectKey,
-  normalizeProjectPath,
-  projectFolderExists,
-  projectName,
-  projectStateFileName,
-  resolveProjectKey,
-} from './projectPath';
+import { FolderQueries, type FolderStatus } from './folderQueries';
+import { lexicalProjectKey, normalizeProjectPath, projectName, projectStateFileName } from './projectPath';
 import { CommandError, CommandRouter, type CallContext } from './router';
 import {
   APP_STATE_FILE,
@@ -64,7 +58,7 @@ export interface AppCoreOptions {
   saveDebounceMs?: number;
   /** Höchstdauer einer Aufräumarbeit beim Abbau eines Projekt-Kerns. */
   cleanupTimeoutMs?: number;
-  /** Zeitlimit einer Dateiabfrage auf einem Projektordner; danach gilt er als nicht erreichbar. */
+  /** Zeitlimit einer Abfrage auf einem Projektordner; danach gilt sein Laufwerk eine Weile als nicht erreichbar. */
   folderQueryTimeoutMs?: number;
   log?: (message: string) => void;
 }
@@ -80,7 +74,7 @@ export class AppCore {
   private readonly disposals = new Map<string, Promise<void>>();
   /** Echte Schlüssel schon aufgelöster Projektpfade, nach dem Schlüssel ohne Dateizugriff. */
   private readonly realKeys = new Map<string, string>();
-  private readonly folderTimeoutMs: number;
+  private readonly folders: FolderQueries;
   private welcomeWindowId: number | null = null;
   /** Fenster in der Reihenfolge ihrer Benutzung, das zuletzt benutzte am Ende. */
   private windowOrder: number[] = [];
@@ -97,7 +91,7 @@ export class AppCore {
   constructor(private readonly options: AppCoreOptions) {
     this.ports = options.ports;
     this.log = options.log ?? ((message) => console.error(message));
-    this.folderTimeoutMs = options.folderQueryTimeoutMs ?? FOLDER_QUERY_TIMEOUT_MS;
+    this.folders = new FolderQueries({ timeoutMs: options.folderQueryTimeoutMs });
     this.events = new BufferedEventSink(options.events);
     this.appStateFile = new StateFile(path.join(options.dataDir, APP_STATE_FILE), SCHEMA_VERSION, emptyAppState, {
       debounceMs: options.saveDebounceMs,
@@ -135,49 +129,57 @@ export class AppCore {
   }
 
   /**
-   * Start: öffnet die Projekte, die beim Beenden offen waren. Ein fehlender oder nicht erreichbarer Projektordner
-   * wird übersprungen und gemeldet. Bleibt kein Projekt offen, erscheint das Willkommensfenster.
+   * Start: öffnet die Projekte, die beim Beenden offen waren. Bleibt keines offen, erscheint das
+   * Willkommensfenster. Übersprungene Projekte werden gemeldet:
+   * - Ein fehlender Ordner fällt aus den beim Beenden offenen Projekten (er bleibt unter den zuletzt geöffneten).
+   * - Ein nicht erreichbarer Ordner (etwa ein Netzlaufwerk, das noch nicht verbunden ist) wird nur diesmal
+   *   übersprungen und beim nächsten Start wieder versucht.
    */
   async start(): Promise<void> {
-    // Die Schlüssel der zuletzt geöffneten Projekte im Hintergrund auflösen, damit spätere Vergleiche auch
-    // Kurznamen und Junctions erkennen.
-    void Promise.all(this.appState.recentProjects.map((p) => this.keyOf(p)));
-    // Alle Ordner gleichzeitig prüfen: Mehrere nicht erreichbare Netzlaufwerke kosten so nur einmal das Zeitlimit.
+    // Alle Ordner gleichzeitig prüfen; die Abfragen selbst sorgen dafür, dass ein nicht erreichbares Laufwerk nur
+    // einmal das Zeitlimit kostet.
     const checks = await Promise.all(
       this.appState.openProjects.map(async (p) => {
-        const [key, exists] = await Promise.all([this.keyOf(p), projectFolderExists(p, this.folderTimeoutMs)]);
-        return { path: p, key, exists };
+        const normalized = normalizeProjectPath(p);
+        const [key, status] = await Promise.all([this.keyOf(normalized), this.folders.folderStatus(normalized)]);
+        return { normalized, key, status };
       }),
     );
-    const missing: string[] = [];
+    const skipped: Array<{ path: string; status: Exclude<FolderStatus, 'exists'> }> = [];
     const seen = new Set<string>();
-    for (const check of checks) {
+    for (const { normalized, key, status } of checks) {
       if (this.quitting) return;
-      if (seen.has(check.key)) continue;
-      seen.add(check.key);
-      if (!check.exists) {
-        missing.push(check.path);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (status !== 'exists') {
+        skipped.push({ path: normalized, status });
         continue;
       }
       try {
         // Das Wiederöffnen ändert die Reihenfolge der zuletzt geöffneten Projekte nicht.
-        await this.openProjectWindow(check.path, false);
+        await this.openChecked(normalized, key, false);
       } catch (err) {
-        if (err instanceof CommandError && err.code === ErrorCode.projectNotFound) missing.push(check.path);
-        else this.log(`Projekt ${check.path} liess sich beim Start nicht öffnen: ${(err as Error).message}`);
+        this.log(`Projekt ${normalized} liess sich beim Start nicht öffnen: ${(err as Error).message}`);
       }
     }
     if (this.quitting) return;
-    // Übersprungene Projekte gelten nicht mehr als offen; sie bleiben aber unter den zuletzt geöffneten.
+    const retryLater = new Set(skipped.filter((s) => s.status === 'unreachable').map((s) => this.knownKey(s.path)));
     this.updateState((state) => {
-      state.openProjects = state.openProjects.filter((p) => this.findProjectCore(p) !== undefined);
+      state.openProjects = state.openProjects.filter(
+        (p) => this.findProjectCore(p) !== undefined || retryLater.has(this.knownKey(p)),
+      );
     });
     if (this.projects.size === 0) this.openWelcomeWindow();
     const target = this.lastUsedWindow();
-    if (target === undefined) return;
-    for (const projectPath of missing) {
-      this.emitToWindow(target, 'app.notice', { level: 'error', text: `Project folder not found: ${projectPath}` });
+    if (target !== undefined) {
+      for (const { path: projectPath, status } of skipped) {
+        const text = `Project folder ${status === 'missing' ? 'not found' : 'not reachable'}: ${projectPath}`;
+        this.emitToWindow(target, 'app.notice', { level: 'error', text });
+      }
     }
+    // Erst jetzt, nach den Prüfungen fürs Wiederöffnen: die Schlüssel der zuletzt geöffneten Projekte im
+    // Hintergrund auflösen, damit spätere Vergleiche auch Kurznamen und Junctions erkennen.
+    void Promise.all(this.appState.recentProjects.map((p) => this.keyOf(p)));
   }
 
   /**
@@ -330,9 +332,21 @@ export class AppCore {
     this.assertNotQuitting();
     const open = this.focusIfOpen(key, remember);
     if (open) return open;
-    if (!(await projectFolderExists(normalized, this.folderTimeoutMs))) {
+    const status = await this.folders.folderStatus(normalized);
+    if (status === 'missing') {
       throw new CommandError(`Folder not found: ${normalized}`, ErrorCode.projectNotFound, { path: normalized });
     }
+    if (status === 'unreachable') {
+      throw new CommandError(`Folder not reachable: ${normalized}`, ErrorCode.projectUnreachable, { path: normalized });
+    }
+    return this.openChecked(normalized, key, remember);
+  }
+
+  /**
+   * Öffnet ein Projekt, dessen Ordner schon geprüft ist: wartet auf einen laufenden Abbau desselben Projekts, dann
+   * geht es synchron weiter.
+   */
+  private async openChecked(normalized: string, key: string, remember: boolean): Promise<ProjectInfo> {
     await this.waitForDisposal(key);
     this.assertNotQuitting();
     // Während des Wartens kann dasselbe Projekt schon geöffnet worden sein, etwa nach einem Doppelklick.
@@ -366,11 +380,11 @@ export class AppCore {
     return core ? { kind: 'project', title: projectWindowTitle(core.name), project: core.info } : null;
   }
 
-  /** Die zuletzt geöffneten Projekte; die Ordner werden gleichzeitig und mit Zeitlimit geprüft. */
+  /** Die zuletzt geöffneten Projekte; ein Ordner, der fehlt oder nicht erreichbar ist, gilt als nicht da. */
   private async recentProjects(): Promise<RecentProject[]> {
     const entries = this.appState.recentProjects;
-    const exists = await Promise.all(entries.map((p) => projectFolderExists(p, this.folderTimeoutMs)));
-    return entries.map((p, i) => ({ path: p, name: projectName(p), exists: exists[i] }));
+    const statuses = await Promise.all(entries.map((p) => this.folders.folderStatus(p)));
+    return entries.map((p, i) => ({ path: p, name: projectName(p), exists: statuses[i] === 'exists' }));
   }
 
   /**
@@ -486,14 +500,14 @@ export class AppCore {
   }
 
   /**
-   * Der Schlüssel eines Projektpfads zum Vergleichen (siehe `resolveProjectKey`). Aufgelöste Schlüssel merkt
-   * sich der Kern, damit spätere Vergleiche ohne Dateizugriff auskommen (`knownKey`).
+   * Der Schlüssel eines Projektpfads zum Vergleichen (siehe `FolderQueries.resolveKey`). Aufgelöste Schlüssel
+   * merkt sich der Kern, damit spätere Vergleiche ohne Dateizugriff auskommen (`knownKey`).
    */
   private async keyOf(projectPath: string): Promise<string> {
     const lexical = lexicalProjectKey(projectPath);
     const known = this.realKeys.get(lexical);
     if (known !== undefined) return known;
-    const { key, resolved } = await resolveProjectKey(projectPath, this.folderTimeoutMs);
+    const { key, resolved } = await this.folders.resolveKey(projectPath);
     if (resolved) this.realKeys.set(lexical, key);
     return key;
   }
@@ -552,14 +566,18 @@ export class AppCore {
   }
 }
 
+/** Ein absoluter Pfad unter Windows: mit Laufwerk (`C:\`) oder als Freigabe (`\\server\share`). */
+const WINDOWS_ABSOLUTE = /^([A-Za-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+)/;
+
 /**
  * Der absolute Pfad aus den Parametern eines Befehls. Die Oberfläche ist eigener Code, geprüft wird trotzdem: Ein
- * relativer Pfad hinge vom Arbeitsordner des Hauptprozesses ab.
+ * relativer Pfad hinge vom Arbeitsordner des Hauptprozesses ab, ein Pfad ohne Laufwerk wie `\foo` vom Laufwerk
+ * dieses Arbeitsordners.
  */
 function requireAbsolutePath(params: unknown): string {
   const value = (params as { path?: unknown } | undefined)?.path;
-  if (typeof value !== 'string' || !path.isAbsolute(value)) {
-    throw new CommandError('An absolute path is expected.', ErrorCode.invalidParams);
-  }
+  const absolute =
+    typeof value === 'string' && (process.platform === 'win32' ? WINDOWS_ABSOLUTE.test(value) : path.isAbsolute(value));
+  if (!absolute) throw new CommandError('An absolute path is expected.', ErrorCode.invalidParams);
   return value;
 }

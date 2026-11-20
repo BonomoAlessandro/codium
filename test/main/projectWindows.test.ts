@@ -12,6 +12,7 @@ import { lexicalProjectKey, projectStateFileName } from '../../src/main/core/pro
 import { createTestCore, restart, type TestCore } from '../support/core';
 import { PRIMARY_DISPLAY } from '../support/fakePorts';
 import { removeDir, useTempDirs } from '../support/tempDir';
+import { neverAnsweringPipe, unusedDriveLetter } from '../support/unreachable';
 
 const WELCOME = 'Welcome to Codium';
 const title = (name: string) => `${name} – Codium`;
@@ -166,6 +167,10 @@ describe('Projektfenster und Willkommensfenster', () => {
         code: 'INVALID_PARAMS',
         message: 'An absolute path is expected.',
       });
+      // Ein Pfad ohne Laufwerk hinge vom Laufwerk des Arbeitsordners ab.
+      await expect(call(test, welcome, 'app.removeRecentProject', { path: '\\Projekte\\Alpha' })).rejects.toMatchObject({
+        code: 'INVALID_PARAMS',
+      });
       expect(test.ports.windows.openTitles).toEqual([WELCOME]);
     });
 
@@ -191,48 +196,51 @@ describe('Projektfenster und Willkommensfenster', () => {
       expect(placementOf('Epsilon')).toEqual({ bounds: { x: 0, y: 0, width: 1280, height: 800 }, maximized: true });
     });
 
-    it('wartet auf einen nicht erreichbaren Projektordner höchstens bis zum Zeitlimit', async () => {
+    it('bleibt bedienbar, wenn Abfragen auf ein Netzlaufwerk hängen und dabei Threads belegen', async () => {
       const { root, project } = setup();
       const alpha = project('Alpha');
-      // Ein Netzlaufwerk, das nicht antwortet: Dateiabfragen darauf kehren nie zurück.
-      const unreachable = 'Z:\\Netz\\Projekt';
-      const hangsOn = <F extends (...args: never[]) => Promise<unknown>>(original: F) =>
-        ((target: fs.PathLike, ...rest: never[]) =>
-          String(target).toUpperCase().startsWith('Z:') ? new Promise<never>(() => {}) : original(target as never, ...rest)) as unknown as F;
-      const originalStat = fs.promises.stat.bind(fs.promises);
-      const originalRealpath = fs.promises.realpath.bind(fs.promises);
-      const stat = vi.spyOn(fs.promises, 'stat').mockImplementation(hangsOn(originalStat));
-      const realpath = vi.spyOn(fs.promises, 'realpath').mockImplementation(hangsOn(originalRealpath));
+      // Abfragen auf Z: lesen von einer Pipe, die nie antwortet: Jede belegt einen Thread des Threadpools, wie
+      // eine Abfrage auf ein Netzlaufwerk, das nicht antwortet. Der Threadpool hat in den Tests 4 Threads.
+      const pipe = await neverAnsweringPipe();
+      const onZ = (target: unknown) => String(target).toUpperCase().startsWith('Z:');
+      const stat = fs.promises.stat.bind(fs.promises);
+      const realpath = fs.promises.realpath.bind(fs.promises);
+      vi.spyOn(fs.promises, 'stat').mockImplementation(((target: fs.PathLike, ...rest: []) =>
+        onZ(target) ? pipe.hang() : stat(target, ...rest)) as unknown as typeof fs.promises.stat);
+      vi.spyOn(fs.promises, 'realpath').mockImplementation(((target: fs.PathLike, ...rest: []) =>
+        onZ(target) ? pipe.hang() : realpath(target, ...rest)) as unknown as typeof fs.promises.realpath);
       try {
-        const test = createTestCore(path.join(root, 'data2'), { folderQueryTimeoutMs: 50 });
+        const test = createTestCore(path.join(root, 'data2'), { folderQueryTimeoutMs: 100 });
+        const onNetwork = Array.from({ length: 20 }, (_, i) => `Z:\\Netz\\Projekt${i + 1}`);
         test.core.updateState((state) => {
-          state.openProjects = [unreachable, alpha];
-          state.recentProjects = [alpha, unreachable];
+          state.openProjects = [onNetwork[0], alpha];
+          state.recentProjects = [...onNetwork.slice(0, 19), alpha];
         });
-        const started = Date.now();
 
         await test.core.start();
         const alphaWindow = test.ports.windows.windowTitled(title('Alpha'));
         expect(test.ports.windows.openTitles).toEqual([title('Alpha')]);
         expect(test.events.forWindow(alphaWindow)).toEqual([
-          { name: 'app.notice', payload: { level: 'error', text: `Project folder not found: ${unreachable}` } },
+          { name: 'app.notice', payload: { level: 'error', text: `Project folder not reachable: ${onNetwork[0]}` } },
         ]);
-        expect(test.core.state.openProjects).toEqual([alpha]);
 
-        expect(await call(test, alphaWindow, 'app.recentProjects')).toEqual([
-          { path: alpha, name: 'Alpha', exists: true },
-          { path: unreachable, name: 'Projekt', exists: false },
-        ]);
-        await expect(call(test, alphaWindow, 'app.openProject', { path: unreachable })).rejects.toMatchObject({
-          code: 'PROJECT_NOT_FOUND',
+        // Jeder Fokuswechsel holt die Liste neu: Der lokale Ordner bleibt da, die auf Z: sind nicht erreichbar.
+        for (let i = 0; i < 3; i++) {
+          const recent = await call(test, alphaWindow, 'app.recentProjects');
+          expect(recent.find((p) => p.path === alpha)?.exists).toBe(true);
+          expect(recent.filter((p) => p.exists)).toHaveLength(1);
+        }
+        await expect(call(test, alphaWindow, 'app.openProject', { path: onNetwork[5] })).rejects.toMatchObject({
+          code: 'PROJECT_UNREACHABLE',
+          message: `Folder not reachable: ${onNetwork[5]}`,
         });
-        expect(await call(test, alphaWindow, 'app.removeRecentProject', { path: unreachable })).toEqual([
-          { path: alpha, name: 'Alpha', exists: true },
-        ]);
-        expect(Date.now() - started).toBeLessThan(2000);
+        expect(await call(test, alphaWindow, 'app.openProject', { path: project('Beta') })).toMatchObject({ name: 'Beta' });
+        expect(await call(test, alphaWindow, 'app.removeRecentProject', { path: onNetwork[1] })).toHaveLength(19);
+        // Von Z: hat nur eine einzige Abfrage gelesen; alle weiteren bekamen sofort „nicht erreichbar“.
+        expect(pipe.reads).toBe(1);
       } finally {
-        stat.mockRestore();
-        realpath.mockRestore();
+        vi.restoreAllMocks();
+        await pipe.close();
       }
     });
   });
@@ -356,6 +364,35 @@ describe('Projektfenster und Willkommensfenster', () => {
       // Übersprungen heisst: beim nächsten Start nicht mehr offen, aber weiter unter den zuletzt geöffneten.
       expect(after.core.state.openProjects).toEqual([alpha]);
       expect(after.core.state.recentProjects).toEqual([beta, alpha]);
+    });
+
+    it('überspringt einen nicht erreichbaren Projektordner nur diesmal und versucht ihn beim nächsten Start wieder', async () => {
+      const { project, test } = setup();
+      const alpha = project('Alpha');
+      const gone = project('Weg');
+      // Ein Laufwerk, das es nicht gibt, wie ein Netzlaufwerk, das beim Start noch nicht verbunden ist.
+      const offline = `${unusedDriveLetter()}:\\Netz\\Projekt`;
+      test.core.updateState((state) => {
+        state.openProjects = [offline, gone, alpha];
+      });
+      removeDir(gone);
+
+      await test.core.start();
+      const alphaWindow = test.ports.windows.windowTitled(title('Alpha'));
+      expect(test.ports.windows.openTitles).toEqual([title('Alpha')]);
+      expect(test.events.forWindow(alphaWindow)).toEqual([
+        { name: 'app.notice', payload: { level: 'error', text: `Project folder not reachable: ${offline}` } },
+        { name: 'app.notice', payload: { level: 'error', text: `Project folder not found: ${gone}` } },
+      ]);
+      expect(test.core.state.openProjects).toEqual([offline, alpha]);
+
+      // Der fehlende Ordner ist beim nächsten Start kein Thema mehr, der nicht erreichbare wird wieder versucht.
+      const after = await restart(test);
+      await after.core.start();
+      expect(after.events.forWindow(after.ports.windows.windowTitled(title('Alpha')))).toEqual([
+        { name: 'app.notice', payload: { level: 'error', text: `Project folder not reachable: ${offline}` } },
+      ]);
+      expect(after.core.state.openProjects).toEqual([offline, alpha]);
     });
 
     it('zeigt das Willkommensfenster mit dem Hinweis, wenn kein Projekt übrig bleibt', async () => {

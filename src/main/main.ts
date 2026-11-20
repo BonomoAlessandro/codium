@@ -1,3 +1,5 @@
+// Muss der erste Import bleiben: Fehlerbehandlung im Testmodus und Grösse des Threadpools (siehe earlyStart.ts).
+import './earlyStart';
 import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
 import * as path from 'node:path';
 import { IPC, type EventMessage, type RequestMessage, type ResponseMessage } from '../shared/types';
@@ -10,18 +12,11 @@ import { ElectronWindowPort } from './electron/windowPort';
 import { NodeSystem } from './system/nodeSystem';
 import { readTestMode, TEST_RECORDER_GLOBAL, TestRecorder } from './testMode';
 
-// Testmodus für automatische Prüfungen (siehe testMode.ts). Gilt auch für die gebaute App.
+// Testmodus für automatische Prüfungen (siehe testMode.ts). Gilt auch für die gebaute App. Den Handler für nicht
+// abgefangene Ausnahmen im Testmodus meldet schon earlyStart.ts an.
 const testMode = readTestMode(process.env);
 const recorder = new TestRecorder(testMode.hidden);
-if (testMode.hidden) {
-  (globalThis as Record<string, unknown>)[TEST_RECORDER_GLOBAL] = recorder;
-  // Electron zeigt bei einer nicht abgefangenen Ausnahme einen Dialog auf dem Desktop, der den Hauptprozess
-  // blockiert. Im Testmodus stattdessen protokollieren und beenden.
-  process.on('uncaughtException', (err) => {
-    console.error('Nicht abgefangene Ausnahme im Testmodus:', err);
-    app.exit(1);
-  });
-}
+if (testMode.hidden) (globalThis as Record<string, unknown>)[TEST_RECORDER_GLOBAL] = recorder;
 process.on('unhandledRejection', (reason) => console.error('Nicht behandelte Ablehnung:', reason));
 
 // Datenordner %APPDATA%\Codium, unpaketiert (npm start) %APPDATA%\Codium-dev, damit die Entwicklung eine
