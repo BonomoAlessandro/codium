@@ -27,6 +27,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
   - `CODIUM_TEST_DATA_DIR` ersetzt `%APPDATA%` als Wurzel des Datenordners (eigene Daten, eigene Einzelinstanz-Sperre). Ein umgeleitetes `APPDATA` allein genügt nicht.
   - `CODIUM_TEST_PICK_DIR=<Ordner>` beantwortet jede Ordnerauswahl; ohne die Variable gilt die Auswahl als abgebrochen.
   - `CODIUM_TEST_NO_GIT=1` lässt Codium so tun, als fehle Git.
+- **Electron nie direkt starten:** Kein `electron .`, `npm start`, `timeout … electron.exe` o. ä., auch nicht mit eigenen Wegwerf-Skripten und auch nicht kurz. Ein solcher Start läuft ohne den Schutz des Testmodus, und eine Ausnahme beim Laden zeigt einen Fehlerdialog auf dem Desktop des Nutzers (bei Ticket 02 zweimal passiert). Wer etwas an der echten App oder an Electron selbst ausprobieren will, schreibt einen Playwright-Test über die Starthilfe (`launchCodium`).
 - **Gebaute App:** Das gepackte `release\win-unpacked\Codium.exe` ignoriert `NODE_OPTIONS`. Prüfungen am gepackten Paket nur mit gesetztem Testmodus oder ohne Fenster (`ELECTRON_RUN_AS_NODE`), über `npm run test:packaged`.
 - **Debug-Ports:** Für die Entwicklerwerkzeuge der App immer einen zufälligen hohen Port verwenden, nie 9222 oder 9333. Nur mit Seiten der eigenen App verbinden.
 - **Shell und Zwischenablage in Prüfungen:**
@@ -65,7 +66,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 | Nr. | Ticket | Typ | Blockiert durch | Etappe | Stand |
 |---|---|---|---|---|---|
 | 01 | [Kern-Gerüst, Ports, Zustand und Testläufe](01-kern-geruest.md) | AFK | – | 1 | erledigt |
-| 02 | [Projektfenster, Willkommensfenster, Beenden und Wiederöffnen](02-projektfenster.md) | AFK | 01 | 1 | offen |
+| 02 | [Projektfenster, Willkommensfenster, Beenden und Wiederöffnen](02-projektfenster.md) | AFK | 01 | 1 | erledigt |
 | 03 | [Layout: Kopfzeile, Werkzeugfenster, Statusleiste, Meldungen, Rückfragen](03-layout.md) | AFK | 02 | 1 | offen |
 | 04 | [Datei-Dienst und Dateibaum](04-dateibaum.md) | AFK | 03 | 1 | offen |
 | 05 | [Monaco und Tabs](05-editor-und-tabs.md) | AFK | 04 | 1 | offen |

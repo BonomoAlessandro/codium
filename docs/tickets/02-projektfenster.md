@@ -1,6 +1,6 @@
 # 02 – Projektfenster, Willkommensfenster, Beenden und Wiederöffnen
 
-Status: `ready-for-agent` · Typ: AFK
+Status: `erledigt` (2026-11-20, Abnahme von Hand am Schluss in Ticket 22) · Typ: AFK
 Blockiert durch: 01
 User Stories: 1–5, 8–10, 13 (nur Fensterposition und -grösse), 14
 Spezifikation: „Fenster, Projekte und gespeicherter Zustand“, „Präzisierungen beim Schreiben“ Punkt 16
@@ -26,7 +26,7 @@ Spezifikation: „Fenster, Projekte und gespeicherter Zustand“, „Präzisieru
 
 ## Akzeptanzkriterien
 
-- [ ] Kern-Tests (Teststelle 1):
+- [x] Kern-Tests (Teststelle 1):
   - Öffnen eines Projekts erzeugt ein Fenster und einen Projekt-Kern; aus dem Willkommensfenster heraus schliesst sich dieses.
   - Erneutes Öffnen desselben Projekts, auch mit anderer Schreibweise des Pfads, holt das vorhandene Fenster nach vorne.
   - Ein simulierter zweiter Start holt das zuletzt benutzte Fenster nach vorne.
@@ -35,7 +35,7 @@ Spezifikation: „Fenster, Projekte und gespeicherter Zustand“, „Präzisieru
   - Fehlender Projektordner beim Start → Hinweis, Projekt übersprungen; ohne offene Projekte erscheint das Willkommensfenster.
   - Die Liste der zuletzt geöffneten Projekte ist auf 20 begrenzt, neueste zuerst, ohne Doppelungen. Ein Eintrag mit fehlendem Ordner lässt sich entfernen.
   - Lage von Projektfenstern und Willkommensfenster übersteht einen Neustart; eine Lage auf einem fehlenden Bildschirm wird auf den Hauptbildschirm verschoben.
-- [ ] Playwright-Tests (Teststelle 2):
+- [x] Playwright-Tests (Teststelle 2):
   - Das Willkommensfenster erscheint. „Open Folder“ mit `CODIUM_TEST_PICK_DIR` öffnet ein Projektfenster mit dem richtigen Titel.
   - Zwei Projekte öffnen, das erste erneut öffnen → kein drittes Fenster, die Aufzeichnung meldet „nach vorne geholt“.
 
