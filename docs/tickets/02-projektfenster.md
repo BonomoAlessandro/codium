@@ -44,3 +44,48 @@ Spezifikation: „Fenster, Projekte und gespeicherter Zustand“, „Präzisieru
 - [ ] Zwei Projekte öffnen, „Exit“, neu starten: Beide Fenster sind wieder da, an ihrer Position.
 - [ ] Ein offenes Projekt nochmals über „Open Folder“ wählen: Das vorhandene Fenster kommt wirklich nach vorne.
 - [ ] Codium ein zweites Mal starten: Das zuletzt benutzte Fenster kommt nach vorne.
+- [ ] Ein Projektfenster maximieren, schliessen bzw. „Exit“, neu starten: Es öffnet maximiert, „Wiederherstellen“ führt zur alten Lage.
+- [ ] Ein Projektfenster minimieren (einmal aus maximiertem, einmal aus normalem Zustand) und Codium über die Taskleiste schliessen: Beim Neustart stimmen Lage und Maximiert-Zustand.
+- [ ] Ein Fenster auf einen zweiten Bildschirm schieben, „Exit“, den Bildschirm abziehen, neu starten: Das Fenster liegt zentriert auf dem Hauptbildschirm.
+- [ ] Das Willkommensfenster verschieben und in der Grösse ändern, schliessen, neu starten: Es erscheint an derselben Stelle.
+- [ ] Einen Projektordner umbenennen, während Codium beendet ist, dann starten: Hinweis „Project folder not found“, die übrigen Projekte öffnen.
+- [ ] Mit zwei offenen Projekten von Windows abmelden, wieder anmelden, Codium starten: Beide Projekte sind offen.
+- [ ] Ein zuletzt geöffnetes Projekt löschen und im Willkommensfenster anklicken: Es erscheint ein Hinweis, „Remove from List“ entfernt den Eintrag.
+- [ ] Ein weiteres Projekt ohne gespeicherte Lage öffnen: Es öffnet um etwa 30 px versetzt zum zuletzt benutzten Projektfenster.
+- [ ] Das letzte Fenster schliessen und Codium sofort wieder starten: Codium startet nach dem Beenden neu, statt still wegzubleiben.
+
+Bis Ticket 03 laufen „Exit“ und „Open Folder“ im Projektfenster über die Knöpfe der vorläufigen Leiste im Platzhalter.
+
+## Review
+
+Unabhängiges Review durch einen zweiten Agenten am 2026-11-20. Kein schwerer Befund; Akzeptanzkriterien, die Regeln zum Beenden und die Wettläufe beim Öffnen und Abbauen sind in Ordnung. Eingearbeitet:
+
+- **Zweiter Start während des Beendens:** Bisher ging er verloren, weil die alte Instanz die Einzelinstanz-Sperre bis zum Ende ihres Abbaus hält. Jetzt merkt der Kern einen Neustart vor; der Port „Fenster“ beendet die App mit `relaunch` (Electron `app.relaunch`), und Codium startet nach dem Abbau neu. Ein Kern-Test deckt das ab.
+- **Keine synchronen Dateiabfragen mehr im Kern:**
+  - Existenz und echter Pfad eines Projektordners werden asynchron mit einem Zeitlimit von 2 s abgefragt. Danach gilt der Ordner als nicht erreichbar.
+  - Mehrere Ordner (beim Start, in der Liste der zuletzt geöffneten) werden gleichzeitig geprüft, ein nicht erreichbares Netzlaufwerk kostet so nur einmal das Zeitlimit.
+  - Pfade werden ohne Dateizugriff verglichen, über einen Zwischenspeicher der schon aufgelösten echten Schlüssel. Die zuletzt geöffneten Projekte werden beim Start im Hintergrund aufgelöst, damit auch Kurznamen und Junctions erkannt werden.
+  - Tests simulieren einen Ordner, der nie antwortet.
+- **Absolute Pfade:** `app.openProject` und `app.removeRecentProject` lehnen relative Pfade mit `INVALID_PARAMS` ab; sie hingen sonst vom Arbeitsordner des Hauptprozesses ab.
+- **Fehlercodes:** Alle Codes, die die Oberfläche sehen kann, stehen in `ErrorCode` (auch `UNKNOWN_COMMAND` und `NO_PROJECT`), ihre Meldungen sind englisch. Für Fehler ohne bekannten Code zeigt die Oberfläche einen allgemeinen Text und schreibt die Einzelheiten in die Konsole der Seite (`src/renderer/errors.ts`). Die betroffenen Tests aus Ticket 01 sind angepasst.
+- **Maximiert-Zustand:** Ein noch nicht gezeigtes oder minimiertes Fenster meldet „nicht maximiert“; dann gilt der gemerkte Zustand.
+- **Port „Fenster“ schmaler:** `setBounds` ist gestrichen, `getBounds` durch `isOpen` ersetzt. Der Kommentar zu `quit` sagt jetzt richtig, dass `AppCore.quit` den Abbau selbst startet.
+- **Prüfliste „Abnahme von Hand“** ergänzt (oben).
+- **Schutztest für alle Fenster:** Die Starthilfe der Playwright-Tests prüft beim Schliessen jedes offene Fenster (ausserhalb aller Bildschirme, ohne Fokus); jeder Oberflächentest erbt das.
+- **Versatz neuer Projektfenster:** Ohne gespeicherte Lage öffnet ein Projektfenster um 30 px versetzt zum zuletzt benutzten Projektfenster, in dessen Grösse und Maximiert-Zustand. Ragte es aus dem Arbeitsbereich, beginnt es oben links. Im Testmodus melden Fenster keine Lage, also gibt es dort keinen Versatz.
+- **Hinweis für Ticket 03:** Die Oberflächentests klicken die vorläufige Leiste und müssen aufs Projektmenü umgestellt werden (dort unter „Hinweise“).
+
+Bewusst so geblieben:
+
+- **Fehlender oder nicht erreichbarer Projektordner beim Start:** Das Projekt wird übersprungen und gemeldet, fällt aus den beim Beenden offenen Projekten und bleibt unter den zuletzt geöffneten. Ein Netzlaufwerk, das beim Start noch nicht verbunden ist (etwa weil das VPN erst danach steht), führt deshalb dazu, dass das Projekt beim nächsten Start nicht von selbst aufgeht; man öffnet es über die zuletzt geöffneten Projekte. Dafür bringt ein endgültig verschwundener Ordner nicht bei jedem Start erneut eine Meldung.
+- **Interne Fehlermeldungen ohne Code** (etwa aus `openProjectCore`) bleiben deutsch. Sie sind für Entwickler gedacht und erreichen die Oberfläche nicht als Meldung.
+
+Entscheidungen bei der Umsetzung, die Ticket und Spezifikation nicht vorgeben:
+
+- **Maximiert-Zustand** gehört zur gespeicherten Fensterlage (`WindowPlacement { bounds, maximized }`, nach dem Vorbild THub), sonst käme ein maximiertes Fenster nicht „an seiner Position“ zurück. Das Feld `windowBounds` aus Ticket 01 heisst deshalb `window`; geschrieben wurde es bisher nie. Im Testmodus wird nie maximiert.
+- **Vorläufige Leiste im Platzhalter** mit „Open Folder“, „Exit“ und den zuletzt geöffneten Projekten, als Ersatz für das Projektmenü aus Ticket 03. Ohne sie liesse sich vor Ticket 03 kein zweites Projekt öffnen, und Playwright hätte keinen Klickweg.
+- **Englische Meldungen:** Meldungen des Kerns, die Nutzer sehen, sind englisch („Folder not found: …“, „Project folder not found: …“).
+- **Port „Fenster“:** `placement` liefert die Lage zum Speichern (im Testmodus `null`), `quit` beendet die App (wahlweise mit Neustart), `onClosed` meldet die Lage samt Maximiert-Zustand. Der Titel der Seite überschreibt den Fenstertitel nicht (`page-title-updated` unterbunden).
+- **Fenstergrössen ohne gespeicherte Lage:** Projektfenster 1280 × 800, Willkommensfenster 820 × 560, zentriert. Das Willkommensfenster heisst „Welcome to Codium“.
+- **Zuletzt geöffnete Projekte:** Das Wiederöffnen beim Start ändert ihre Reihenfolge nicht; ein erneutes Öffnen eines offenen Projekts setzt es nach vorne.
+- **Wer Codium beendet:** Nur das Willkommensfenster und Projektfenster beenden Codium beim Schliessen; `window-all-closed` im Hauptprozess bleibt als Absicherung.

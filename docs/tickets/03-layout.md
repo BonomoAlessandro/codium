@@ -43,3 +43,8 @@ Spezifikation: „Oberfläche“, „Einstellungen, Meldungen und Voraussetzunge
 
 - [ ] Das Fenster sieht aus wie das neue IntelliJ „Dark“: Kopfzeile, Symbolleisten, Statusleiste, Abstände.
 - [ ] Die Fensterknöpfe von Windows funktionieren. Das Fenster lässt sich an der Kopfzeile verschieben und per Doppelklick maximieren.
+
+## Hinweise
+
+- Ticket 02 hat im Platzhalter des Projektfensters eine vorläufige Leiste mit „Open Folder“, „Exit“ und den zuletzt geöffneten Projekten (`src/renderer/ProjectPlaceholder.tsx`). Die Playwright-Tests in `test/ui/projectWindows.test.ts` klicken deren Knöpfe und müssen auf das Projektmenü umgestellt werden. Die Logik dahinter (`useProjectActions` in `src/renderer/RecentProjects.tsx`) lässt sich fürs Projektmenü wiederverwenden.
+- Die vorläufigen Hinweise stehen in `src/renderer/Notices.tsx`; Fehlertexte für Hinweise liefert `errorText` in `src/renderer/errors.ts`.
