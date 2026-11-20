@@ -35,17 +35,17 @@ Das Fundament für alle weiteren Tickets. Für den Nutzer ändert sich fast nich
 
 ## Akzeptanzkriterien
 
-- [ ] `npm test`, `npm run test:slow`, `npm run test:ui`, `npm run test:packaged` und `npm run typecheck` laufen grün.
-- [ ] Der App-Kern lässt sich in Node ohne Electron mit nachgemachten Ports erzeugen. Die Electron-Sperre in `npm test` greift weiterhin.
-- [ ] Kern-Tests:
+- [x] `npm test`, `npm run test:slow`, `npm run test:ui`, `npm run test:packaged` und `npm run typecheck` laufen grün.
+- [x] Der App-Kern lässt sich in Node ohne Electron mit nachgemachten Ports erzeugen. Die Electron-Sperre in `npm test` greift weiterhin.
+- [x] Kern-Tests:
   - App-Zustand und Projekt-Zustand überstehen einen simulierten Neustart.
   - Eine kaputte Zustandsdatei wird beiseitegelegt; der Kern startet mit leerem Zustand.
   - Gleiche Projektpfade mit unterschiedlicher Schreibweise (Gross-/Kleinschreibung, Schrägstriche, abschliessender Trenner) ergeben denselben Projekt-Zustand.
   - Ein Projekt-Kern wird beim Abbau benachrichtigt und kann asynchrone Aufräumarbeiten abschliessen, bevor er verschwindet.
-- [ ] Die echte System-Umsetzung findet im langsamen Lauf Git und den Benutzerordner. Mit `CODIUM_TEST_NO_GIT=1` meldet sie Git als fehlend.
-- [ ] Das Testgerüst legt ein Temp-Repository mit Bare-Remote an. Ein Test zeigt, dass die globale Git-Konfiguration des Rechners nicht hineinwirkt.
-- [ ] Ein Playwright-Test startet die App im Testmodus, findet das Fenster, liest die Aufzeichnung des Hauptprozesses und beendet die App wieder. Ohne `CODIUM_TEST_HIDDEN` und `CODIUM_TEST_DATA_DIR` verweigert die Starthilfe den Start.
-- [ ] `npm start` verwendet weiterhin den Datenordner „Codium-dev“.
+- [x] Die echte System-Umsetzung findet im langsamen Lauf Git und den Benutzerordner. Mit `CODIUM_TEST_NO_GIT=1` meldet sie Git als fehlend.
+- [x] Das Testgerüst legt ein Temp-Repository mit Bare-Remote an. Ein Test zeigt, dass die globale Git-Konfiguration des Rechners nicht hineinwirkt.
+- [x] Ein Playwright-Test startet die App im Testmodus, findet das Fenster, liest die Aufzeichnung des Hauptprozesses und beendet die App wieder. Ohne `CODIUM_TEST_HIDDEN` und `CODIUM_TEST_DATA_DIR` verweigert die Starthilfe den Start.
+- [x] `npm start` verwendet weiterhin den Datenordner „Codium-dev“.
 
 ## Abnahme von Hand
 
