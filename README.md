@@ -41,7 +41,8 @@ Unpaketiert (`npm start`, `npm run dev`) verwendet Codium den Datenordner `%APPD
 src/
   shared/types.ts      Vertrag Renderer ↔ Kern: Befehle, Ereignisse, API unter window.codium, IPC-Kanäle
   main/main.ts         Electron-Hauptprozess: Einzelinstanz, Testmodus, verbindet Kern, Ports und IPC
-  main/core/           Kern ohne Electron: App-Kern, Projekt-Kern, Ports, Zustandsdateien, Befehlsverteilung
+  main/core/           Kern ohne Electron: App-Kern (Fenster, Projekte, Beenden), Projekt-Kern, Ports,
+                       Zustandsdateien, Fensterlage, Befehlsverteilung
   main/electron/       Echte Ports mit Electron (Fenster, Ordnerauswahl, Geheimnisse, Shell-Aktionen)
   main/system/         Echter Port „System“ ohne Electron
   main/testMode.ts     Testmodus und Aufzeichnung
@@ -50,7 +51,11 @@ src/
   preload/preload.ts   Stellt dem Renderer die API window.codium bereit
   renderer/            React-Oberfläche
     main.tsx           Einstieg
-    App.tsx            Platzhalter
+    App.tsx            Wurzel: Willkommensfenster oder Projektfenster, je nach Auskunft des Kerns
+    WelcomeScreen.tsx  Willkommensfenster mit „Open Folder“ und zuletzt geöffneten Projekten
+    ProjectPlaceholder.tsx  Platzhalter des Projektfensters (Layout folgt)
+    RecentProjects.tsx „Open Folder“ und zuletzt geöffnete Projekte
+    Notices.tsx        vorläufige Hinweise
     styles/            Design-Variablen (tokens.css) und Stile (app.css)
 test/
   support/             Test-Gerüst: nachgemachte Ports, Temp-Ordner, Git, Starthilfe für die App
