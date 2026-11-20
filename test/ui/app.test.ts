@@ -39,7 +39,7 @@ describe('App im Testmodus', () => {
       const failed = await page.evaluate(() =>
         (window as unknown as { codium: { invoke(name: string): Promise<unknown> } }).codium.invoke('gibt.es.nicht'),
       );
-      expect(failed).toEqual({ ok: false, error: { message: 'Unbekannter Befehl: gibt.es.nicht', code: 'UNKNOWN_COMMAND' } });
+      expect(failed).toEqual({ ok: false, error: { message: 'Unknown command: gibt.es.nicht', code: 'UNKNOWN_COMMAND' } });
 
       const recorded = await codium.recorded();
       expect(recorded.map((e) => e.kind)).toContain('window-opened');

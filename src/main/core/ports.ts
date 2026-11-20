@@ -44,9 +44,8 @@ export interface WindowPort {
   focus(windowId: number): void;
   /** Schliesst ein Fenster; die Meldung kommt über `onClosed`. */
   close(windowId: number): void;
-  /** Normale Lage und Grösse (auch im maximierten Zustand), `null` für ein unbekanntes Fenster. */
-  getBounds(windowId: number): Bounds | null;
-  setBounds(windowId: number, bounds: Bounds): void;
+  /** Ob ein Fenster noch offen ist. */
+  isOpen(windowId: number): boolean;
   /**
    * Die Lage eines offenen Fensters zum Speichern. `null` für ein unbekanntes Fenster und im Testmodus, weil
    * Fenster dort ihre Lage nicht speichern.
@@ -54,10 +53,11 @@ export interface WindowPort {
   placement(windowId: number): WindowPlacement | null;
   displays(): DisplayInfo[];
   /**
-   * Beendet die App. Vorher baut der Hauptprozess den Kern ab (`AppCore.shutdown`), danach schliessen sich alle
-   * Fenster.
+   * Beendet die App, sobald der Abbau des Kerns fertig ist (den startet `AppCore.quit` selbst; der Hauptprozess
+   * wartet darauf); danach schliessen sich alle Fenster. Mit `relaunch` startet die App nach dem Beenden neu,
+   * etwa weil während des Beendens ein zweiter Start kam. Darf mehrmals aufgerufen werden.
    */
-  quit(): void;
+  quit(options?: { relaunch?: boolean }): void;
   /**
    * Meldet, wenn ein Fenster geschlossen wurde, mit seiner letzten Lage (gelesen, solange es noch existierte).
    * Im Testmodus ist die Lage `null`, weil Fenster dort ihre Lage nicht speichern.

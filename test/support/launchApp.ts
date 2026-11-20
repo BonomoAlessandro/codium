@@ -99,9 +99,37 @@ export async function launchCodium(options: LaunchOptions): Promise<LaunchedApp>
     startSecondInstance: () => runSecondInstance(electronPath, env),
     exited: () => closed,
     close: async () => {
-      if (!hasExited) await app.close();
+      if (hasExited) return;
+      // Die Schutzversprechen des Testmodus gelten für jedes Fenster, das bis hierher offen ist.
+      const violations = await testModeViolations(app).catch((err: unknown) => [
+        `Prüfung der Fenster nicht möglich: ${(err as Error).message}`,
+      ]);
+      await app.close();
+      if (violations.length > 0) throw new Error(`Testmodus verletzt: ${violations.join('; ')}`);
     },
   };
+}
+
+/**
+ * Prüft alle offenen Fenster: Keines liegt auf einem Bildschirm, keines hat den Fokus. Windows setzt die Lage nicht
+ * genau auf die verlangten -32000, deshalb wird gegen alle Bildschirme geprüft.
+ */
+async function testModeViolations(app: ElectronApplication): Promise<string[]> {
+  return app.evaluate(({ BrowserWindow, screen }) => {
+    const displays = screen.getAllDisplays().map((d) => d.bounds);
+    return BrowserWindow.getAllWindows()
+      .filter((w) => !w.isDestroyed())
+      .flatMap((w) => {
+        const b = w.getBounds();
+        const onSomeDisplay = displays.some(
+          (d) => b.x < d.x + d.width && b.x + b.width > d.x && b.y < d.y + d.height && b.y + b.height > d.y,
+        );
+        const problems: string[] = [];
+        if (onSomeDisplay) problems.push(`„${w.getTitle()}“ liegt auf einem Bildschirm (${JSON.stringify(b)})`);
+        if (w.isFocused()) problems.push(`„${w.getTitle()}“ hat den Fokus`);
+        return problems;
+      });
+  });
 }
 
 /**

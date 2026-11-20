@@ -1,6 +1,9 @@
 // App-Kern: besitzt den App-Zustand, die Fenster mit ihren Projekt-Kernen und den Vertrag mit der Oberfläche.
 // Er entscheidet, welche Fenster beim Start aufgehen, dass ein Projekt nur einmal offen ist und wann Codium
 // endet. Spätere Tickets ergänzen Einstellungen und Voraussetzungen. Lädt nie Electron.
+//
+// Dateiabfragen auf Projektordnern laufen asynchron und mit Zeitlimit (siehe projectPath.ts). Vergleiche von
+// Projektpfaden gehen ohne Dateizugriff über einen Zwischenspeicher der echten Schlüssel.
 
 import * as path from 'node:path';
 import {
@@ -18,7 +21,15 @@ import {
 import { BufferedEventSink } from './bufferedEvents';
 import type { EventSink, Ports, WindowPlacement } from './ports';
 import { DEFAULT_CLEANUP_TIMEOUT_MS, ProjectCore } from './projectCore';
-import { normalizeProjectPath, projectFolderExists, projectKey, projectName, projectStateFileName } from './projectPath';
+import {
+  FOLDER_QUERY_TIMEOUT_MS,
+  lexicalProjectKey,
+  normalizeProjectPath,
+  projectFolderExists,
+  projectName,
+  projectStateFileName,
+  resolveProjectKey,
+} from './projectPath';
 import { CommandError, CommandRouter, type CallContext } from './router';
 import {
   APP_STATE_FILE,
@@ -33,7 +44,7 @@ import {
   type ProjectState,
 } from './schema';
 import { StateFile } from './stateFile';
-import { placeWindow } from './windowPlacement';
+import { cascadeFrom, placeWindow } from './windowPlacement';
 
 /** Titel des Willkommensfensters. */
 export const WELCOME_TITLE = 'Welcome to Codium';
@@ -53,6 +64,8 @@ export interface AppCoreOptions {
   saveDebounceMs?: number;
   /** Höchstdauer einer Aufräumarbeit beim Abbau eines Projekt-Kerns. */
   cleanupTimeoutMs?: number;
+  /** Zeitlimit einer Dateiabfrage auf einem Projektordner; danach gilt er als nicht erreichbar. */
+  folderQueryTimeoutMs?: number;
   log?: (message: string) => void;
 }
 
@@ -65,6 +78,9 @@ export class AppCore {
   private readonly projects = new Map<number, ProjectCore>();
   /** Laufende Abbauten, nach Projektschlüssel: Beenden und Wiederöffnen warten auf sie. */
   private readonly disposals = new Map<string, Promise<void>>();
+  /** Echte Schlüssel schon aufgelöster Projektpfade, nach dem Schlüssel ohne Dateizugriff. */
+  private readonly realKeys = new Map<string, string>();
+  private readonly folderTimeoutMs: number;
   private welcomeWindowId: number | null = null;
   /** Fenster in der Reihenfolge ihrer Benutzung, das zuletzt benutzte am Ende. */
   private windowOrder: number[] = [];
@@ -73,12 +89,15 @@ export class AppCore {
    * ändern daran nichts mehr, und es öffnet sich nichts Neues.
    */
   private quitting = false;
+  /** Während des Beendens kam ein zweiter Start: Codium startet nach dem Beenden neu. */
+  private relaunchRequested = false;
   private readonly log: (message: string) => void;
   private shuttingDown: Promise<void> | null = null;
 
   constructor(private readonly options: AppCoreOptions) {
     this.ports = options.ports;
     this.log = options.log ?? ((message) => console.error(message));
+    this.folderTimeoutMs = options.folderQueryTimeoutMs ?? FOLDER_QUERY_TIMEOUT_MS;
     this.events = new BufferedEventSink(options.events);
     this.appStateFile = new StateFile(path.join(options.dataDir, APP_STATE_FILE), SCHEMA_VERSION, emptyAppState, {
       debounceMs: options.saveDebounceMs,
@@ -116,26 +135,36 @@ export class AppCore {
   }
 
   /**
-   * Start: öffnet die Projekte, die beim Beenden offen waren. Ein fehlender Projektordner wird übersprungen und
-   * gemeldet. Bleibt kein Projekt offen, erscheint das Willkommensfenster.
+   * Start: öffnet die Projekte, die beim Beenden offen waren. Ein fehlender oder nicht erreichbarer Projektordner
+   * wird übersprungen und gemeldet. Bleibt kein Projekt offen, erscheint das Willkommensfenster.
    */
   async start(): Promise<void> {
+    // Die Schlüssel der zuletzt geöffneten Projekte im Hintergrund auflösen, damit spätere Vergleiche auch
+    // Kurznamen und Junctions erkennen.
+    void Promise.all(this.appState.recentProjects.map((p) => this.keyOf(p)));
+    // Alle Ordner gleichzeitig prüfen: Mehrere nicht erreichbare Netzlaufwerke kosten so nur einmal das Zeitlimit.
+    const checks = await Promise.all(
+      this.appState.openProjects.map(async (p) => {
+        const [key, exists] = await Promise.all([this.keyOf(p), projectFolderExists(p, this.folderTimeoutMs)]);
+        return { path: p, key, exists };
+      }),
+    );
     const missing: string[] = [];
     const seen = new Set<string>();
-    for (const projectPath of this.appState.openProjects) {
-      const key = projectKey(projectPath);
-      if (seen.has(key)) continue;
-      seen.add(key);
+    for (const check of checks) {
       if (this.quitting) return;
-      if (!projectFolderExists(projectPath)) {
-        missing.push(projectPath);
+      if (seen.has(check.key)) continue;
+      seen.add(check.key);
+      if (!check.exists) {
+        missing.push(check.path);
         continue;
       }
       try {
         // Das Wiederöffnen ändert die Reihenfolge der zuletzt geöffneten Projekte nicht.
-        await this.openProjectWindow(projectPath, false);
+        await this.openProjectWindow(check.path, false);
       } catch (err) {
-        this.log(`Projekt ${projectPath} liess sich beim Start nicht öffnen: ${(err as Error).message}`);
+        if (err instanceof CommandError && err.code === ErrorCode.projectNotFound) missing.push(check.path);
+        else this.log(`Projekt ${check.path} liess sich beim Start nicht öffnen: ${(err as Error).message}`);
       }
     }
     if (this.quitting) return;
@@ -160,35 +189,6 @@ export class AppCore {
     return this.openProjectWindow(projectPath, true);
   }
 
-  /** `openProject`; mit `remember = false` bleibt die Reihenfolge der zuletzt geöffneten Projekte, wie sie ist. */
-  private async openProjectWindow(projectPath: string, remember: boolean): Promise<ProjectInfo> {
-    this.assertNotQuitting();
-    const normalized = normalizeProjectPath(projectPath);
-    const open = this.focusIfOpen(normalized, remember);
-    if (open) return open;
-    if (!projectFolderExists(normalized)) {
-      throw new CommandError(`Folder not found: ${normalized}`, ErrorCode.projectNotFound, { path: normalized });
-    }
-    await this.waitForDisposal(normalized);
-    this.assertNotQuitting();
-    // Während des Wartens kann dasselbe Projekt schon geöffnet worden sein, etwa nach einem Doppelklick.
-    const openedMeanwhile = this.focusIfOpen(normalized, remember);
-    if (openedMeanwhile) return openedMeanwhile;
-
-    // Ab hier synchron: Zustand lesen, Fenster öffnen und Kern anlegen, damit nie ein Fenster ohne Kern dasteht.
-    const { stateFile, state } = this.loadProjectState(normalized);
-    const windowId = this.ports.windows.open({
-      kind: 'project',
-      title: projectWindowTitle(projectName(normalized)),
-      placement: state.window ? placeWindow(state.window, this.ports.windows.displays()) : undefined,
-    });
-    this.markUsed(windowId);
-    const core = this.createProjectCore(normalized, windowId, stateFile, state);
-    this.rememberOpened(normalized, remember);
-    this.closeWelcomeWindow();
-    return core.info;
-  }
-
   /**
    * Erzeugt den Projekt-Kern für ein Projekt in einem schon geöffneten Fenster und lädt seinen Zustand. Läuft für
    * dasselbe Projekt noch ein Abbau, wartet das Öffnen darauf, damit es den zuletzt gesicherten Stand liest. Ein
@@ -197,13 +197,14 @@ export class AppCore {
    */
   async openProjectCore(projectPath: string, windowId: number): Promise<ProjectCore> {
     const normalized = normalizeProjectPath(projectPath);
-    await this.waitForDisposal(normalized);
+    const key = await this.keyOf(normalized);
+    await this.waitForDisposal(key);
     if (this.shuttingDown) throw new Error('Codium wird beendet.');
     // Das Fenster kann geschlossen worden sein, während das Öffnen gewartet hat; dann kein Kern für ein totes Fenster.
-    if (this.ports.windows.getBounds(windowId) === null) throw new Error(`Fenster ${windowId} ist nicht mehr offen.`);
-    if (this.findProjectCore(normalized)) throw new Error(`Projekt ist schon offen: ${normalized}`);
+    if (!this.ports.windows.isOpen(windowId)) throw new Error(`Fenster ${windowId} ist nicht mehr offen.`);
+    if (this.coreWithKey(key)) throw new Error(`Projekt ist schon offen: ${normalized}`);
     if (this.projects.has(windowId)) throw new Error(`Fenster ${windowId} hat schon ein Projekt.`);
-    const { stateFile, state } = this.loadProjectState(normalized);
+    const { stateFile, state } = this.loadProjectState(normalized, key);
     return this.createProjectCore(normalized, windowId, stateFile, state);
   }
 
@@ -212,10 +213,12 @@ export class AppCore {
     return this.projects.get(windowId);
   }
 
-  /** Der Projekt-Kern eines Projekts, falls es offen ist (Pfadvergleich über den Projektschlüssel). */
+  /**
+   * Der Projekt-Kern eines Projekts, falls es offen ist. Verglichen wird ohne Dateizugriff: über den echten
+   * Schlüssel, soweit der Kern ihn schon kennt, sonst über den normalisierten Pfad.
+   */
   findProjectCore(projectPath: string): ProjectCore | undefined {
-    const key = projectKey(projectPath);
-    return [...this.projects.values()].find((core) => projectKey(core.path) === key);
+    return this.coreWithKey(this.knownKey(projectPath));
   }
 
   /** Alle offenen Projekt-Kerne. */
@@ -228,7 +231,7 @@ export class AppCore {
     const core = this.projects.get(windowId);
     if (!core) return Promise.resolve();
     this.projects.delete(windowId);
-    const key = projectKey(core.path);
+    const key = this.knownKey(core.path);
     const disposal = core.dispose().finally(() => {
       if (this.disposals.get(key) === disposal) this.disposals.delete(key);
     });
@@ -236,9 +239,18 @@ export class AppCore {
     return disposal;
   }
 
-  /** Ein zweiter Start von Codium: Das zuletzt benutzte Fenster kommt nach vorne. */
+  /**
+   * Ein zweiter Start von Codium: Das zuletzt benutzte Fenster kommt nach vorne. Wird Codium gerade beendet, hält
+   * es die Einzelinstanz-Sperre noch bis zum Ende des Abbaus, und der neue Start hat schon aufgegeben; dann
+   * startet Codium nach dem Beenden neu.
+   */
   secondInstanceStarted(): void {
-    if (this.quitting) return;
+    if (this.quitting) {
+      if (this.relaunchRequested) return;
+      this.relaunchRequested = true;
+      this.ports.windows.quit({ relaunch: true });
+      return;
+    }
     const windowId = this.lastUsedWindow();
     if (windowId !== undefined) this.focusWindow(windowId);
   }
@@ -284,7 +296,7 @@ export class AppCore {
   ): void {
     this.router.register(name, (ctx, params) => {
       const project = this.projects.get(ctx.windowId);
-      if (!project || project.disposed) throw new CommandError('Dieses Fenster hat kein offenes Projekt.', 'NO_PROJECT');
+      if (!project || project.disposed) throw new CommandError('This window has no open project.', ErrorCode.noProject);
       return handler(project, params, ctx);
     });
   }
@@ -299,15 +311,53 @@ export class AppCore {
       const picked = await this.ports.folderPicker.pickFolder({ windowId: ctx.windowId, title: 'Open Folder' });
       return picked === null ? null : this.openProject(picked);
     });
-    this.router.register('app.openProject', (_ctx, params) => this.openProject(requirePath(params)));
-    this.router.register('app.removeRecentProject', (_ctx, params) => {
-      const key = projectKey(requirePath(params));
+    this.router.register('app.openProject', (_ctx, params) => this.openProject(requireAbsolutePath(params)));
+    this.router.register('app.removeRecentProject', async (_ctx, params) => {
+      const key = await this.keyOf(requireAbsolutePath(params));
       this.updateState((state) => {
-        state.recentProjects = state.recentProjects.filter((p) => projectKey(p) !== key);
+        state.recentProjects = state.recentProjects.filter((p) => this.knownKey(p) !== key);
       });
       return this.recentProjects();
     });
     this.router.register('app.exit', () => this.quit());
+  }
+
+  /** `openProject`; mit `remember = false` bleibt die Reihenfolge der zuletzt geöffneten Projekte, wie sie ist. */
+  private async openProjectWindow(projectPath: string, remember: boolean): Promise<ProjectInfo> {
+    this.assertNotQuitting();
+    const normalized = normalizeProjectPath(projectPath);
+    const key = await this.keyOf(normalized);
+    this.assertNotQuitting();
+    const open = this.focusIfOpen(key, remember);
+    if (open) return open;
+    if (!(await projectFolderExists(normalized, this.folderTimeoutMs))) {
+      throw new CommandError(`Folder not found: ${normalized}`, ErrorCode.projectNotFound, { path: normalized });
+    }
+    await this.waitForDisposal(key);
+    this.assertNotQuitting();
+    // Während des Wartens kann dasselbe Projekt schon geöffnet worden sein, etwa nach einem Doppelklick.
+    const openedMeanwhile = this.focusIfOpen(key, remember);
+    if (openedMeanwhile) return openedMeanwhile;
+
+    // Ab hier synchron: Zustand lesen, Fenster öffnen und Kern anlegen, damit nie ein Fenster ohne Kern dasteht.
+    const { stateFile, state } = this.loadProjectState(normalized, key);
+    const windowId = this.ports.windows.open({
+      kind: 'project',
+      title: projectWindowTitle(projectName(normalized)),
+      placement: state.window ? placeWindow(state.window, this.ports.windows.displays()) : this.cascadePlacement(),
+    });
+    this.markUsed(windowId);
+    const core = this.createProjectCore(normalized, windowId, stateFile, state);
+    this.rememberOpened(normalized, key, remember);
+    this.closeWelcomeWindow();
+    return core.info;
+  }
+
+  /** Lage eines neuen Projektfensters ohne gespeicherte Lage: versetzt zum zuletzt benutzten Projektfenster. */
+  private cascadePlacement(): WindowPlacement | undefined {
+    const reference = this.windowOrder.findLast((id) => this.projects.has(id));
+    const placement = reference === undefined ? null : this.ports.windows.placement(reference);
+    return placement ? cascadeFrom(placement, this.ports.windows.displays()) : undefined;
   }
 
   private windowInfo(windowId: number): WindowInfo | null {
@@ -316,8 +366,11 @@ export class AppCore {
     return core ? { kind: 'project', title: projectWindowTitle(core.name), project: core.info } : null;
   }
 
-  private recentProjects(): RecentProject[] {
-    return this.appState.recentProjects.map((p) => ({ path: p, name: projectName(p), exists: projectFolderExists(p) }));
+  /** Die zuletzt geöffneten Projekte; die Ordner werden gleichzeitig und mit Zeitlimit geprüft. */
+  private async recentProjects(): Promise<RecentProject[]> {
+    const entries = this.appState.recentProjects;
+    const exists = await Promise.all(entries.map((p) => projectFolderExists(p, this.folderTimeoutMs)));
+    return entries.map((p, i) => ({ path: p, name: projectName(p), exists: exists[i] }));
   }
 
   /**
@@ -347,9 +400,9 @@ export class AppCore {
         });
       }
       if (!this.quitting && this.projects.size > 1) {
-        const key = projectKey(project.path);
+        const key = this.knownKey(project.path);
         this.updateState((state) => {
-          state.openProjects = state.openProjects.filter((p) => projectKey(p) !== key);
+          state.openProjects = state.openProjects.filter((p) => this.knownKey(p) !== key);
         });
       }
       this.closeProjectCore(windowId).catch((err: unknown) =>
@@ -396,11 +449,11 @@ export class AppCore {
   }
 
   /** Holt das Fenster eines offenen Projekts nach vorne und liefert das Projekt; `undefined`, wenn es nicht offen ist. */
-  private focusIfOpen(normalized: string, remember: boolean): ProjectInfo | undefined {
-    const core = this.findProjectCore(normalized);
+  private focusIfOpen(key: string, remember: boolean): ProjectInfo | undefined {
+    const core = this.coreWithKey(key);
     if (!core) return undefined;
     this.focusWindow(core.windowId);
-    this.rememberOpened(core.path, remember);
+    this.rememberOpened(core.path, key, remember);
     this.closeWelcomeWindow();
     return core.info;
   }
@@ -422,19 +475,41 @@ export class AppCore {
    * Führt ein Projekt als offen und setzt es an den Anfang der zuletzt geöffneten (ohne Doppelungen); mit
    * `recent = false` nur Ersteres.
    */
-  private rememberOpened(normalized: string, recent: boolean): void {
-    const key = projectKey(normalized);
+  private rememberOpened(normalized: string, key: string, recent: boolean): void {
     this.updateState((state) => {
       if (recent) {
-        const others = state.recentProjects.filter((p) => projectKey(p) !== key);
+        const others = state.recentProjects.filter((p) => this.knownKey(p) !== key);
         state.recentProjects = [normalized, ...others].slice(0, RECENT_PROJECTS_LIMIT);
       }
-      if (!state.openProjects.some((p) => projectKey(p) === key)) state.openProjects.push(normalized);
+      if (!state.openProjects.some((p) => this.knownKey(p) === key)) state.openProjects.push(normalized);
     });
   }
 
-  private async waitForDisposal(normalized: string): Promise<void> {
-    const pending = this.disposals.get(projectKey(normalized));
+  /**
+   * Der Schlüssel eines Projektpfads zum Vergleichen (siehe `resolveProjectKey`). Aufgelöste Schlüssel merkt
+   * sich der Kern, damit spätere Vergleiche ohne Dateizugriff auskommen (`knownKey`).
+   */
+  private async keyOf(projectPath: string): Promise<string> {
+    const lexical = lexicalProjectKey(projectPath);
+    const known = this.realKeys.get(lexical);
+    if (known !== undefined) return known;
+    const { key, resolved } = await resolveProjectKey(projectPath, this.folderTimeoutMs);
+    if (resolved) this.realKeys.set(lexical, key);
+    return key;
+  }
+
+  /** Der Schlüssel ohne Dateizugriff: der schon aufgelöste echte, sonst der aus dem normalisierten Pfad. */
+  private knownKey(projectPath: string): string {
+    const lexical = lexicalProjectKey(projectPath);
+    return this.realKeys.get(lexical) ?? lexical;
+  }
+
+  private coreWithKey(key: string): ProjectCore | undefined {
+    return [...this.projects.values()].find((core) => this.knownKey(core.path) === key);
+  }
+
+  private async waitForDisposal(key: string): Promise<void> {
+    const pending = this.disposals.get(key);
     if (pending) await pending;
   }
 
@@ -442,9 +517,9 @@ export class AppCore {
     if (this.quitting) throw new CommandError('Codium is shutting down.', ErrorCode.shuttingDown);
   }
 
-  private loadProjectState(normalized: string): { stateFile: StateFile<ProjectState>; state: ProjectState } {
+  private loadProjectState(normalized: string, key: string): { stateFile: StateFile<ProjectState>; state: ProjectState } {
     const stateFile = new StateFile<ProjectState>(
-      path.join(this.options.dataDir, PROJECT_STATE_DIR, projectStateFileName(normalized)),
+      path.join(this.options.dataDir, PROJECT_STATE_DIR, projectStateFileName(key)),
       SCHEMA_VERSION,
       () => emptyProjectState(normalized),
       {
@@ -477,11 +552,14 @@ export class AppCore {
   }
 }
 
-/** Der Pfad aus den Parametern eines Befehls; die Oberfläche ist eigener Code, geprüft wird trotzdem. */
-function requirePath(params: unknown): string {
+/**
+ * Der absolute Pfad aus den Parametern eines Befehls. Die Oberfläche ist eigener Code, geprüft wird trotzdem: Ein
+ * relativer Pfad hinge vom Arbeitsordner des Hauptprozesses ab.
+ */
+function requireAbsolutePath(params: unknown): string {
   const value = (params as { path?: unknown } | undefined)?.path;
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw new CommandError('Ein Pfad wird erwartet.', ErrorCode.invalidParams);
+  if (typeof value !== 'string' || !path.isAbsolute(value)) {
+    throw new CommandError('An absolute path is expected.', ErrorCode.invalidParams);
   }
   return value;
 }

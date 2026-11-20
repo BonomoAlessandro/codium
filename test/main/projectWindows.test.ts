@@ -3,12 +3,12 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { CommandArgs, CommandName, CommandResult } from '../../src/shared/types';
 import type { WindowPlacement } from '../../src/main/core/ports';
 import { CommandError } from '../../src/main/core/router';
 import { APP_STATE_FILE, PROJECT_STATE_DIR } from '../../src/main/core/schema';
-import { projectStateFileName } from '../../src/main/core/projectPath';
+import { lexicalProjectKey, projectStateFileName } from '../../src/main/core/projectPath';
 import { createTestCore, restart, type TestCore } from '../support/core';
 import { PRIMARY_DISPLAY } from '../support/fakePorts';
 import { removeDir, useTempDirs } from '../support/tempDir';
@@ -161,6 +161,79 @@ describe('Projektfenster und Willkommensfenster', () => {
       await expect(call(test, welcome, 'app.openProject', {} as { path: string })).rejects.toMatchObject({
         code: 'INVALID_PARAMS',
       });
+      // Ein relativer Pfad hinge vom Arbeitsordner des Hauptprozesses ab.
+      await expect(call(test, welcome, 'app.openProject', { path: '.' })).rejects.toMatchObject({
+        code: 'INVALID_PARAMS',
+        message: 'An absolute path is expected.',
+      });
+      expect(test.ports.windows.openTitles).toEqual([WELCOME]);
+    });
+
+    it('versetzt neue Projektfenster ohne gespeicherte Lage gegenüber dem zuletzt benutzten', async () => {
+      const { project, test } = setup();
+      const welcome = await startWithWelcome(test);
+      const [alphaWindow, betaWindow] = await openProjects(test, welcome, project('Alpha'), project('Beta'), project('Gamma'));
+      const placementOf = (name: string) => test.ports.windows.opened.find((w) => w.title === title(name))?.placement;
+
+      // Das erste Projektfenster hat kein Gegenüber und öffnet in der Standardlage des Ports (100, 100).
+      expect(placementOf('Alpha')).toBeUndefined();
+      expect(placementOf('Beta')).toEqual({ bounds: { x: 130, y: 130, width: 1280, height: 800 }, maximized: false });
+      expect(placementOf('Gamma')).toEqual({ bounds: { x: 160, y: 160, width: 1280, height: 800 }, maximized: false });
+
+      test.ports.windows.simulateFocus(alphaWindow);
+      await call(test, alphaWindow, 'app.openProject', { path: project('Delta') });
+      expect(placementOf('Delta')?.bounds).toMatchObject({ x: 130, y: 130 });
+
+      // Ragte das neue Fenster aus dem Arbeitsbereich, beginnt es oben links; der Maximiert-Zustand wird übernommen.
+      test.ports.windows.simulatePlacement(betaWindow, { bounds: { x: 700, y: 300, width: 1280, height: 800 }, maximized: true });
+      test.ports.windows.simulateFocus(betaWindow);
+      await call(test, betaWindow, 'app.openProject', { path: project('Epsilon') });
+      expect(placementOf('Epsilon')).toEqual({ bounds: { x: 0, y: 0, width: 1280, height: 800 }, maximized: true });
+    });
+
+    it('wartet auf einen nicht erreichbaren Projektordner höchstens bis zum Zeitlimit', async () => {
+      const { root, project } = setup();
+      const alpha = project('Alpha');
+      // Ein Netzlaufwerk, das nicht antwortet: Dateiabfragen darauf kehren nie zurück.
+      const unreachable = 'Z:\\Netz\\Projekt';
+      const hangsOn = <F extends (...args: never[]) => Promise<unknown>>(original: F) =>
+        ((target: fs.PathLike, ...rest: never[]) =>
+          String(target).toUpperCase().startsWith('Z:') ? new Promise<never>(() => {}) : original(target as never, ...rest)) as unknown as F;
+      const originalStat = fs.promises.stat.bind(fs.promises);
+      const originalRealpath = fs.promises.realpath.bind(fs.promises);
+      const stat = vi.spyOn(fs.promises, 'stat').mockImplementation(hangsOn(originalStat));
+      const realpath = vi.spyOn(fs.promises, 'realpath').mockImplementation(hangsOn(originalRealpath));
+      try {
+        const test = createTestCore(path.join(root, 'data2'), { folderQueryTimeoutMs: 50 });
+        test.core.updateState((state) => {
+          state.openProjects = [unreachable, alpha];
+          state.recentProjects = [alpha, unreachable];
+        });
+        const started = Date.now();
+
+        await test.core.start();
+        const alphaWindow = test.ports.windows.windowTitled(title('Alpha'));
+        expect(test.ports.windows.openTitles).toEqual([title('Alpha')]);
+        expect(test.events.forWindow(alphaWindow)).toEqual([
+          { name: 'app.notice', payload: { level: 'error', text: `Project folder not found: ${unreachable}` } },
+        ]);
+        expect(test.core.state.openProjects).toEqual([alpha]);
+
+        expect(await call(test, alphaWindow, 'app.recentProjects')).toEqual([
+          { path: alpha, name: 'Alpha', exists: true },
+          { path: unreachable, name: 'Projekt', exists: false },
+        ]);
+        await expect(call(test, alphaWindow, 'app.openProject', { path: unreachable })).rejects.toMatchObject({
+          code: 'PROJECT_NOT_FOUND',
+        });
+        expect(await call(test, alphaWindow, 'app.removeRecentProject', { path: unreachable })).toEqual([
+          { path: alpha, name: 'Alpha', exists: true },
+        ]);
+        expect(Date.now() - started).toBeLessThan(2000);
+      } finally {
+        stat.mockRestore();
+        realpath.mockRestore();
+      }
     });
   });
 
@@ -178,6 +251,28 @@ describe('Projektfenster und Willkommensfenster', () => {
       test.ports.windows.simulateFocus(alphaWindow);
       test.core.secondInstanceStarted();
       expect(test.ports.windows.focused.at(-1)).toBe(alphaWindow);
+      expect(test.ports.windows.relaunchRequested).toBe(false);
+    });
+
+    it('startet Codium neu, wenn der zweite Start während des Beendens kommt', async () => {
+      const { project, test } = setup();
+      const welcome = await startWithWelcome(test);
+      const [alphaWindow] = await openProjects(test, welcome, project('Alpha'));
+      // Der Abbau dauert (später etwa Sprachserver und Terminals); so lange hält die alte Instanz die Sperre.
+      test.core.projectCoreForWindow(alphaWindow)?.onDispose(() => delay(30));
+      test.ports.windows.close(alphaWindow);
+      expect(test.ports.windows.quitRequests).toBe(1);
+
+      test.core.secondInstanceStarted();
+      test.core.secondInstanceStarted();
+      expect(test.ports.windows.relaunchRequested).toBe(true);
+      expect(test.ports.windows.quitRequests).toBe(2);
+      expect(test.ports.windows.focused).toEqual([]);
+
+      // Der Neustart findet das Projekt wieder offen vor.
+      const after = await restart(test);
+      await after.core.start();
+      expect(after.ports.windows.openTitles).toEqual([title('Alpha')]);
     });
   });
 
@@ -407,6 +502,6 @@ describe('Projektfenster und Willkommensfenster', () => {
     await openProjects(test, welcome, alpha);
     const after = await restart(test);
 
-    expect(fs.readdirSync(path.join(after.dataDir, PROJECT_STATE_DIR))).toEqual([projectStateFileName(alpha)]);
+    expect(fs.readdirSync(path.join(after.dataDir, PROJECT_STATE_DIR))).toEqual([projectStateFileName(lexicalProjectKey(alpha))]);
   });
 });

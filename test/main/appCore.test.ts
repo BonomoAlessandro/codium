@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { CommandName } from '../../src/shared/types';
 import type { ProjectCore } from '../../src/main/core/projectCore';
-import { projectStateFileName } from '../../src/main/core/projectPath';
+import { lexicalProjectKey, projectStateFileName } from '../../src/main/core/projectPath';
 import { CommandError } from '../../src/main/core/router';
 import { PROJECT_STATE_DIR } from '../../src/main/core/schema';
 import { createTestCore, restart, type TestCore } from '../support/core';
@@ -28,7 +28,7 @@ describe('App-Kern', () => {
   }
 
   function projectStateFile(test: TestCore, project: string): string {
-    return path.join(test.dataDir, PROJECT_STATE_DIR, projectStateFileName(project));
+    return path.join(test.dataDir, PROJECT_STATE_DIR, projectStateFileName(lexicalProjectKey(project)));
   }
 
   describe('Zustand über einen Neustart', () => {
@@ -97,7 +97,7 @@ describe('App-Kern', () => {
         width: 800,
         height: 600,
       });
-      expect(fs.readdirSync(path.join(test.dataDir, PROJECT_STATE_DIR))).toEqual([projectStateFileName(project)]);
+      expect(fs.readdirSync(path.join(test.dataDir, PROJECT_STATE_DIR))).toEqual([projectStateFileName(lexicalProjectKey(project))]);
     });
 
     it('lassen dasselbe Projekt kein zweites Mal öffnen', async () => {
@@ -301,7 +301,7 @@ describe('App-Kern', () => {
       const { test } = setup();
       expect(await test.core.router.dispatch({ windowId: 1 }, 'gibt.es.nicht', undefined)).toEqual({
         ok: false,
-        error: { message: 'Unbekannter Befehl: gibt.es.nicht', code: 'UNKNOWN_COMMAND' },
+        error: { message: 'Unknown command: gibt.es.nicht', code: 'UNKNOWN_COMMAND' },
       });
     });
 
@@ -320,7 +320,7 @@ describe('App-Kern', () => {
       });
       expect(await test.core.router.dispatch({ windowId: without }, name, undefined)).toEqual({
         ok: false,
-        error: { message: 'Dieses Fenster hat kein offenes Projekt.', code: 'NO_PROJECT' },
+        error: { message: 'This window has no open project.', code: 'NO_PROJECT' },
       });
       await expect(test.core.router.call({ windowId: without }, name as never)).rejects.toBeInstanceOf(CommandError);
     });

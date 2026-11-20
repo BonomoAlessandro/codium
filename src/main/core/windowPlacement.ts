@@ -22,6 +22,24 @@ export function placeWindow(saved: WindowPlacement, displays: DisplayInfo[]): Wi
   return { bounds: centreIn(primary.workArea, saved.bounds), maximized: saved.maximized };
 }
 
+/** Versatz eines neuen Fensters gegenüber dem zuletzt benutzten, wie in IntelliJ. */
+export const CASCADE_OFFSET = 30;
+
+/**
+ * Lage eines neuen Fensters ohne gespeicherte Lage: um `CASCADE_OFFSET` nach rechts unten versetzt gegenüber dem
+ * zuletzt benutzten Fenster, in dessen Grösse und Maximiert-Zustand. Ragte es damit aus dem Arbeitsbereich des
+ * Bildschirms, beginnt es oben links in diesem Bereich.
+ */
+export function cascadeFrom(reference: WindowPlacement, displays: DisplayInfo[]): WindowPlacement {
+  const { x, y, width, height } = reference.bounds;
+  const shifted: Bounds = { x: x + CASCADE_OFFSET, y: y + CASCADE_OFFSET, width, height };
+  const area = displays.find((d) => titleBarVisible(reference.bounds, d.workArea))?.workArea;
+  if (area && (shifted.x + width > area.x + area.width || shifted.y + height > area.y + area.height)) {
+    return placeWindow({ bounds: { ...shifted, x: area.x, y: area.y }, maximized: reference.maximized }, displays);
+  }
+  return placeWindow({ bounds: shifted, maximized: reference.maximized }, displays);
+}
+
 /** Ob ein greifbares Stück der Kopfzeile im Bereich liegt. */
 function titleBarVisible(window: Bounds, area: Bounds): boolean {
   const titleBar: Bounds = { ...window, height: Math.min(TITLE_BAR_HEIGHT, window.height) };

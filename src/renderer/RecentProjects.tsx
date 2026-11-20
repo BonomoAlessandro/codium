@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { CodiumError, ErrorCode, type CodiumApi, type RecentProject } from '../shared/types';
+import { errorText } from './errors';
 import type { Notify } from './Notices';
 
 export interface ProjectActions {
@@ -46,7 +47,7 @@ export function useProjectActions(api: CodiumApi, notify: Notify): ProjectAction
         void refresh();
         return;
       }
-      notify({ level: 'error', text: err instanceof Error ? err.message : String(err) });
+      notify({ level: 'error', text: errorText(err) });
     },
     [notify, refresh, removeRecent],
   );

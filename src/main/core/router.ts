@@ -1,7 +1,14 @@
 // Verteilt Befehle aus dem Vertrag an ihre Handler. Kennt kein Electron: Der Hauptprozess reicht nur die
 // Kennung des anfragenden Fensters herein, die Tests tun dasselbe mit nachgemachten Kennungen.
 
-import type { CommandArgs, CommandName, CommandParams, CommandResult, ResponseMessage } from '../../shared/types';
+import {
+  ErrorCode,
+  type CommandArgs,
+  type CommandName,
+  type CommandParams,
+  type CommandResult,
+  type ResponseMessage,
+} from '../../shared/types';
 
 /** Wer fragt: das Fenster, aus dem die Anfrage kommt. */
 export interface CallContext {
@@ -40,7 +47,7 @@ export class CommandRouter {
   /** Führt einen Befehl aus. Fehler kommen als Antwort zurück, nie als Ausnahme. */
   async dispatch(ctx: CallContext, name: string, params: unknown): Promise<ResponseMessage> {
     const handler = this.handlers.get(name);
-    if (!handler) return { ok: false, error: { message: `Unbekannter Befehl: ${name}`, code: 'UNKNOWN_COMMAND' } };
+    if (!handler) return { ok: false, error: { message: `Unknown command: ${name}`, code: ErrorCode.unknownCommand } };
     try {
       return { ok: true, result: await handler(ctx, params) };
     } catch (err) {

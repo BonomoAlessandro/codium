@@ -3,7 +3,7 @@
 // keine Lage zum Speichern.
 
 import { app, BrowserWindow, nativeTheme, screen } from 'electron';
-import type { Bounds, DisplayInfo, WindowKind, WindowOpenOptions, WindowPlacement, WindowPort } from '../core/ports';
+import type { DisplayInfo, WindowKind, WindowOpenOptions, WindowPlacement, WindowPort } from '../core/ports';
 import type { TestMode, TestRecorder } from '../testMode';
 
 /** Grösse eines Fensters ohne gespeicherte Lage; es öffnet dann zentriert auf dem Hauptbildschirm. */
@@ -116,25 +116,18 @@ export class ElectronWindowPort implements WindowPort {
     if (win && !win.isDestroyed()) win.close();
   }
 
-  getBounds(windowId: number): Bounds | null {
+  isOpen(windowId: number): boolean {
     const win = BrowserWindow.fromId(windowId);
-    if (!win || win.isDestroyed()) return null;
-    return win.getNormalBounds();
-  }
-
-  setBounds(windowId: number, bounds: Bounds): void {
-    const win = BrowserWindow.fromId(windowId);
-    if (!win || win.isDestroyed()) return;
-    // Im Testmodus bleibt das Fenster ausserhalb des Bildschirms; nur die Grösse wird übernommen.
-    if (this.options.testMode.hidden) win.setSize(bounds.width, bounds.height);
-    else win.setBounds(bounds);
+    return win !== null && !win.isDestroyed();
   }
 
   placement(windowId: number): WindowPlacement | null {
     if (this.options.testMode.hidden) return null;
     const win = BrowserWindow.fromId(windowId);
     if (!win || win.isDestroyed()) return null;
-    const maximized = win.isMinimized() ? (this.maximized.get(windowId) ?? false) : win.isMaximized();
+    // Ein noch nicht gezeigtes oder minimiertes Fenster meldet „nicht maximiert“; dann gilt der gemerkte Zustand.
+    const maximized =
+      win.isVisible() && !win.isMinimized() ? win.isMaximized() : (this.maximized.get(windowId) ?? false);
     return { bounds: win.getNormalBounds(), maximized };
   }
 
@@ -148,7 +141,9 @@ export class ElectronWindowPort implements WindowPort {
     }));
   }
 
-  quit(): void {
+  quit(options: { relaunch?: boolean } = {}): void {
+    // app.relaunch merkt nur vor: Gestartet wird erst, wenn dieser Prozess endet und die Sperre freigibt.
+    if (options.relaunch) app.relaunch();
     app.quit();
   }
 

@@ -56,6 +56,7 @@ src/
     ProjectPlaceholder.tsx  Platzhalter des Projektfensters (Layout folgt)
     RecentProjects.tsx „Open Folder“ und zuletzt geöffnete Projekte
     Notices.tsx        vorläufige Hinweise
+    errors.ts          Fehlertexte für Hinweise (bekannte Codes, sonst ein allgemeiner Text)
     styles/            Design-Variablen (tokens.css) und Stile (app.css)
 test/
   support/             Test-Gerüst: nachgemachte Ports, Temp-Ordner, Git, Starthilfe für die App

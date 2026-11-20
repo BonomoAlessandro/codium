@@ -37,17 +37,29 @@ export interface Notice {
 }
 
 /**
- * Codes gescheiterter Befehle, auf die die Oberfläche reagiert. Die Meldung eines solchen Fehlers ist englisch
- * und lässt sich so anzeigen.
+ * Alle Codes gescheiterter Befehle, die die Oberfläche sehen kann. Die Meldung eines Fehlers mit einem dieser
+ * Codes ist englisch und lässt sich so anzeigen. Ein Fehler ohne Code ist ein interner Fehler; seine Meldung ist
+ * nicht für Nutzer gedacht, die Oberfläche zeigt dafür einen allgemeinen Text.
  */
 export const ErrorCode = {
-  /** Der Projektordner fehlt; `data.path` ist der Pfad. */
+  /** Den Befehl gibt es nicht. */
+  unknownCommand: 'UNKNOWN_COMMAND',
+  /** Ein Parameter fehlt oder hat die falsche Form. */
+  invalidParams: 'INVALID_PARAMS',
+  /** Der Befehl braucht ein offenes Projekt, das anfragende Fenster hat keines. */
+  noProject: 'NO_PROJECT',
+  /** Der Projektordner fehlt oder ist nicht erreichbar; `data.path` ist der Pfad. */
   projectNotFound: 'PROJECT_NOT_FOUND',
   /** Codium wird gerade beendet und öffnet nichts mehr. */
   shuttingDown: 'SHUTTING_DOWN',
-  /** Ein Parameter fehlt oder hat die falsche Form. */
-  invalidParams: 'INVALID_PARAMS',
 } as const;
+
+export type ErrorCodeValue = (typeof ErrorCode)[keyof typeof ErrorCode];
+
+/** Ob ein Code zu den bekannten gehört, deren Meldung sich anzeigen lässt. */
+export function isKnownErrorCode(code: string | undefined): code is ErrorCodeValue {
+  return Object.values(ErrorCode).some((known) => known === code);
+}
 
 /**
  * Alle Befehle: Name → Parameter und Ergebnis. Ein Befehl ohne Parameter hat `params: void` und wird ohne
@@ -68,11 +80,11 @@ export interface Commands {
    */
   'app.openFolder': { params: void; result: ProjectInfo | null };
   /**
-   * Öffnet ein Projekt in einem neuen Fenster. Ist es schon offen, kommt sein Fenster nach vorne. Ein offenes
-   * Willkommensfenster schliesst sich. Fehlt der Ordner, scheitert der Befehl mit `PROJECT_NOT_FOUND`.
+   * Öffnet ein Projekt (absoluter Pfad) in einem neuen Fenster. Ist es schon offen, kommt sein Fenster nach vorne.
+   * Ein offenes Willkommensfenster schliesst sich. Fehlt der Ordner, scheitert der Befehl mit `PROJECT_NOT_FOUND`.
    */
   'app.openProject': { params: { path: string }; result: ProjectInfo };
-  /** Entfernt ein Projekt aus den zuletzt geöffneten und liefert die neue Liste. */
+  /** Entfernt ein Projekt (absoluter Pfad) aus den zuletzt geöffneten und liefert die neue Liste. */
   'app.removeRecentProject': { params: { path: string }; result: RecentProject[] };
   /** „Exit“: beendet Codium; alle offenen Projekte öffnen beim nächsten Start wieder. */
   'app.exit': { params: void; result: void };

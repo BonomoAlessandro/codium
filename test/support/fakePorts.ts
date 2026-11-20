@@ -5,7 +5,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type {
-  Bounds,
   DisplayInfo,
   EventSink,
   FolderPickerPort,
@@ -38,6 +37,8 @@ export class FakeWindowPort implements WindowPort {
   autoReady = true;
   /** Wie oft der Kern verlangt hat, die App zu beenden. */
   quitRequests = 0;
+  /** Ob der Kern verlangt hat, die App nach dem Beenden neu zu starten. */
+  relaunchRequested = false;
   private nextId = 1;
   private readonly placements = new Map<number, WindowPlacement>();
   private readonly closedListeners: Array<(windowId: number, lastPlacement: WindowPlacement | null) => void> = [];
@@ -66,13 +67,8 @@ export class FakeWindowPort implements WindowPort {
     for (const listener of this.closedListeners) listener(windowId, lastPlacement);
   }
 
-  getBounds(windowId: number): Bounds | null {
-    return this.placements.get(windowId)?.bounds ?? null;
-  }
-
-  setBounds(windowId: number, bounds: Bounds): void {
-    const placement = this.placements.get(windowId);
-    if (placement) this.placements.set(windowId, { ...placement, bounds });
+  isOpen(windowId: number): boolean {
+    return this.placements.has(windowId);
   }
 
   placement(windowId: number): WindowPlacement | null {
@@ -84,8 +80,9 @@ export class FakeWindowPort implements WindowPort {
     return this.displayList;
   }
 
-  quit(): void {
+  quit(options: { relaunch?: boolean } = {}): void {
     this.quitRequests++;
+    if (options.relaunch) this.relaunchRequested = true;
   }
 
   onClosed(listener: (windowId: number, lastPlacement: WindowPlacement | null) => void): void {
