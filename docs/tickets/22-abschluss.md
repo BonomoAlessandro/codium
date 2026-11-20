@@ -14,13 +14,13 @@ Spezifikation: „Auslieferung und Abhängigkeiten“, „Weitere Hinweise“
   - Entwicklung inklusive eigenem Datenordner und Testmodus.
   - Voraussetzungen aktuell, inklusive der Antwort zum C++-Compiler aus Ticket 11.
   - Die „Offenen Punkte“ verschwinden; was bewusst nicht dabei ist, steht als kurzer Abschnitt mit Verweis auf die Spezifikation.
-- **Gesammelte Prüfliste:** Alle Punkte „Abnahme von Hand“ der Tickets 01 bis 21 nach Bereichen geordnet in `docs/abnahme.md`.
+- **Gesammelte Prüfliste:** Alle Punkte „Abnahme von Hand“ der Tickets 01 bis 21 und 23 nach Bereichen geordnet in `docs/abnahme.md`.
 - **Installer bauen** und auf einem zweiten Rechner oder unter einem frischen Windows-Benutzer ohne Codium-Daten prüfen.
 
 ## Akzeptanzkriterien
 
 - [ ] Das README ist aktuell und beschreibt das tatsächliche Verhalten.
-- [ ] `docs/abnahme.md` enthält alle Prüfpunkte der Tickets 01 bis 21.
+- [ ] `docs/abnahme.md` enthält alle Prüfpunkte der Tickets 01 bis 21 und 23.
 
 ## Abnahme von Hand
 

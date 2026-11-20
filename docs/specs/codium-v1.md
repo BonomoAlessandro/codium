@@ -1,7 +1,7 @@
 # Codium 1: eine kleine IDE nach dem Vorbild IntelliJ
 
 > Status: `ready-for-agent`
-> Entstanden aus einer Befragung am 2026-11-20, danach durch zwei Reviews präzisiert. Grundlage ist das bestehende Electron-Grundgerüst (Stand 0.1.0). Punkte, die beim Schreiben oder nach dem Review ergänzt und nicht einzeln abgestimmt wurden, stehen am Ende unter „Präzisierungen beim Schreiben“. Umsetzung in Tickets: [docs/tickets](../tickets/README.md).
+> Entstanden aus einer Befragung am 2026-11-20, danach durch zwei Reviews präzisiert; die Markdown-Vorschau kam am selben Tag auf Wunsch des Nutzers dazu. Grundlage ist das bestehende Electron-Grundgerüst (Stand 0.1.0). Punkte, die beim Schreiben oder nach dem Review ergänzt und nicht einzeln abgestimmt wurden, stehen am Ende unter „Präzisierungen beim Schreiben“. Umsetzung in Tickets: [docs/tickets](../tickets/README.md).
 
 ## Problemstellung
 
@@ -22,6 +22,7 @@ Codium wird eine Desktop-IDE für Windows im Stil des neuen IntelliJ, nur dunkel
 - **Ein Fenster pro Projekt.** Ein Projekt ist ein Ordner. Beim Start öffnen sich die zuletzt offenen Projekte wieder, sonst erscheint ein Willkommensfenster.
 - **Aufbau wie IntelliJ:** Kopfzeile mit Projektname und Branch, links Projektbaum oder Änderungen, unten Terminal oder Git-Log, rechts der Datenbank-Viewer, in der Mitte der Code in Tabs, unten eine Statusleiste.
 - **Ein echter Editor** (Monaco, der Editor aus VS Code), der automatisch speichert, mit den Code-Farben des IntelliJ-Schemas „Dark“ und der Schrift JetBrains Mono.
+- **Markdown wie in IntelliJ:** `.md`-Dateien öffnen geteilt, links der Quelltext, rechts die gerenderte Vorschau mit Mermaid-Diagrammen und Bildern aus dem Projekt.
 - **Sprachverständnis für Java und TypeScript/JavaScript:** Ctrl + Linksklick springt zur Definition, auch in Bibliotheken. Dazu kommen Verwendungen, semantische Färbung, Hover-Infos, Fehler und Vervollständigung. Alle anderen Dateiarten werden farbig dargestellt.
 - **Git wie in IntelliJ:** Branch-Menü in der Kopfzeile, Commit-Fenster mit Häkchen statt Staging-Bereich, Vergleichsansicht, Änderungsbalken im Editor und ein Git-Log mit Graph.
 - **Terminal** mit mehreren Tabs, standardmässig mit PowerShell 7.
@@ -39,6 +40,7 @@ Codium wird eine Desktop-IDE für Windows im Stil des neuen IntelliJ, nur dunkel
 - **Code-Bereich:** die Mitte mit den Tabs. Ein Tab zeigt eine Datei, eine Vergleichsansicht, eine Bibliotheksklasse, einen Tabelleninhalt, ein Bild oder einen Hinweis.
 - **Änderungsansicht:** das Werkzeugfenster „Commit“ mit den geänderten Dateien, den Häkchen und der Commit-Nachricht.
 - **Vergleichsansicht:** ein Tab, der zwei Stände einer Datei nebeneinander oder in einer Spalte zeigt.
+- **Markdown-Vorschau:** die gerenderte Ansicht einer `.md`-Datei, neben oder statt dem Quelltext im selben Tab.
 - **Änderungsbalken:** die farbigen Markierungen am linken Rand des Editors für Zeilen, die sich seit dem letzten Commit geändert haben.
 - **Git-Konsole:** der Reiter „Console“ im Werkzeugfenster „Git“, der die ausgeführten Git-Befehle mit Ausgabe zeigt.
 - **Kern:** die gesamte Logik im Hauptprozess, ohne direkte Abhängigkeit von Electron. Er besteht aus dem **App-Kern** (Fenster, Projekte, Einstellungen, Voraussetzungen, JDK-Erkennung) und einem **Projekt-Kern** pro Projektfenster.
@@ -278,6 +280,17 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
 181. Als Nutzer möchte ich Codium über den bestehenden Windows-Installer installieren, damit die Installation wie gewohnt geht.
 182. Als Nutzer möchte ich, dass Projekte ohne Git-Repository trotzdem öffnen und nur die Git-Funktionen fehlen, damit ich auch einfache Ordner bearbeiten kann.
 
+### Markdown
+
+183. Als Nutzer möchte ich, dass eine `.md`-Datei wie in IntelliJ geteilt öffnet, links der Quelltext und rechts die gerenderte Vorschau, damit ich Dokumentation gleichzeitig lesen und bearbeiten kann.
+184. Als Nutzer möchte ich oben im Tab zwischen „Editor“, „Split“ und „Preview“ umschalten, wobei Codium sich die Ansicht pro Datei merkt, damit ich reine Lesedateien als Vorschau und Arbeitsdateien geteilt sehe.
+185. Als Nutzer möchte ich, dass sich die Vorschau beim Tippen aktualisiert, damit ich sofort sehe, wie der Text aussieht.
+186. Als Nutzer möchte ich in der Vorschau Überschriften, Listen, Tabellen, Aufgabenlisten, Zitate, Links und Code-Blöcke mit denselben Farben wie im Editor sehen, damit Dokumentation so aussieht wie auf GitHub oder in IntelliJ.
+187. Als Nutzer möchte ich, dass Mermaid-Blöcke als Diagramm erscheinen, damit ich Abläufe und Abhängigkeiten wie in meinen Ticket-Übersichten direkt sehe.
+188. Als Nutzer möchte ich, dass relativ verlinkte Bilder aus dem Projekt in der Vorschau erscheinen, damit Skizzen und Screenshots neben dem Text stehen.
+189. Als Nutzer möchte ich, dass die Vorschau in der geteilten Ansicht dem Scrollen im Editor folgt, damit ich immer die Stelle sehe, an der ich schreibe.
+190. Als Nutzer möchte ich, dass ein Klick auf einen Web-Link in der Vorschau ihn im Standardbrowser öffnet, damit ich verlinkte Seiten lesen kann.
+
 ## Implementierungsentscheidungen
 
 ### Architektur im Überblick
@@ -298,7 +311,7 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
   - **Fenster:** Projektfenster und Willkommensfenster öffnen, nach vorne holen, schliessen; Position und Grösse lesen und setzen; angeschlossene Bildschirme.
   - **Ordnerauswahl:** der Ordnerdialog von Windows. Rückfragen sind dagegen Dialoge in der Oberfläche selbst, nicht über einen Port.
   - **Geheimnisse:** Text mit der Verschlüsselung von Windows ver- und entschlüsseln.
-  - **Shell-Aktionen:** in den Papierkorb verschieben, im Explorer zeigen, Zwischenablage.
+  - **Shell-Aktionen:** in den Papierkorb verschieben, im Explorer zeigen, Zwischenablage, eine Web-Adresse im Standardbrowser öffnen.
   - **System:** Umgebungsvariablen, Suche nach Programmen (Git, Shells), Benutzerordner, Lesen von Ordnern für die JDK-Erkennung. Die echte Umsetzung kommt ohne Electron aus, damit auch die langsamen Tests sie verwenden können.
 - Dateisystem, Git, ripgrep, Sprachserver, node-pty und PostgreSQL sind **keine** Ports: Der Kern benutzt sie direkt, und die Tests verwenden sie echt (siehe „Testentscheidungen“).
 - Schreibzugriffe des Kerns auf seinen Zustand laufen entprellt und atomar (in eine Temp-Datei schreiben, dann umbenennen). Eine kaputte Zustandsdatei wird beiseitegelegt statt überschrieben.
@@ -387,6 +400,22 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
 - **Grosse Dateien:** Ab etwa 5 MB öffnet die Datei ohne Sprachfunktionen und ohne Änderungsbalken. Ab 50 MB öffnet sie gar nicht, sondern zeigt einen Hinweis.
 - **Zurück und Vor:** Die Oberfläche führt pro Projektfenster einen Navigationsverlauf von Positionen (Datei und Cursor). Ein Eintrag entsteht bei Sprüngen (Ctrl + Linksklick, Suche, Verwendungen, Zu Zeile) und bei grösseren Cursorbewegungen über mehr als einige Zeilen. Die Seitentasten der Maus lösen Zurück und Vor aus.
 - **Ctrl + Tab** wechselt zum zuletzt benutzten Tab, wiederholtes Drücken bei gehaltenem Ctrl weiter zurück.
+
+### Markdown-Vorschau
+
+- **Ansichten:** `.md`-Dateien sind Datei-Tabs mit drei Ansichten: „Editor“ (nur Monaco), „Split“ (Monaco links, Vorschau rechts, Trennlinie verschiebbar) und „Preview“ (nur die Vorschau). Der Umschalter sitzt oben rechts im Tab. Standard ist „Split“; die gewählte Ansicht merkt sich Codium pro Datei im Projekt-Zustand.
+- **Rendern** in der Oberfläche mit markdown-it: CommonMark mit Tabellen, Durchstreichen und Aufgabenlisten wie auf GitHub. Die Vorschau entsteht aus demselben Modell wie der Editor, also auch vor dem Speichern, entprellt etwa 200 ms nach der letzten Eingabe.
+- **HTML im Markdown** wird dargestellt, aber vorher mit DOMPurify bereinigt: keine Skripte, keine Ereignis-Attribute, keine eingebetteten Seiten oder Formulare.
+- **Code-Blöcke** erscheinen mit Monacos Einfärbung im Farbschema „Dark“, in der Sprache aus der Angabe nach den drei Backticks.
+- **Mermaid:**
+  - Blöcke mit der Sprache `mermaid` zeichnet die mitgelieferte Mermaid-Bibliothek als SVG, im dunklen Schema und mit strenger Sicherheitsstufe.
+  - Die Bibliothek ist gross und wird erst geladen, wenn eine Datei ein Mermaid-Diagramm enthält.
+  - Ein fehlerhaftes Diagramm zeigt an seiner Stelle die Fehlermeldung; der Rest der Vorschau bleibt.
+- **Bilder:** Relative Bildpfade werden gegen den Ordner der `.md`-Datei aufgelöst und über den Vertrag als Daten geladen, wie bei Bild-Tabs, höchstens 10 MB pro Bild. Pfade ausserhalb des Projekts und Bilder aus dem Netz werden nicht geladen; an ihrer Stelle steht der Alternativtext.
+- **Synchrones Scrollen:** markdown-it liefert zu jedem Block die Quellzeilen. In der geteilten Ansicht scrollt die Vorschau so, dass der Block zur obersten sichtbaren Editorzeile oben steht. Die Richtung ist nur Editor → Vorschau.
+- **Links:** Web-Links (http, https, mailto) öffnen im Standardbrowser über den Port „Shell-Aktionen“, im Testmodus nur aufgezeichnet. Relative Links und Anker werden in dieser Version nicht verfolgt; beim Überfahren zeigt ein Tooltip das Ziel.
+- **Grenze:** Die Vorschau gibt es für Dateien bis 5 MB, wie die Sprachfunktionen; darüber öffnet nur der Editor.
+- **Aussehen:** dunkel, passend zum übrigen Codium und angelehnt an die Markdown-Vorschau von IntelliJ.
 
 ### Dateien, Dateiüberwachung und Suche
 
@@ -583,6 +612,7 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
   - TypeScript 7 (als Laufzeit-Bestandteil für den nativen Sprachserver), typescript-language-server und gegebenenfalls TypeScript 6 für den Rückfall
   - jdtls und Lombok
   - JetBrains Mono
+  - markdown-it, DOMPurify und Mermaid für die Markdown-Vorschau
 - **jdtls** wird beim Bauen in einer festen Version geholt und anhand einer im Repository hinterlegten Prüfsumme kontrolliert, nicht im Repository abgelegt; ein lokaler Zwischenspeicher vermeidet erneutes Herunterladen. Der Installer wird dadurch etwa 50 MB grösser.
 - **Native und ausführbare Teile** werden ausserhalb des App-Archivs abgelegt, damit sie gestartet werden können: node-pty wie in THub, ripgrep, jdtls, Lombok, die TypeScript-Sprachserver und das README für „Open README“. Das Bauen bleibt ohne erneutes Kompilieren nativer Module, wie im Grundgerüst eingestellt.
 - **Monaco und sein Worker** werden mit esbuild gebündelt und lokal geladen.
@@ -714,8 +744,13 @@ Für Teststelle 2 und jede automatische Prüfung der echten App gibt es einen Te
   - Terminal öffnet im Projektordner mit cmd und führt einen Befehl aus
   - Datenbank (embedded-postgres): Verbindung anlegen, Tabelle öffnen, Zellen ändern, Submit
   - Hinweis bei fehlendem Git (über die Testmodus-Variable)
+  - Markdown: `.md` öffnet geteilt, die Vorschau zeigt Überschrift, Tabelle, ein Mermaid-Diagramm als SVG und ein Bild aus dem Projekt; Tippen aktualisiert die Vorschau; die Ansicht „Preview“ übersteht einen Neustart; ein Web-Link landet in der Aufzeichnung des Testmodus; ein Skript im Markdown läuft nicht
 - Diese Tests bilden einen dritten Testlauf mit eigener Konfiguration, getrennt vom schnellen und vom langsamen; die Electron-Sperre der Kern-Tests gilt dort nicht.
 - Prüfungen am gepackten Installationspaket (ob ripgrep, node-pty, die Sprachserver und das README startbar bzw. auffindbar sind) laufen über ein eigenes Prüfskript ohne Fenster.
+
+### Reine Funktionen der Oberfläche
+
+Wo die Oberfläche eigene Logik ohne DOM hat (etwa Markdown in HTML samt Quellzeilen, Auflösen von Bildpfaden, Einordnen von Links), testet der schnelle Lauf diese Funktionen direkt in Node.
 
 ### Nicht automatisch getestet
 
@@ -748,7 +783,8 @@ Für Teststelle 2 und jede automatische Prüfung der echten App gibt es einen Te
   - „Neue Java-Klasse“ mit Gerüst
 - **Ausführen und Debuggen**, also Run-Konfigurationen, Testläufe aus der IDE, Debugger, Build-Werkzeugfenster für Maven oder Gradle.
 - **Editor und Navigation:**
-  - geteilter Code-Bereich, Vorschau-Tab, Vorschau von Markdown
+  - geteilter Code-Bereich, Vorschau-Tab
+  - in der Markdown-Vorschau: Folgen relativer Links und Anker, Bilder aus dem Netz, Bearbeiten in der Vorschau, Scrollen von der Vorschau zurück in den Editor, Export nach HTML oder PDF
   - Ziehen und Ablegen im Dateibaum
   - Überall suchen (zweimal Shift), Ersetzen im ganzen Projekt, Aktionen suchen
   - Umstellen der Kodierung einer Datei
@@ -777,9 +813,10 @@ Die Umsetzung folgt dieser Reihenfolge; nach jeder Etappe steht eine benutzbare 
    - Projekte öffnen, Willkommensfenster, mehrere Fenster, Beenden, Klonen, gespeicherter Zustand
    - Dateibaum (ohne Git-Farben)
    - Editor mit Tabs, Farben und automatischem Speichern
+   - Markdown-Vorschau
    - Dateisuche und Projektsuche, Werkzeugfenster „Find“
    - Einstellungen, JDK-Erkennung, Prüfung der Voraussetzungen, README-Abschnitt „Voraussetzungen“
-   - User Stories 1–14, 15–17, 19–25, 28–33, 34 (ohne Terminal), 35–62, 64, 66–73, 172–182; dazu 21 ohne die Kürzel für Terminal und Git
+   - User Stories 1–14, 15–17, 19–25, 28–33, 34 (ohne Terminal), 35–62, 64, 66–73, 172–190; dazu 21 ohne die Kürzel für Terminal und Git
 2. **Terminal:** User Stories 18 (Terminal), 34 („Open in Terminal“), 145–151.
 3. **Sprachverständnis Java und TypeScript:** User Stories 63, 65, 74–90. Technisch der riskanteste Teil, deshalb früh.
 4. **Git-Grundlagen:**
@@ -845,3 +882,9 @@ Diese Punkte wurden beim Schreiben der Spezifikation oder nach dem Review ergän
 28. **Keine eigenen Sprachfunktionen für JSON, CSS und HTML:** Monacos eingebaute Prüfungen sind abgeschaltet, diese Dateien bekommen nur Farben.
 29. **Rückfragen in der Oberfläche** statt Dialogen von Windows, damit sie einheitlich aussehen und sich automatisch testen lassen.
 30. **Tastenkürzel im Terminal:** Nur die Kürzel für Werkzeugfenster und Einstellungen wirken dort als IDE-Kürzel, alles andere geht an die Shell.
+31. **Markdown-Vorschau** (mit dem Nutzer abgestimmt): wie in IntelliJ mit „Editor“, „Split“ und „Preview“, Standard „Split“, mit Mermaid-Diagrammen, Bildern aus dem Projekt und synchronem Scrollen. Relative Links werden nicht verfolgt.
+32. **HTML in Markdown** wird dargestellt, aber mit DOMPurify bereinigt.
+33. **Bilder in der Vorschau** nur aus dem Projekt und höchstens 10 MB, keine Bilder aus dem Netz.
+34. **Web-Links in der Vorschau** öffnen im Standardbrowser; dafür bekommt der Port „Shell-Aktionen“ eine Funktion zum Öffnen von Web-Adressen.
+35. **Synchrones Scrollen** nur vom Editor zur Vorschau.
+36. **Ansicht pro Datei** im Projekt-Zustand gemerkt; Vorschau nur für Dateien bis 5 MB.

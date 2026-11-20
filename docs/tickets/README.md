@@ -86,6 +86,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 | 20 | [Datenbank: Verbindungen und Baum](20-datenbank-verbindungen.md) | AFK | 03 | 6 | offen |
 | 21 | [Datenbank: Tabelleninhalt und Bearbeiten](21-datenbank-tabellen.md) | AFK | 05, 20 | 6 | offen |
 | 22 | [README und Abnahme auf einem frischen Rechner](22-abschluss.md) | HITL | alle | – | offen |
+| 23 | [Markdown-Vorschau](23-markdown-vorschau.md) | AFK | 05 | 1 | offen |
 
 ```mermaid
 flowchart LR
@@ -123,12 +124,14 @@ flowchart LR
   T18 --> T22
   T19 --> T22
   T21 --> T22
+  T05 --> T23[23 Markdown-Vorschau]
+  T23 --> T22
 ```
 
-**Reihenfolge:** nach Etappen, also 01 bis 10, dann 11, dann 12 bis 14, dann 15 bis 18, dann 19, dann 20 und 21, zuletzt 22.
+**Reihenfolge:** nach Etappen, also 01 bis 10 und 23 (gleich nach 05, weil Markdown-Dateien im Alltag schon jetzt wichtig sind), dann 11, dann 12 bis 14, dann 15 bis 18, dann 19, dann 20 und 21, zuletzt 22.
 
 **Parallel möglich**, wenn es schneller gehen soll:
-- 06, 07, 08 und 09 nach 05
+- 06, 07, 08, 09 und 23 nach 05
 - 10 neben 06 bis 08, sobald 09 fertig ist
 - 17 und 18
 - 20 ist nur durch 03 blockiert und könnte vorgezogen werden; die vereinbarte Reihenfolge stellt die Datenbank aber bewusst ans Ende.
