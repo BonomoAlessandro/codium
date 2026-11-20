@@ -2,11 +2,15 @@
 // Aktivierung und ohne Taskleisten-Eintrag; „nach vorne holen“ wird nur aufgezeichnet, und Fenster melden
 // keine Lage zum Speichern.
 
-import { BrowserWindow, nativeTheme, screen } from 'electron';
-import type { Bounds, DisplayInfo, WindowOpenOptions, WindowPort } from '../core/ports';
+import { app, BrowserWindow, nativeTheme, screen } from 'electron';
+import type { Bounds, DisplayInfo, WindowKind, WindowOpenOptions, WindowPlacement, WindowPort } from '../core/ports';
 import type { TestMode, TestRecorder } from '../testMode';
 
-const DEFAULT_SIZE = { width: 1280, height: 800 };
+/** Grösse eines Fensters ohne gespeicherte Lage; es öffnet dann zentriert auf dem Hauptbildschirm. */
+const DEFAULT_SIZE: Record<WindowKind, { width: number; height: number }> = {
+  project: { width: 1280, height: 800 },
+  welcome: { width: 820, height: 560 },
+};
 
 export interface ElectronWindowPortOptions {
   preloadFile: string;
@@ -16,10 +20,12 @@ export interface ElectronWindowPortOptions {
 }
 
 export class ElectronWindowPort implements WindowPort {
-  private readonly closedListeners: Array<(windowId: number, lastBounds: Bounds | null) => void> = [];
+  private readonly closedListeners: Array<(windowId: number, lastPlacement: WindowPlacement | null) => void> = [];
   private readonly focusedListeners: Array<(windowId: number) => void> = [];
   private readonly readyListeners: Array<(windowId: number) => void> = [];
   private readonly sessionEndListeners: Array<() => void> = [];
+  /** Ob ein Fenster maximiert ist; bleibt stehen, solange es minimiert ist (dann meldet Electron „nicht maximiert“). */
+  private readonly maximized = new Map<number, boolean>();
   private sessionEnded = false;
 
   constructor(private readonly options: ElectronWindowPortOptions) {}
@@ -27,7 +33,7 @@ export class ElectronWindowPort implements WindowPort {
   open(options: WindowOpenOptions): number {
     const hidden = this.options.testMode.hidden;
     const win = new BrowserWindow({
-      ...(options.bounds ?? DEFAULT_SIZE),
+      ...(options.placement?.bounds ?? DEFAULT_SIZE[options.kind]),
       // Testmodus: ausserhalb des Bildschirms und ohne Taskleisten-Eintrag.
       ...(hidden ? { x: -32000, y: -32000, skipTaskbar: true } : {}),
       minWidth: 720,
@@ -44,20 +50,28 @@ export class ElectronWindowPort implements WindowPort {
       },
     });
     const id = win.id;
+    // Im Testmodus wird nie maximiert: Das holte das Fenster auf den Bildschirm.
+    const maximize = !hidden && options.placement?.maximized === true;
+    this.maximized.set(id, maximize);
 
     // Das Fenster zeigt nur die eigene Oberfläche. Ein auf das Fenster gezogener Link oder eine Datei würde
     // sonst wegnavigieren, und eine fremde Seite bekäme Zugriff auf die API aus dem Preload.
     win.webContents.on('will-navigate', (event) => event.preventDefault());
     win.webContents.on('will-redirect', (event) => event.preventDefault());
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    // Den Titel bestimmt der Kern („Projektname – Codium“), nicht das <title> der Seite.
+    win.on('page-title-updated', (event) => event.preventDefault());
 
+    win.on('maximize', () => this.maximized.set(id, true));
+    win.on('unmaximize', () => this.maximized.set(id, false));
     // Die Lage wird gelesen, solange das Fenster noch existiert; im Testmodus wird keine Lage gemeldet.
-    let lastBounds: Bounds | null = null;
+    let lastPlacement: WindowPlacement | null = null;
     win.on('close', () => {
-      if (!hidden && !win.isDestroyed()) lastBounds = win.getNormalBounds();
+      lastPlacement = this.placement(id);
     });
     win.on('closed', () => {
-      for (const listener of this.closedListeners) listener(id, lastBounds);
+      this.maximized.delete(id);
+      for (const listener of this.closedListeners) listener(id, lastPlacement);
     });
     win.on('focus', () => {
       for (const listener of this.focusedListeners) listener(id);
@@ -72,8 +86,13 @@ export class ElectronWindowPort implements WindowPort {
     });
 
     win.once('ready-to-show', () => {
-      if (hidden) win.showInactive();
-      else win.show();
+      if (hidden) {
+        win.showInactive();
+        return;
+      }
+      // Maximiert öffnen: Darunter bleibt die gespeicherte normale Lage, „Wiederherstellen“ führt dorthin.
+      if (maximize) win.maximize();
+      win.show();
     });
     void win.loadFile(this.options.indexFile);
     this.options.recorder.record('window-opened', { windowId: id, kind: options.kind, title: options.title });
@@ -111,6 +130,14 @@ export class ElectronWindowPort implements WindowPort {
     else win.setBounds(bounds);
   }
 
+  placement(windowId: number): WindowPlacement | null {
+    if (this.options.testMode.hidden) return null;
+    const win = BrowserWindow.fromId(windowId);
+    if (!win || win.isDestroyed()) return null;
+    const maximized = win.isMinimized() ? (this.maximized.get(windowId) ?? false) : win.isMaximized();
+    return { bounds: win.getNormalBounds(), maximized };
+  }
+
   displays(): DisplayInfo[] {
     const primaryId = screen.getPrimaryDisplay().id;
     return screen.getAllDisplays().map((d) => ({
@@ -121,7 +148,11 @@ export class ElectronWindowPort implements WindowPort {
     }));
   }
 
-  onClosed(listener: (windowId: number, lastBounds: Bounds | null) => void): void {
+  quit(): void {
+    app.quit();
+  }
+
+  onClosed(listener: (windowId: number, lastPlacement: WindowPlacement | null) => void): void {
     this.closedListeners.push(listener);
   }
 

@@ -46,13 +46,14 @@ describe('App-Kern', () => {
 
     it('behält den Projekt-Zustand', async () => {
       const { project, test } = setup();
-      (await test.core.openProjectCore(project, openWindow(test))).updateState((state) => {
-        state.windowBounds = { x: 10, y: 20, width: 900, height: 700 };
-      });
+      const windowId = openWindow(test);
+      await test.core.openProjectCore(project, windowId);
+      // Die Fensterlage ist bisher das einzige Feld des Projekt-Zustands; der Kern sichert sie beim Beenden.
+      test.ports.windows.simulatePlacement(windowId, { bounds: { x: 10, y: 20, width: 900, height: 700 }, maximized: true });
 
       const after = await restart(test);
       const reopened = await after.core.openProjectCore(project, openWindow(after));
-      expect(reopened.state.windowBounds).toEqual({ x: 10, y: 20, width: 900, height: 700 });
+      expect(reopened.state.window).toEqual({ bounds: { x: 10, y: 20, width: 900, height: 700 }, maximized: true });
     });
 
     it('legt eine kaputte Zustandsdatei beiseite und startet leer', async () => {
@@ -84,13 +85,13 @@ describe('App-Kern', () => {
   describe('Projektpfade in unterschiedlicher Schreibweise', () => {
     it('führen zum selben Projekt-Zustand', async () => {
       const { project, test } = setup();
-      (await test.core.openProjectCore(project, openWindow(test))).updateState((state) => {
-        state.windowBounds = { x: 1, y: 2, width: 800, height: 600 };
-      });
+      const windowId = openWindow(test);
+      await test.core.openProjectCore(project, windowId);
+      test.ports.windows.simulatePlacement(windowId, { bounds: { x: 1, y: 2, width: 800, height: 600 }, maximized: false });
 
       const after = await restart(test);
       const variant = `${project.toUpperCase().replace(/\\/g, '/')}/`;
-      expect((await after.core.openProjectCore(variant, openWindow(after))).state.windowBounds).toEqual({
+      expect((await after.core.openProjectCore(variant, openWindow(after))).state.window?.bounds).toEqual({
         x: 1,
         y: 2,
         width: 800,
@@ -153,13 +154,13 @@ describe('App-Kern', () => {
         throw new Error('kaputt');
       });
       projectCore.updateState((state) => {
-        state.windowBounds = { x: 0, y: 0, width: 1000, height: 700 };
+        state.window = { bounds: { x: 0, y: 0, width: 1000, height: 700 }, maximized: false };
       });
 
       await test.core.closeProjectCore(windowId);
       expect(otherRan).toBe(true);
       expect(test.logs.join('\n')).toContain('kaputt');
-      expect(JSON.parse(fs.readFileSync(projectStateFile(test, project), 'utf8')).windowBounds.width).toBe(1000);
+      expect(JSON.parse(fs.readFileSync(projectStateFile(test, project), 'utf8')).window.bounds.width).toBe(1000);
     });
 
     it('bricht eine hängende Aufräumarbeit nach dem Zeitlimit ab', async () => {
@@ -232,14 +233,16 @@ describe('App-Kern', () => {
         cleaned = true;
       });
       projectCore.updateState((state) => {
-        state.windowBounds = { x: 5, y: 5, width: 640, height: 480 };
+        state.window = { bounds: { x: 5, y: 5, width: 640, height: 480 }, maximized: false };
       });
+      // Der Nutzer hat das Fenster inzwischen verschoben; geschlossen meldet es diese Lage.
+      test.ports.windows.simulatePlacement(windowId, { bounds: { x: 5, y: 5, width: 640, height: 480 }, maximized: false });
 
       // Letztes Fenster zu: Der Abbau läuft, gleich darauf beendet sich die App.
       test.ports.windows.close(windowId);
       await test.core.shutdown();
       expect(cleaned).toBe(true);
-      expect(JSON.parse(fs.readFileSync(projectStateFile(test, project), 'utf8')).windowBounds.width).toBe(640);
+      expect(JSON.parse(fs.readFileSync(projectStateFile(test, project), 'utf8')).window.bounds.width).toBe(640);
     });
 
     it('öffnet kein Projekt in einem Fenster, das während des Wartens geschlossen wurde', async () => {
@@ -265,13 +268,13 @@ describe('App-Kern', () => {
         firstGone = true;
       });
       first.updateState((state) => {
-        state.windowBounds = { x: 7, y: 7, width: 777, height: 555 };
+        state.window = { bounds: { x: 7, y: 7, width: 777, height: 555 }, maximized: false };
       });
 
       void test.core.closeProjectCore(windowId);
       const reopened = await test.core.openProjectCore(project, openWindow(test));
       expect(firstGone).toBe(true);
-      expect(reopened.state.windowBounds?.width).toBe(777);
+      expect(reopened.state.window?.bounds.width).toBe(777);
       expect(test.core.projectCores).toEqual([reopened]);
     });
   });

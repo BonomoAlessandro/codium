@@ -14,6 +14,7 @@ import type {
   ShellActionsPort,
   SystemPort,
   WindowOpenOptions,
+  WindowPlacement,
   WindowPort,
 } from '../../src/main/core/ports';
 import { NodeSystem } from '../../src/main/system/nodeSystem';
@@ -25,6 +26,9 @@ export const PRIMARY_DISPLAY: DisplayInfo = {
   primary: true,
 };
 
+/** Lage eines Fensters, das ohne gespeicherte Lage öffnet. */
+export const DEFAULT_PLACEMENT: WindowPlacement = { bounds: { x: 100, y: 100, width: 1280, height: 800 }, maximized: false };
+
 export class FakeWindowPort implements WindowPort {
   readonly opened: Array<{ windowId: number } & WindowOpenOptions> = [];
   readonly focused: number[] = [];
@@ -32,9 +36,11 @@ export class FakeWindowPort implements WindowPort {
   displayList: DisplayInfo[] = [PRIMARY_DISPLAY];
   /** Ob ein geöffnetes Fenster sofort „bereit“ meldet, wie nach dem Laden der Seite. */
   autoReady = true;
+  /** Wie oft der Kern verlangt hat, die App zu beenden. */
+  quitRequests = 0;
   private nextId = 1;
-  private readonly bounds = new Map<number, Bounds>();
-  private readonly closedListeners: Array<(windowId: number, lastBounds: Bounds | null) => void> = [];
+  private readonly placements = new Map<number, WindowPlacement>();
+  private readonly closedListeners: Array<(windowId: number, lastPlacement: WindowPlacement | null) => void> = [];
   private readonly focusedListeners: Array<(windowId: number) => void> = [];
   private readonly readyListeners: Array<(windowId: number) => void> = [];
   private readonly sessionEndListeners: Array<() => void> = [];
@@ -42,7 +48,7 @@ export class FakeWindowPort implements WindowPort {
   open(options: WindowOpenOptions): number {
     const windowId = this.nextId++;
     this.opened.push({ windowId, ...options });
-    this.bounds.set(windowId, options.bounds ?? { x: 100, y: 100, width: 1280, height: 800 });
+    this.placements.set(windowId, structuredClone(options.placement ?? DEFAULT_PLACEMENT));
     if (this.autoReady) this.simulateReady(windowId);
     return windowId;
   }
@@ -53,26 +59,36 @@ export class FakeWindowPort implements WindowPort {
 
   /** Schliesst ein Fenster so, wie der Nutzer es täte: Die Meldung samt letzter Lage kommt über `onClosed`. */
   close(windowId: number): void {
-    const lastBounds = this.bounds.get(windowId);
-    if (!lastBounds) return;
+    const lastPlacement = this.placements.get(windowId);
+    if (!lastPlacement) return;
     this.closed.push(windowId);
-    this.bounds.delete(windowId);
-    for (const listener of this.closedListeners) listener(windowId, lastBounds);
+    this.placements.delete(windowId);
+    for (const listener of this.closedListeners) listener(windowId, lastPlacement);
   }
 
   getBounds(windowId: number): Bounds | null {
-    return this.bounds.get(windowId) ?? null;
+    return this.placements.get(windowId)?.bounds ?? null;
   }
 
   setBounds(windowId: number, bounds: Bounds): void {
-    if (this.bounds.has(windowId)) this.bounds.set(windowId, bounds);
+    const placement = this.placements.get(windowId);
+    if (placement) this.placements.set(windowId, { ...placement, bounds });
+  }
+
+  placement(windowId: number): WindowPlacement | null {
+    const placement = this.placements.get(windowId);
+    return placement ? structuredClone(placement) : null;
   }
 
   displays(): DisplayInfo[] {
     return this.displayList;
   }
 
-  onClosed(listener: (windowId: number, lastBounds: Bounds | null) => void): void {
+  quit(): void {
+    this.quitRequests++;
+  }
+
+  onClosed(listener: (windowId: number, lastPlacement: WindowPlacement | null) => void): void {
     this.closedListeners.push(listener);
   }
 
@@ -93,6 +109,23 @@ export class FakeWindowPort implements WindowPort {
     for (const listener of this.focusedListeners) listener(windowId);
   }
 
+  /** Der Nutzer verschiebt ein Fenster, vergrössert es oder maximiert es. */
+  simulatePlacement(windowId: number, placement: WindowPlacement): void {
+    if (this.placements.has(windowId)) this.placements.set(windowId, structuredClone(placement));
+  }
+
+  /** Das Fenster eines Titels; wirft, wenn es nicht genau eines gibt, das noch offen ist. */
+  windowTitled(title: string): number {
+    const matches = this.opened.filter((w) => w.title === title && this.placements.has(w.windowId));
+    if (matches.length !== 1) throw new Error(`${matches.length} offene Fenster mit dem Titel ${title}`);
+    return matches[0].windowId;
+  }
+
+  /** Die Titel der offenen Fenster in der Reihenfolge des Öffnens. */
+  get openTitles(): string[] {
+    return this.opened.filter((w) => this.placements.has(w.windowId)).map((w) => w.title);
+  }
+
   /** Die Seite eines Fensters ist geladen. */
   simulateReady(windowId: number): void {
     for (const listener of this.readyListeners) listener(windowId);
@@ -105,7 +138,7 @@ export class FakeWindowPort implements WindowPort {
 
   /** Die offenen Fenster. */
   get openWindowIds(): number[] {
-    return [...this.bounds.keys()];
+    return [...this.placements.keys()];
   }
 }
 

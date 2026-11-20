@@ -30,6 +30,15 @@ export function projectKey(projectPath: string): string {
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
 
+/** Ob der Projektordner da ist (ein Ordner, keine Datei). */
+export function projectFolderExists(projectPath: string): boolean {
+  try {
+    return fs.statSync(projectPath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 /** Anzeigename eines Projekts: der Name seines Ordners (beim Laufwerk der Pfad selbst). */
 export function projectName(projectPath: string): string {
   const normalized = normalizeProjectPath(projectPath);

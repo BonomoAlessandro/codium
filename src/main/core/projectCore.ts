@@ -29,8 +29,10 @@ export class ProjectCore {
     private readonly events: EventSink,
     private readonly log: (message: string) => void = () => {},
     private readonly cleanupTimeoutMs = DEFAULT_CLEANUP_TIMEOUT_MS,
+    /** Schon gelesener Zustand (etwa für die Fensterlage vor dem Öffnen); ohne Angabe liest der Kern ihn selbst. */
+    initialState?: ProjectState,
   ) {
-    this.projectState = stateFile.load();
+    this.projectState = initialState ?? stateFile.load();
   }
 
   get name(): string {

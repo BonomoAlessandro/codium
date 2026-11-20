@@ -16,11 +16,38 @@ export interface ProjectInfo {
   name: string;
 }
 
+/** Was das anfragende Fenster ist: das Willkommensfenster oder ein Projektfenster. */
+export type WindowInfo =
+  | { kind: 'welcome'; title: string }
+  | { kind: 'project'; title: string; project: ProjectInfo };
+
+/** Ein Eintrag der zuletzt geöffneten Projekte. */
+export interface RecentProject {
+  /** Normalisierter absoluter Pfad des Projektordners. */
+  path: string;
+  name: string;
+  /** Ob der Ordner beim Abfragen da war. */
+  exists: boolean;
+}
+
 /** Eine Meldung des Kerns an ein Fenster. */
 export interface Notice {
   level: 'info' | 'success' | 'error';
   text: string;
 }
+
+/**
+ * Codes gescheiterter Befehle, auf die die Oberfläche reagiert. Die Meldung eines solchen Fehlers ist englisch
+ * und lässt sich so anzeigen.
+ */
+export const ErrorCode = {
+  /** Der Projektordner fehlt; `data.path` ist der Pfad. */
+  projectNotFound: 'PROJECT_NOT_FOUND',
+  /** Codium wird gerade beendet und öffnet nichts mehr. */
+  shuttingDown: 'SHUTTING_DOWN',
+  /** Ein Parameter fehlt oder hat die falsche Form. */
+  invalidParams: 'INVALID_PARAMS',
+} as const;
 
 /**
  * Alle Befehle: Name → Parameter und Ergebnis. Ein Befehl ohne Parameter hat `params: void` und wird ohne
@@ -31,6 +58,24 @@ export interface Commands {
   'app.info': { params: void; result: AppInfo };
   /** Das Projekt des anfragenden Fensters, `null` ohne Projekt (etwa im Willkommensfenster). */
   'project.info': { params: void; result: ProjectInfo | null };
+  /** Art und Titel des anfragenden Fensters; `null` für ein Fenster, das der Kern nicht kennt. */
+  'window.info': { params: void; result: WindowInfo | null };
+  /** Die zuletzt geöffneten Projekte, neueste zuerst. */
+  'app.recentProjects': { params: void; result: RecentProject[] };
+  /**
+   * „Open Folder“: Ordnerauswahl, dann das Projekt öffnen wie `app.openProject`. `null`, wenn die Auswahl
+   * abgebrochen wurde.
+   */
+  'app.openFolder': { params: void; result: ProjectInfo | null };
+  /**
+   * Öffnet ein Projekt in einem neuen Fenster. Ist es schon offen, kommt sein Fenster nach vorne. Ein offenes
+   * Willkommensfenster schliesst sich. Fehlt der Ordner, scheitert der Befehl mit `PROJECT_NOT_FOUND`.
+   */
+  'app.openProject': { params: { path: string }; result: ProjectInfo };
+  /** Entfernt ein Projekt aus den zuletzt geöffneten und liefert die neue Liste. */
+  'app.removeRecentProject': { params: { path: string }; result: RecentProject[] };
+  /** „Exit“: beendet Codium; alle offenen Projekte öffnen beim nächsten Start wieder. */
+  'app.exit': { params: void; result: void };
 }
 
 /** Alle Ereignisse: Name → Nutzlast. */

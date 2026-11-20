@@ -34,10 +34,19 @@ export function createTestCore(dataDir: string, options: TestCoreOptions = {}): 
 }
 
 /**
- * Simuliert einen Neustart: Der alte Kern wird beendet (schreibt seinen Zustand), ein neuer Kern startet auf
- * demselben Datenordner mit frischen Ports.
+ * Beendet die App so, wie der Hauptprozess es tut: Der Kern wird abgebaut (schreibt seinen Zustand), danach
+ * schliessen sich alle noch offenen Fenster.
+ */
+export async function quitApp(test: TestCore): Promise<void> {
+  await test.core.shutdown();
+  for (const windowId of test.ports.windows.openWindowIds) test.ports.windows.close(windowId);
+}
+
+/**
+ * Simuliert einen Neustart: Die alte App wird beendet (`quitApp`), ein neuer Kern entsteht auf demselben
+ * Datenordner mit frischen Ports. Gestartet wird er erst mit `core.start()`, damit Tests vorher eingreifen können.
  */
 export async function restart(previous: TestCore, options: TestCoreOptions = {}): Promise<TestCore> {
-  await previous.core.shutdown();
+  await quitApp(previous);
   return createTestCore(previous.dataDir, options);
 }

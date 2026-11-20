@@ -21,31 +21,48 @@ export interface DisplayInfo {
 /** Was für ein Fenster geöffnet wird. */
 export type WindowKind = 'welcome' | 'project';
 
+/** Lage eines Fensters, wie sie gespeichert und beim Öffnen angewendet wird. */
+export interface WindowPlacement {
+  /** Normale Lage und Grösse, auch wenn das Fenster maximiert ist („Wiederherstellen“ führt dorthin). */
+  bounds: Bounds;
+  maximized: boolean;
+}
+
 export interface WindowOpenOptions {
   kind: WindowKind;
   /** Fenstertitel, etwa „Projektname – Codium“. */
   title: string;
-  /** Gespeicherte Lage; ohne sie wählt das Fenster eine Standardgrösse. */
-  bounds?: Bounds;
+  /** Gespeicherte Lage; ohne sie öffnet das Fenster zentriert in einer Standardgrösse. */
+  placement?: WindowPlacement;
 }
 
-/** Fenster öffnen, nach vorne holen, schliessen; Lage; angeschlossene Bildschirme. */
+/** Fenster öffnen, nach vorne holen, schliessen; Lage; angeschlossene Bildschirme; Beenden der App. */
 export interface WindowPort {
   /** Öffnet ein Fenster und liefert seine Kennung. */
   open(options: WindowOpenOptions): number;
   /** Holt ein Fenster nach vorne (im Testmodus nur aufgezeichnet). */
   focus(windowId: number): void;
-  /** Schliesst ein Fenster. */
+  /** Schliesst ein Fenster; die Meldung kommt über `onClosed`. */
   close(windowId: number): void;
   /** Normale Lage und Grösse (auch im maximierten Zustand), `null` für ein unbekanntes Fenster. */
   getBounds(windowId: number): Bounds | null;
   setBounds(windowId: number, bounds: Bounds): void;
+  /**
+   * Die Lage eines offenen Fensters zum Speichern. `null` für ein unbekanntes Fenster und im Testmodus, weil
+   * Fenster dort ihre Lage nicht speichern.
+   */
+  placement(windowId: number): WindowPlacement | null;
   displays(): DisplayInfo[];
   /**
-   * Meldet, wenn ein Fenster geschlossen wurde, mit seiner letzten normalen Lage (gelesen, solange es noch
-   * existierte). Im Testmodus ist die Lage `null`, weil Fenster dort ihre Lage nicht speichern.
+   * Beendet die App. Vorher baut der Hauptprozess den Kern ab (`AppCore.shutdown`), danach schliessen sich alle
+   * Fenster.
    */
-  onClosed(listener: (windowId: number, lastBounds: Bounds | null) => void): void;
+  quit(): void;
+  /**
+   * Meldet, wenn ein Fenster geschlossen wurde, mit seiner letzten Lage (gelesen, solange es noch existierte).
+   * Im Testmodus ist die Lage `null`, weil Fenster dort ihre Lage nicht speichern.
+   */
+  onClosed(listener: (windowId: number, lastPlacement: WindowPlacement | null) => void): void;
   /** Meldet, wenn ein Fenster den Fokus bekommt (für „zuletzt benutztes Fenster“). */
   onFocused(listener: (windowId: number) => void): void;
   /** Meldet, wenn die Seite eines Fensters geladen und bereit für Ereignisse ist (auch nach Neuladen). */

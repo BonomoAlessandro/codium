@@ -34,19 +34,21 @@ app.setPath('userData', dataDir);
 let core: AppCore | null = null;
 let quitState: 'running' | 'stopping' | 'done' = 'running';
 
-// Nur eine Instanz: Ein zweiter Start gibt sofort auf, die laufende holt ihr Fenster nach vorne.
+// Nur eine Instanz: Ein zweiter Start gibt sofort auf, die laufende holt ihr zuletzt benutztes Fenster nach vorne.
 if (app.requestSingleInstanceLock()) {
-  app.on('second-instance', bringWindowToFront);
+  app.on('second-instance', () => core?.secondInstanceStarted());
   app.whenReady().then(start);
+  // Wann Codium endet, entscheidet der Kern (letztes Fenster zu, „Exit“, Abmelden von Windows). Sind alle
+  // Fenster zu, hat er das Beenden schon verlangt; das hier ist nur die Absicherung.
   app.on('window-all-closed', () => app.quit());
   app.on('before-quit', onBeforeQuit);
 } else {
   app.quit();
 }
 
-function start(): void {
+async function start(): Promise<void> {
   try {
-    startCore();
+    await startCore();
   } catch (err) {
     // Ohne Kern gibt es kein Fenster; statt eines unsichtbaren, hängenden Prozesses melden und beenden.
     console.error('Codium konnte nicht starten:', err);
@@ -55,7 +57,7 @@ function start(): void {
   }
 }
 
-function startCore(): void {
+async function startCore(): Promise<void> {
   // Im Dev-Modus ein Menü mit DevTools und Neu laden; die installierte App hat keines.
   Menu.setApplicationMenu(app.isPackaged ? null : Menu.buildFromTemplate(DEV_MENU));
 
@@ -89,13 +91,8 @@ function startCore(): void {
     return appCore.router.dispatch({ windowId }, message?.name, message?.params);
   });
 
-  // Vorerst ein einziges Fenster ohne Projekt; Projekt- und Willkommensfenster folgen mit Ticket 02.
-  appCore.ports.windows.open({ kind: 'welcome', title: 'Codium' });
-}
-
-function bringWindowToFront(): void {
-  const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
-  if (win && core) core.ports.windows.focus(win.id);
+  // Projekte, die beim Beenden offen waren, wieder öffnen; sonst das Willkommensfenster.
+  await appCore.start();
 }
 
 /** Geordnetes Beenden: Der Kern baut die Projekt-Kerne ab und schreibt den Zustand, erst dann endet die App. */
