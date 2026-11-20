@@ -1,4 +1,5 @@
-/* Design-Variablen. Hell und dunkel folgen vorerst dem Design von Windows (prefers-color-scheme). */
+/* Design-Variablen. Hell und dunkel folgen vorerst dem Design von Windows (prefers-color-scheme); Ticket 03
+   reduziert sie auf das dunkle Schema. */
 
 :root {
   --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
@@ -6,15 +7,29 @@
 
   color-scheme: light;
   --bg: #ffffff;
+  --bg-panel: #f7f8fa;
+  --bg-hover: #dfe1e5;
+  --border: #ebecf0;
   --text: #1e1f22;
   --text-muted: #6c707e;
+  --accent: #3574f0;
+  --accent-text: #ffffff;
+  --error: #db3b4b;
+  --error-bg: #fff2f3;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
     --bg: #1e1f22;
+    --bg-panel: #2b2d30;
+    --bg-hover: #393b40;
+    --border: #393b40;
     --text: #dfe1e5;
     --text-muted: #868a91;
+    --accent: #3574f0;
+    --accent-text: #ffffff;
+    --error: #f75464;
+    --error-bg: #402929;
   }
 }

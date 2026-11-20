@@ -3,6 +3,13 @@
 import * as path from 'node:path';
 import { AppCore } from '../../src/main/core/appCore';
 import { createFakePorts, FakeEventSink, type FakePorts, type FakeSystemOptions } from './fakePorts';
+import { beforeTempDirRemoval } from './tempDir';
+
+/** Alle Kerne des laufenden Tests; nach dem Test werden sie beendet, bevor ihre Temp-Ordner verschwinden. */
+const liveCores = new Set<TestCore>();
+beforeTempDirRemoval(async () => {
+  for (const test of [...liveCores]) await quitApp(test);
+});
 
 export interface TestCore {
   core: AppCore;
@@ -30,7 +37,9 @@ export function createTestCore(dataDir: string, options: TestCoreOptions = {}): 
     cleanupTimeoutMs: 200,
     log: (message) => logs.push(message),
   });
-  return { core, ports, events, logs, dataDir };
+  const test = { core, ports, events, logs, dataDir };
+  liveCores.add(test);
+  return test;
 }
 
 /**
@@ -40,6 +49,7 @@ export function createTestCore(dataDir: string, options: TestCoreOptions = {}): 
 export async function quitApp(test: TestCore): Promise<void> {
   await test.core.shutdown();
   for (const windowId of test.ports.windows.openWindowIds) test.ports.windows.close(windowId);
+  liveCores.delete(test);
 }
 
 /**

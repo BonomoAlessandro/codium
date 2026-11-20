@@ -12,22 +12,224 @@ body {
   font-size: 13px;
 }
 
-.placeholder {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
+button {
+  font: inherit;
+  color: inherit;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 12px;
+  cursor: pointer;
 }
 
-.placeholder h1 {
+button:hover {
+  background: var(--bg-hover);
+}
+
+.button-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.button-primary:hover {
+  background: var(--accent);
+  filter: brightness(1.1);
+}
+
+h2 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Willkommensfenster */
+
+.welcome {
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 32px 40px;
+}
+
+.welcome-header h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 600;
 }
 
-.placeholder p {
+.welcome-version {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+}
+
+.welcome-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.welcome-recent {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Zuletzt geöffnete Projekte */
+
+.recent-list {
+  list-style: none;
   margin: 0;
+  padding: 0;
+  overflow-y: auto;
+}
+
+.recent-item {
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+}
+
+.recent-item:hover {
+  background: var(--bg-hover);
+}
+
+.recent-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 6px 8px;
+}
+
+.recent-open:hover,
+.recent-remove:hover {
+  background: none;
+}
+
+.recent-name {
+  font-weight: 600;
+}
+
+.recent-path {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.recent-missing .recent-name,
+.recent-missing .recent-path {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.recent-remove {
+  visibility: hidden;
+  background: none;
+  border: none;
+  padding: 4px 10px;
+  color: var(--text-muted);
+}
+
+.recent-item:hover .recent-remove,
+.recent-remove:focus-visible {
+  visibility: visible;
+}
+
+.recent-empty {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+/* Platzhalter des Projektfensters */
+
+.project-placeholder {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.placeholder-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.placeholder-bar-name {
+  font-weight: 600;
+}
+
+.placeholder-bar-spacer {
+  flex: 1;
+}
+
+.placeholder-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 32px 40px;
+}
+
+.placeholder-body h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.placeholder-path {
+  margin: 2px 0 24px;
+  color: var(--text-muted);
+}
+
+/* Hinweise (vorläufig) */
+
+.notices {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 420px;
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.notice-error {
+  background: var(--error-bg);
+  border-color: var(--error);
+}
+
+.notice-text {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.notice-close {
+  background: none;
+  border: none;
+  padding: 2px 6px;
   color: var(--text-muted);
 }

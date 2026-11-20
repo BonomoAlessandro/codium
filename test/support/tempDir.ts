@@ -5,13 +5,24 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach } from 'vitest';
 
+const beforeRemoval: Array<() => void | Promise<void>> = [];
+
+/**
+ * Meldet eine Arbeit an, die nach jedem Test vor dem Löschen der Temp-Ordner läuft, etwa das Beenden von Kernen,
+ * die sonst noch entprellt in einen schon gelöschten Ordner schreiben und ihn dabei neu anlegen.
+ */
+export function beforeTempDirRemoval(work: () => void | Promise<void>): void {
+  beforeRemoval.push(work);
+}
+
 /**
  * Liefert eine Funktion, die Temp-Ordner anlegt. Alle so angelegten Ordner werden nach jedem Test gelöscht.
  * Im Modul oder in einem `describe` aufrufen, nicht im Test selbst.
  */
 export function useTempDirs(): (prefix?: string) => string {
   const created: string[] = [];
-  afterEach(() => {
+  afterEach(async () => {
+    for (const work of beforeRemoval) await work();
     for (const dir of created.splice(0)) removeDir(dir);
   });
   return (prefix = 'codium-test-') => {

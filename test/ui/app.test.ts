@@ -12,10 +12,12 @@ describe('App im Testmodus', () => {
   it('startet unsichtbar, zeigt die Oberfläche über den Vertrag, zeichnet auf und beendet sich wieder', async () => {
     const codium = await launchCodium({ dataRoot: tempDir() });
     try {
-      const page = await codium.app.firstWindow();
+      const page = await codium.page('Welcome to Codium');
       await expect.poll(() => page.locator('h1').textContent(), { timeout: 15_000 }).toBe('Codium');
       // Die Version kommt über den Vertrag aus dem Kern.
-      await expect.poll(() => page.locator('p').textContent(), { timeout: 15_000 }).toMatch(/^Version \d+\.\d+\.\d+/);
+      await expect
+        .poll(() => page.locator('.welcome-version').textContent(), { timeout: 15_000 })
+        .toMatch(/^Version \d+\.\d+\.\d+/);
 
       // Die Schutzversprechen des Testmodus: auf keinem Bildschirm sichtbar, ohne Fokus. Windows setzt die Lage
       // nicht genau auf die verlangten -32000, deshalb wird gegen alle Bildschirme geprüft.
