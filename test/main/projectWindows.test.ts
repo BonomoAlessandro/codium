@@ -236,8 +236,9 @@ describe('Projektfenster und Willkommensfenster', () => {
         });
         expect(await call(test, alphaWindow, 'app.openProject', { path: project('Beta') })).toMatchObject({ name: 'Beta' });
         expect(await call(test, alphaWindow, 'app.removeRecentProject', { path: onNetwork[1] })).toHaveLength(19);
-        // Von Z: hat nur eine einzige Abfrage gelesen; alle weiteren bekamen sofort „nicht erreichbar“.
-        expect(pipe.reads).toBe(1);
+        // Von Z: haben nur zwei Abfragen gelesen (die erste und die Rückfrage an die Wurzel des Laufwerks); alle
+        // weiteren bekamen sofort „nicht erreichbar“.
+        expect(pipe.reads).toBe(2);
       } finally {
         vi.restoreAllMocks();
         await pipe.close();

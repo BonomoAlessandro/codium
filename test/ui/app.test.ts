@@ -78,7 +78,9 @@ describe('App im Testmodus', () => {
         for (const handle of handles) await handle.close().catch(() => undefined);
         return { stat, pool: process.env.UV_THREADPOOL_SIZE };
       });
-      expect(result).toEqual({ stat: 'ok', pool: '16' });
+      // Die Abfrage kam durch, und die Variable ist wieder weg, damit Kindprozesse sie nicht erben.
+      expect(result.stat).toBe('ok');
+      expect(result.pool).toBeUndefined();
     } finally {
       await codium.close();
     }

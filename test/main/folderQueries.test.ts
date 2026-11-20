@@ -17,15 +17,24 @@ describe('Abfragen auf Projektordnern', () => {
     vi.restoreAllMocks();
   });
 
-  /** Abfragen auf das Laufwerk Z: lesen stattdessen von einer Pipe, die nie antwortet, und belegen so einen Thread. */
-  function hangOnDriveZ(pipe: NeverAnsweringPipe): void {
-    const onZ = (target: unknown) => String(target).toUpperCase().startsWith('Z:');
+  /**
+   * Abfragen auf Pfade, für die `hangs` zutrifft, lesen stattdessen von einer Pipe, die nie antwortet, und belegen
+   * so einen Thread. `answerWith` ersetzt die übrigen Abfragen auf diese Pfade (etwa nach einer späten Antwort).
+   */
+  function hangWhere(pipe: NeverAnsweringPipe, hangs: (target: string) => boolean, answerWith?: () => string): void {
     const stat = fs.promises.stat.bind(fs.promises);
     const realpath = fs.promises.realpath.bind(fs.promises);
     vi.spyOn(fs.promises, 'stat').mockImplementation(((target: fs.PathLike, ...rest: []) =>
-      onZ(target) ? pipe.hang() : stat(target, ...rest)) as unknown as typeof fs.promises.stat);
+      hangs(String(target)) ? pipe.hang() : stat(answerWith?.() ?? target, ...rest)) as unknown as typeof fs.promises.stat);
     vi.spyOn(fs.promises, 'realpath').mockImplementation(((target: fs.PathLike, ...rest: []) =>
-      onZ(target) ? pipe.hang() : realpath(target, ...rest)) as unknown as typeof fs.promises.realpath);
+      hangs(String(target)) ? pipe.hang() : realpath(target, ...rest)) as unknown as typeof fs.promises.realpath);
+  }
+
+  const onDriveZ = (target: string) => target.toUpperCase().startsWith('Z:');
+  /** Wartet, bis alle anstehenden Promise-Reaktionen gelaufen sind (etwa auf eine späte Antwort). */
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  function hangOnDriveZ(pipe: NeverAnsweringPipe): void {
+    hangWhere(pipe, onDriveZ);
   }
 
   it('vergleicht vorhandene Ordner über ihren echten Pfad, zeigt aber die angegebene Schreibweise', async () => {
@@ -77,8 +86,9 @@ describe('Abfragen auf Projektordnern', () => {
       let now = 0;
       const queries = new FolderQueries({ timeoutMs: 100, unreachableForMs: 1000, now: () => now });
 
-      // Viele Abfragen gleichzeitig auf das hängende Laufwerk, dazu immer wieder lokale: Die lokalen kommen durch,
-      // vom hängenden Laufwerk liest nur eine.
+      // Viele Abfragen gleichzeitig auf das hängende Laufwerk, dazu immer wieder lokale: Die lokalen kommen durch.
+      // Vom hängenden Laufwerk lesen nur zwei: die erste Abfrage und die Rückfrage an seine Wurzel, die ebenfalls
+      // hängt; danach ist das ganze Laufwerk gesperrt.
       const onZ = Array.from({ length: 40 }, (_, i) => `Z:\\Netz\\Projekt${i}`);
       const results = await Promise.all([
         ...onZ.map((p) => queries.folderStatus(p)),
@@ -87,12 +97,57 @@ describe('Abfragen auf Projektordnern', () => {
       expect(new Set(results)).toEqual(new Set(['unreachable']));
       for (let i = 0; i < 5; i++) expect(await queries.folderStatus(local)).toBe('exists');
       expect(await queries.resolveKey(local)).toEqual({ key: lexicalProjectKey(local), resolved: true });
-      expect(pipe.reads).toBe(1);
+      expect(pipe.reads).toBe(2);
 
-      // Auch nach Ablauf der Wartezeit kein zweiter Versuch, solange die erste Abfrage noch hängt.
+      // Auch nach Ablauf der Wartezeit kein weiterer Versuch, solange die hängenden Abfragen nicht zurück sind.
       now = 5000;
       expect(await queries.folderStatus(onZ[0])).toBe('unreachable');
+      expect(pipe.reads).toBe(2);
+    } finally {
+      await pipe.close();
+    }
+  });
+
+  it('sperrt bei einem hängenden lokalen Pfad nur diesen Pfad, nicht das ganze Laufwerk', async () => {
+    const local = tempDir();
+    // Etwa ein Link auf eine tote Freigabe: Der Pfad hängt, die Wurzel seines Laufwerks antwortet.
+    const dead = path.join(local, 'tot');
+    const pipe = await neverAnsweringPipe();
+    try {
+      hangWhere(pipe, (target) => lexicalProjectKey(target) === lexicalProjectKey(dead));
+      const queries = new FolderQueries({ timeoutMs: 100, unreachableForMs: 1000 });
+
+      expect(await queries.folderStatus(dead)).toBe('unreachable');
+      expect(await queries.folderStatus(local)).toBe('exists');
+      expect(await queries.resolveKey(local)).toEqual({ key: lexicalProjectKey(local), resolved: true });
+      // Der gesperrte Pfad bekommt sofort „nicht erreichbar“, ohne neue Abfrage.
+      expect(await queries.folderStatus(dead)).toBe('unreachable');
+      expect((await queries.resolveKey(dead)).resolved).toBe(false);
       expect(pipe.reads).toBe(1);
+    } finally {
+      await pipe.close();
+    }
+  });
+
+  it('hebt die Sperren auf, sobald eine hängende Abfrage doch noch antwortet', async () => {
+    const local = tempDir();
+    const pipe = await neverAnsweringPipe();
+    let zHangs = true;
+    try {
+      // Solange Z: hängt, lesen die Abfragen von der Pipe; danach antwortet Z: mit einem vorhandenen Ordner.
+      hangWhere(pipe, (target) => zHangs && onDriveZ(target), () => local);
+      const queries = new FolderQueries({ timeoutMs: 100, unreachableForMs: 60_000 });
+      expect(await queries.folderStatus('Z:\\Projekt')).toBe('unreachable');
+      expect(await queries.folderStatus('Z:\\Anderes')).toBe('unreachable');
+      expect(pipe.reads).toBe(2);
+
+      // Die hängenden Abfragen kommen mit „fehlt“ zurück: Das Laufwerk hat geantwortet, lange vor Ablauf der Sperre.
+      zHangs = false;
+      await pipe.answer('ENOENT');
+      await settle();
+      expect(await queries.folderStatus('Z:\\Anderes')).toBe('exists');
+      expect(await queries.folderStatus('Z:\\Projekt')).toBe('exists');
+      expect(pipe.reads).toBe(2);
     } finally {
       await pipe.close();
     }
@@ -105,10 +160,12 @@ describe('Abfragen auf Projektordnern', () => {
     try {
       hangOnDriveZ(pipe);
       expect(await queries.folderStatus('Z:\\Projekt')).toBe('unreachable');
-      expect(pipe.reads).toBe(1);
+      expect(pipe.reads).toBe(2);
     } finally {
-      // Die Pipe geht zu: Die hängende Abfrage kehrt zurück und gibt ihren Thread frei.
+      // Die Pipe geht zu: Die hängenden Abfragen kehren ohne Antwort zurück (Netzwerkfehler) und geben ihre
+      // Threads frei; die Sperre läuft weiter.
       await pipe.close();
+      await settle();
       vi.restoreAllMocks();
     }
 

@@ -18,9 +18,14 @@ export interface NeverAnsweringPipe {
   readonly reads: number;
   /**
    * Liest von der Pipe, bis sie zugeht, und belegt dabei einen Thread des Threadpools. Scheitert danach wie eine
-   * Abfrage auf ein nicht erreichbares Laufwerk.
+   * Abfrage auf ein nicht erreichbares Laufwerk, nach `answer` mit dem dort angegebenen Fehler.
    */
   hang(): Promise<never>;
+  /**
+   * Das Laufwerk antwortet doch noch: Alle hängenden Lesevorgänge kehren zurück und scheitern mit `code` (etwa
+   * „fehlt“). Wartet, bis sie zurück und ihre Handles zu sind.
+   */
+  answer(code: string): Promise<void>;
   /** Schliesst die Pipe; wartet, bis alle Lesevorgänge zurück und ihre Handles zu sind. */
   close(): Promise<void>;
 }
@@ -36,6 +41,11 @@ export async function neverAnsweringPipe(): Promise<NeverAnsweringPipe> {
   await new Promise<void>((resolve) => server.listen(pipePath, resolve));
   const pending: Promise<unknown>[] = [];
   let reads = 0;
+  let lateCode = 'EHOSTUNREACH';
+  const releaseReads = async () => {
+    for (const socket of sockets) socket.destroy();
+    await Promise.all(pending.splice(0));
+  };
   return {
     get reads() {
       return reads;
@@ -49,15 +59,18 @@ export async function neverAnsweringPipe(): Promise<NeverAnsweringPipe> {
         } finally {
           await handle.close();
         }
-        throw Object.assign(new Error('Laufwerk nicht erreichbar'), { code: 'EHOSTUNREACH' });
+        throw Object.assign(new Error(`Späte Antwort: ${lateCode}`), { code: lateCode });
       })();
       pending.push(run.catch(() => {}));
       return run;
     },
+    async answer(code) {
+      lateCode = code;
+      await releaseReads();
+    },
     async close() {
-      for (const socket of sockets) socket.destroy();
+      await releaseReads();
       await new Promise<void>((resolve) => server.close(() => resolve()));
-      await Promise.all(pending);
     },
   };
 }

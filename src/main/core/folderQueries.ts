@@ -5,9 +5,15 @@
 // Thread, bis Windows aufgibt. Damit hängende Abfragen den Threadpool nicht füllen (und dann auch Abfragen auf
 // lokale Ordner warten liessen), gilt:
 // - Pro Laufwerk bzw. Freigabe (`\\server\share`) läuft höchstens eine Abfrage gleichzeitig; weitere warten kurz.
-// - Läuft eine Abfrage ins Zeitlimit, gilt ihr Laufwerk eine Weile als nicht erreichbar. Solange das so ist oder
-//   die hängende Abfrage noch läuft, bekommen weitere Abfragen auf dasselbe Laufwerk sofort „nicht erreichbar“.
-// - Gleiche Abfragen auf denselben Pfad, die gleichzeitig kommen, teilen sich eine.
+//   Gleiche Abfragen auf denselben Pfad, die gleichzeitig kommen, teilen sich eine.
+// - Läuft eine Abfrage ins Zeitlimit, wird einmal die Wurzel ihres Laufwerks gefragt:
+//   - Antwortet sie, liegt es am Pfad (etwa ein Link auf eine tote Freigabe): Nur dieser Pfad ist eine Weile
+//     gesperrt, das übrige Laufwerk bleibt erreichbar.
+//   - Hängt auch sie, ist das Laufwerk eine Weile gesperrt.
+//   Gesperrt ist auch, solange eine hängende Abfrage noch nicht zurück ist; gesperrte Pfade und Laufwerke bekommen
+//   sofort „nicht erreichbar“. Je nicht erreichbarem Laufwerk hängen so höchstens zwei Abfragen.
+// - Kommt eine hängende Abfrage doch noch zurück, mit Ergebnis oder mit einem Fehler, der die Datei betrifft (etwa
+//   „fehlt“), hat das Laufwerk geantwortet: Die Sperren von Pfad und Laufwerk fallen sofort weg.
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -15,8 +21,11 @@ import { lexicalProjectKey } from './projectPath';
 
 /** Zeitlimit einer Abfrage auf einem Projektordner. */
 export const FOLDER_QUERY_TIMEOUT_MS = 2000;
-/** So lange gilt ein Laufwerk nach einem Zeitlimit als nicht erreichbar. */
+/** So lange bleiben ein Pfad oder ein Laufwerk nach einem Zeitlimit gesperrt. */
 export const UNREACHABLE_FOR_MS = 30_000;
+
+/** Fehler, mit denen ein Laufwerk über eine Datei Auskunft gibt; andere (etwa Netzwerkfehler) sind keine Antwort. */
+const ANSWER_CODES = new Set(['ENOENT', 'ENOTDIR', 'EISDIR', 'EACCES', 'EPERM', 'ELOOP', 'EBUSY']);
 
 /** Zustand eines Projektordners: da, fehlt (der Ordner, nicht das Laufwerk) oder nicht erreichbar. */
 export type FolderStatus = 'exists' | 'missing' | 'unreachable';
@@ -30,19 +39,24 @@ export interface FolderQueriesOptions {
 
 type Outcome<T> = { kind: 'ok'; value: T } | { kind: 'error'; code: string } | { kind: 'unreachable' };
 
-interface Volume {
+/** Sperre eines Pfads oder eines Laufwerks nach einem Zeitlimit. */
+interface Block {
+  /** Bis zu diesem Zeitpunkt gesperrt. */
+  until: number;
+  /** Die Abfrage, die ins Zeitlimit lief, ist noch nicht zurück. */
+  hanging: boolean;
+}
+
+interface Volume extends Block {
   /** Ende der letzten Abfrage auf diesem Laufwerk; die nächste beginnt erst danach. */
   queue: Promise<unknown>;
-  /** Bis zu diesem Zeitpunkt gilt das Laufwerk als nicht erreichbar. */
-  unreachableUntil: number;
-  /** Eine Abfrage lief ins Zeitlimit und ist noch nicht zurück. */
-  hanging: boolean;
 }
 
 const TIMEOUT = Symbol('timeout');
 
 export class FolderQueries {
   private readonly volumes = new Map<string, Volume>();
+  private readonly pathBlocks = new Map<string, Block>();
   private readonly running = new Map<string, Promise<Outcome<unknown>>>();
   private readonly timeoutMs: number;
   private readonly unreachableForMs: number;
@@ -87,7 +101,7 @@ export class FolderQueries {
     const existing = this.running.get(id);
     if (existing) return existing as Promise<Outcome<T>>;
     const volume = this.volume(target);
-    const result = volume.queue.then(() => this.attempt(volume, run));
+    const result = volume.queue.then(() => this.attempt(volume, target, run));
     volume.queue = result;
     this.running.set(id, result);
     void result.then(() => {
@@ -96,9 +110,55 @@ export class FolderQueries {
     return result;
   }
 
-  /** Eine Abfrage auf einem Laufwerk; wartet höchstens das Zeitlimit und wirft nie. */
-  private async attempt<T>(volume: Volume, run: () => Promise<T>): Promise<Outcome<T>> {
-    if (volume.hanging || this.now() < volume.unreachableUntil) return { kind: 'unreachable' };
+  /** Eine Abfrage auf einem Laufwerk samt Rückfrage an dessen Wurzel; wartet höchstens zweimal das Zeitlimit. */
+  private async attempt<T>(volume: Volume, target: string, run: () => Promise<T>): Promise<Outcome<T>> {
+    const pathId = lexicalProjectKey(target);
+    const pathBlock = this.pathBlocks.get(pathId);
+    if (this.isBlocked(volume) || (pathBlock && this.isBlocked(pathBlock))) return { kind: 'unreachable' };
+
+    const first = await this.withTimeout(run);
+    if (first.kind !== 'timeout') return first;
+    const block: Block = { until: this.now() + this.unreachableForMs, hanging: true };
+    this.pathBlocks.set(pathId, block);
+    this.watchLate(first.work, block, volume);
+
+    // Liegt es am Pfad oder am ganzen Laufwerk? Die Wurzel gibt Auskunft.
+    const root = path.parse(target).root;
+    if (root !== target) {
+      const rootCheck = await this.withTimeout(() => fs.promises.stat(root));
+      if (rootCheck.kind !== 'timeout') return { kind: 'unreachable' };
+      this.watchLate(rootCheck.work, volume, volume);
+    }
+    volume.until = this.now() + this.unreachableForMs;
+    volume.hanging = true;
+    return { kind: 'unreachable' };
+  }
+
+  /**
+   * Beobachtet eine Abfrage, die ins Zeitlimit lief. Kommt sie mit einer Antwort zurück, fallen die Sperren von
+   * Pfad und Laufwerk weg; sonst endet nur das „hängt noch“, die Sperre läuft bis zu ihrem Ende weiter.
+   */
+  private watchLate(work: Promise<unknown>, block: Block, volume: Volume): void {
+    const answered = () => {
+      for (const b of [block, volume]) {
+        b.until = 0;
+        b.hanging = false;
+      }
+    };
+    void work.then(answered, (err: unknown) => {
+      if (ANSWER_CODES.has((err as NodeJS.ErrnoException).code ?? '')) answered();
+      else block.hanging = false;
+    });
+  }
+
+  private isBlocked(block: Block): boolean {
+    return block.hanging || this.now() < block.until;
+  }
+
+  /** Wartet höchstens das Zeitlimit auf eine Abfrage; wirft nie. */
+  private async withTimeout<T>(
+    run: () => Promise<T>,
+  ): Promise<Outcome<T> | { kind: 'timeout'; work: Promise<T> }> {
     let timer: NodeJS.Timeout | undefined;
     const timeout = new Promise<typeof TIMEOUT>((resolve) => {
       timer = setTimeout(() => resolve(TIMEOUT), this.timeoutMs);
@@ -106,14 +166,7 @@ export class FolderQueries {
     const work = Promise.resolve().then(run);
     try {
       const value = await Promise.race([work, timeout]);
-      if (value !== TIMEOUT) return { kind: 'ok', value };
-      volume.unreachableUntil = this.now() + this.unreachableForMs;
-      volume.hanging = true;
-      void work.then(
-        () => (volume.hanging = false),
-        () => (volume.hanging = false),
-      );
-      return { kind: 'unreachable' };
+      return value === TIMEOUT ? { kind: 'timeout', work } : { kind: 'ok', value };
     } catch (err) {
       return { kind: 'error', code: (err as NodeJS.ErrnoException).code ?? 'UNKNOWN' };
     } finally {
@@ -127,7 +180,7 @@ export class FolderQueries {
     const id = process.platform === 'win32' ? root.toLowerCase() : root;
     let volume = this.volumes.get(id);
     if (!volume) {
-      volume = { queue: Promise.resolve(), unreachableUntil: 0, hanging: false };
+      volume = { queue: Promise.resolve(), until: 0, hanging: false };
       this.volumes.set(id, volume);
     }
     return volume;
