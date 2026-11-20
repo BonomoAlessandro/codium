@@ -30,6 +30,17 @@ describe('Verteilung der Ereignisse in der Oberfläche', () => {
     expect(second).toEqual([]);
   });
 
+  it('hält nach dem Abmelden des letzten Abonnenten nichts Veraltetes zurück', () => {
+    const hub = new EventHub();
+    const unsubscribe = hub.subscribe('terminal.output', () => {});
+    unsubscribe();
+    hub.deliver('terminal.output', 'alt');
+    const got: unknown[] = [];
+    hub.subscribe('terminal.output', (p) => got.push(p));
+    hub.deliver('terminal.output', 'neu');
+    expect(got).toEqual(['neu']);
+  });
+
   it('hält höchstens die neuesten Ereignisse zurück', () => {
     const hub = new EventHub(2);
     for (const n of [1, 2, 3]) hub.deliver('x', n);

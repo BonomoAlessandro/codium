@@ -1,5 +1,8 @@
 // Gespeicherter Zustand, Schemaversion 1. Spätere Tickets ergänzen Felder; neue Felder sind optional oder
 // bekommen einen Standardwert in den Funktionen unten, damit ältere Dateien gültig bleiben. Lädt nie Electron.
+//
+// Wichtig für die erste echte Schemaänderung (Version 2): Sie muss eine Übernahme aus Version 1 mitbringen.
+// Ohne sie legt StateFile jede Datei mit Version 1 als kaputt beiseite.
 
 import type { Bounds } from './ports';
 

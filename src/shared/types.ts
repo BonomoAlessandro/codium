@@ -71,12 +71,36 @@ export interface EventMessage {
   payload: unknown;
 }
 
-/** Die API, die das Preload-Skript dem Renderer unter `window.codium` bereitstellt. */
+/**
+ * Die Brücke, die das Preload-Skript dem Renderer unter `window.codium` bereitstellt. Sie wirft nie: Electron
+ * übernimmt bei einem Fehler über die Brücke nur die Meldung, Code und Daten gingen verloren. Die Oberfläche
+ * benutzt sie über `createApi` (renderer/api.ts), das aus einer gescheiterten Antwort einen `CodiumError` wirft.
+ */
+export interface CodiumBridge {
+  /** Schickt einen Befehl an den Kern und liefert die Antwort als Wert. */
+  invoke(name: string, params?: unknown): Promise<ResponseMessage>;
+  /** Hört auf ein Ereignis des Kerns für dieses Fenster; liefert eine Funktion zum Abmelden. */
+  on(name: string, listener: (payload: unknown) => void): () => void;
+}
+
+/** Die typisierte API der Oberfläche über der Brücke. */
 export interface CodiumApi {
-  /** Schickt einen Befehl an den Kern und liefert das Ergebnis; wirft mit der Meldung des Kerns. */
+  /** Schickt einen Befehl an den Kern und liefert das Ergebnis; wirft einen `CodiumError`, wenn er scheitert. */
   request<K extends CommandName>(name: K, ...args: CommandArgs<K>): Promise<CommandResult<K>>;
   /** Hört auf ein Ereignis des Kerns für dieses Fenster; liefert eine Funktion zum Abmelden. */
   on<K extends EventName>(name: K, listener: (payload: Events[K]) => void): () => void;
+}
+
+/** Fehler eines Befehls in der Oberfläche, mit Code und Daten aus dem Kern. */
+export class CodiumError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+    readonly data?: unknown,
+  ) {
+    super(message);
+    this.name = 'CodiumError';
+  }
 }
 
 /** IPC-Kanalnamen an einem Ort, damit Main und Preload nicht auseinanderlaufen. */

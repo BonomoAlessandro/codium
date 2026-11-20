@@ -21,6 +21,7 @@ Spezifikation: „Dateien, Dateiüberwachung und Suche“ (Dateibaum, Dateiüber
     - Kopieren und Einfügen; bei Namenskonflikt Vorschlag mit Zusatz, etwa „Name (2).ext“
     - Pfad kopieren, im Explorer zeigen
     - Jede Operation erzeugt ein Ereignis, auf das spätere Dienste reagieren können (Tabs in Ticket 07, Sprachserver in Ticket 12, Git in Ticket 16).
+- **Pfade nur innerhalb des Projekts:** Jeder Befehl des Datei-Dienstes prüft, dass die übergebenen Pfade (nach dem Auflösen von `..`, Junctions und symbolischen Links) innerhalb des Projektordners liegen, und lehnt andere mit einem Fehlercode ab. Die Oberfläche ist zwar eigener Code, aber der Datei-Dienst ist die Stelle, an der Pfade auf die Festplatte treffen (Review von Ticket 01).
 - **Werkzeugfenster „Project“:**
   - Baum mit Auf- und Zuklappen, Einfachklick wählt aus, Doppelklick oder Enter löst „Datei öffnen“ aus (ein Ereignis, das Ticket 05 aufnimmt).
   - Rechtsklick-Menü: „New“ (File, Directory), „Rename…“, „Delete…“ (mit Rückfrage aus Ticket 03), „Copy“, „Paste“, „Copy Path“, „Open in Explorer“, „Open in Terminal“ (inaktiv bis Ticket 11).
@@ -39,6 +40,7 @@ Spezifikation: „Dateien, Dateiüberwachung und Suche“ (Dateibaum, Dateiüber
   - Änderungen in `.git` erzeugen kein Dateiereignis, aber bei HEAD, Index oder Refs das Ereignis „Git-Daten geändert“.
   - Nach dem Abbau des Projekt-Kerns kommen keine Ereignisse mehr.
   - Aufgeklappte Ordner überstehen einen Neustart.
+  - Pfade ausserhalb des Projekts (mit `..`, absolut, über eine Junction nach draussen) werden bei jedem Befehl abgelehnt.
 - [ ] Playwright-Tests: Ordner aufklappen, neue Datei über das Rechtsklick-Menü anlegen, umbenennen, löschen mit Rückfrage (landet im Papierkorb-Ordner des Testmodus). Eine von aussen angelegte Datei erscheint im Baum.
 
 ## Abnahme von Hand

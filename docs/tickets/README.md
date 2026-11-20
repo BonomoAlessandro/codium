@@ -64,7 +64,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 
 | Nr. | Ticket | Typ | Blockiert durch | Etappe | Stand |
 |---|---|---|---|---|---|
-| 01 | [Kern-Gerüst, Ports, Zustand und Testläufe](01-kern-geruest.md) | AFK | – | 1 | offen |
+| 01 | [Kern-Gerüst, Ports, Zustand und Testläufe](01-kern-geruest.md) | AFK | – | 1 | erledigt |
 | 02 | [Projektfenster, Willkommensfenster, Beenden und Wiederöffnen](02-projektfenster.md) | AFK | 01 | 1 | offen |
 | 03 | [Layout: Kopfzeile, Werkzeugfenster, Statusleiste, Meldungen, Rückfragen](03-layout.md) | AFK | 02 | 1 | offen |
 | 04 | [Datei-Dienst und Dateibaum](04-dateibaum.md) | AFK | 03 | 1 | offen |

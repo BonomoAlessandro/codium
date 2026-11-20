@@ -33,7 +33,7 @@ describe('Projektpfade', () => {
     expect(projectStateFileName('C:\\A\\app')).not.toBe(projectStateFileName('C:\\B\\app'));
   });
 
-  it('löst bei vorhandenen Ordnern Kurznamen und Junctions zum echten Pfad auf', () => {
+  it('vergleicht vorhandene Ordner über ihren echten Pfad, zeigt aber die angegebene Schreibweise', () => {
     // os.tmpdir() liefert unter Windows oft einen Kurznamen wie C:\Users\ALESSA~1\...; mkdtemp übernimmt ihn.
     const raw = fs.mkdtempSync(path.join(os.tmpdir(), 'codium-pfad-'));
     try {
@@ -43,7 +43,10 @@ describe('Projektpfade', () => {
       fs.mkdirSync(project);
       fs.symlinkSync(project, junction, 'junction');
 
-      expect(normalizeProjectPath(path.join(raw, 'projekt'))).toBe(project);
+      // Angezeigt und als Arbeitsordner benutzt wird die angegebene Schreibweise (etwa ein Netzlaufwerk bleibt
+      // ein Laufwerksbuchstabe), verglichen wird über den echten Pfad.
+      expect(normalizeProjectPath(path.join(raw, 'projekt'))).toBe(path.join(raw, 'projekt'));
+      expect(projectKey(path.join(raw, 'projekt'))).toBe(projectKey(project));
       expect(projectKey(junction)).toBe(projectKey(project));
       expect(projectStateFileName(path.join(raw, 'Projekt'))).toBe(projectStateFileName(project));
     } finally {

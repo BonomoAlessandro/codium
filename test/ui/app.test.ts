@@ -33,6 +33,12 @@ describe('App im Testmodus', () => {
       expect(windows[0].onSomeDisplay, JSON.stringify(windows[0].bounds)).toBe(false);
       expect(windows[0].focused).toBe(false);
 
+      // Code und Daten eines gescheiterten Befehls kommen unverändert über die Brücke in die Oberfläche.
+      const failed = await page.evaluate(() =>
+        (window as unknown as { codium: { invoke(name: string): Promise<unknown> } }).codium.invoke('gibt.es.nicht'),
+      );
+      expect(failed).toEqual({ ok: false, error: { message: 'Unbekannter Befehl: gibt.es.nicht', code: 'UNKNOWN_COMMAND' } });
+
       const recorded = await codium.recorded();
       expect(recorded.map((e) => e.kind)).toContain('window-opened');
     } finally {

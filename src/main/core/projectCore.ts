@@ -94,9 +94,13 @@ export class ProjectCore {
     // Sofort sichern: Wer das Projekt gleich wieder öffnet oder die App beendet, soll den letzten Stand sehen.
     this.stateFile.flush();
     for (const cleanup of [...this.cleanups].reverse()) await this.runCleanup(cleanup);
-    // Spät angemeldete Arbeiten können ihrerseits weitere anmelden; solange es neue gibt, weiter warten.
-    for (let done = 0; done < this.lateCleanups.length; done = this.lateCleanups.length) {
-      await Promise.all(this.lateCleanups.slice(done));
+    // Spät angemeldete Arbeiten können ihrerseits weitere anmelden, auch während auf sie gewartet wird; solange es
+    // neue gibt, weiter warten.
+    let done = 0;
+    while (done < this.lateCleanups.length) {
+      const end = this.lateCleanups.length;
+      await Promise.all(this.lateCleanups.slice(done, end));
+      done = end;
     }
     this.disposeFinished = true;
     this.stateFile.flush();

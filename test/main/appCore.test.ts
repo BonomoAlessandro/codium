@@ -9,7 +9,7 @@ import { PROJECT_STATE_DIR } from '../../src/main/core/schema';
 import { createTestCore, restart, type TestCore } from '../support/core';
 import { useTempDirs } from '../support/tempDir';
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 describe('App-Kern', () => {
   const tempDir = useTempDirs();
@@ -182,16 +182,23 @@ describe('App-Kern', () => {
       const windowId = openWindow(test);
       const projectCore = await test.core.openProjectCore(project, windowId);
       let late = false;
+      let nested = false;
       projectCore.onDispose(async () => {
         // Etwa ein Dienst, dessen asynchroner Start erst jetzt fertig wird.
         projectCore.onDispose(async () => {
           await delay(10);
           late = true;
+          // Und während auf diese Arbeit gewartet wird, meldet sich noch eine an.
+          projectCore.onDispose(async () => {
+            await delay(10);
+            nested = true;
+          });
         });
       });
 
       await test.core.closeProjectCore(windowId);
       expect(late).toBe(true);
+      expect(nested).toBe(true);
 
       let afterwards = false;
       projectCore.onDispose(() => {
@@ -233,6 +240,19 @@ describe('App-Kern', () => {
       await test.core.shutdown();
       expect(cleaned).toBe(true);
       expect(JSON.parse(fs.readFileSync(projectStateFile(test, project), 'utf8')).windowBounds.width).toBe(640);
+    });
+
+    it('öffnet kein Projekt in einem Fenster, das während des Wartens geschlossen wurde', async () => {
+      const { project, test } = setup();
+      const firstWindow = openWindow(test);
+      (await test.core.openProjectCore(project, firstWindow)).onDispose(() => delay(30));
+      void test.core.closeProjectCore(firstWindow);
+
+      const secondWindow = openWindow(test);
+      const opening = test.core.openProjectCore(project, secondWindow);
+      test.ports.windows.close(secondWindow);
+      await expect(opening).rejects.toThrow(/nicht mehr offen/);
+      expect(test.core.projectCores).toEqual([]);
     });
 
     it('lässt ein gleich wieder geöffnetes Projekt auf den Abbau warten und den letzten Stand lesen', async () => {

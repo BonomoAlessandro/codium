@@ -3,8 +3,9 @@
 
 import { useEffect, useState } from 'react';
 import type { AppInfo } from '../shared/types';
+import { createApi } from './api';
 
-const api = window.codium;
+const api = createApi(window.codium);
 
 export function App() {
   const [info, setInfo] = useState<AppInfo | null>(null);

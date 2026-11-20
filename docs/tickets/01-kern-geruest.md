@@ -1,6 +1,6 @@
 # 01 – Kern-Gerüst, Ports, Zustand und Testläufe
 
-Status: `ready-for-agent` · Typ: AFK
+Status: `erledigt` (2026-11-20, Abnahme von Hand am Schluss in Ticket 22) · Typ: AFK
 Blockiert durch: –
 User Stories: Grundlage für alle
 Spezifikation: „Architektur im Überblick“, „Vertrag zwischen Oberfläche und Kern“, „Fenster, Projekte und gespeicherter Zustand“ (Zustände und Schemaversion), „Testentscheidungen“ (vollständig, inklusive „Testmodus der App“)
@@ -93,5 +93,15 @@ Verworfen bzw. verschoben:
 
 - **Prüfung der Befehlsparameter zur Laufzeit:** Die Oberfläche ist eigener, abgeschotteter Code. Geprüft wird in den Befehlen, die Pfade oder Werte von aussen verarbeiten, sobald es sie gibt (ab Ticket 04).
 - **Haken für Migrationen des Zustands:** Es gibt noch kein älteres Schema. Der Schutz einer neueren Datei vor dem Überschreiben ist umgesetzt, Migrationen kommen mit der ersten Schemaänderung.
+
+Nachprüfung durch denselben Agenten: Die beiden schweren Befunde sind bestätigt behoben, beide Begründungen für Verworfenes akzeptiert. Fünf weitere Punkte, zwei davon durch die Korrekturen entstanden, sind eingearbeitet:
+
+- Code und Daten eines Fehlers gingen über die Electron-Brücke verloren. Die Brücke liefert die Antwort jetzt als Wert; die Oberfläche wirft daraus einen `CodiumError` (`src/renderer/api.ts`).
+- Der echte Pfad dient nur noch zum Vergleichen. Angezeigt und als Arbeitsordner benutzt wird die angegebene Schreibweise, damit ein Netzlaufwerk nicht zum UNC-Pfad wird.
+- Verschachtelte späte Aufräumarbeiten werden abgewartet.
+- Ereignisse werden nur zurückgehalten, solange es noch nie einen Abonnenten gab.
+- Ein Fenster, das während des Wartens auf einen Abbau geschlossen wird, bekommt keinen Projekt-Kern.
+
+Zusätzlich verlangt Ticket 04 jetzt ausdrücklich, dass der Datei-Dienst Pfade ausserhalb des Projekts ablehnt. `schema.ts` hält fest, dass die erste Schemaänderung eine Übernahme aus Version 1 mitbringen muss.
 
 Beobachtung: Ein einzelner Lauf von `npm run test:ui` hing einmal bis zum Zeitlimit; in sechs weiteren Läufen trat das nicht mehr auf (vermutlich ein langsamer erster Start nach dem Bauen). Falls es wiederkommt, als eigenes Ticket erfassen.

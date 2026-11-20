@@ -99,6 +99,8 @@ export class AppCore {
     const pendingDisposal = this.disposals.get(key);
     if (pendingDisposal) await pendingDisposal;
     if (this.shuttingDown) throw new Error('Codium wird beendet.');
+    // Das Fenster kann geschlossen worden sein, während das Öffnen gewartet hat; dann kein Kern für ein totes Fenster.
+    if (this.ports.windows.getBounds(windowId) === null) throw new Error(`Fenster ${windowId} ist nicht mehr offen.`);
     if (this.findProjectCore(normalized)) throw new Error(`Projekt ist schon offen: ${normalized}`);
     if (this.projects.has(windowId)) throw new Error(`Fenster ${windowId} hat schon ein Projekt.`);
     const stateFile = new StateFile<ProjectState>(
