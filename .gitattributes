@@ -1,0 +1,4 @@
+# Batch-Dateien brauchen CRLF, Bash-Skripte LF (Git Bash liest CRLF als Teil der Befehle).
+*.cmd text eol=crlf
+*.bash text eol=lf
+*.ps1 text eol=crlf

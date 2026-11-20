@@ -1,0 +1,20 @@
+/* Design-Variablen. Hell und dunkel folgen vorerst dem Design von Windows (prefers-color-scheme). */
+
+:root {
+  --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
+
+  color-scheme: light;
+  --bg: #ffffff;
+  --text: #1e1f22;
+  --text-muted: #6c707e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #1e1f22;
+    --text: #dfe1e5;
+    --text-muted: #868a91;
+  }
+}

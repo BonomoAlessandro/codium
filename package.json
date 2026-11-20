@@ -1,0 +1,50 @@
+{
+  "name": "codium",
+  "productName": "Codium",
+  "version": "0.1.0",
+  "description": "Eine kleine eigene IDE im Stil von IntelliJ.",
+  "main": "dist/main/main.js",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node build.mjs && electron .",
+    "dev": "node build.mjs --dev && electron .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "dist": "node build.mjs && electron-builder --win"
+  },
+  "build": {
+    "appId": "ch.custom.codium",
+    "productName": "Codium",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "npmRebuild": false,
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    }
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
+  }
+}
