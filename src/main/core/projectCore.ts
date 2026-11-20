@@ -9,10 +9,16 @@ import type { StateFile } from './stateFile';
 
 type Cleanup = () => void | Promise<void>;
 
+/** Höchstdauer einer einzelnen Aufräumarbeit; danach geht der Abbau ohne sie weiter. */
+export const DEFAULT_CLEANUP_TIMEOUT_MS = 5000;
+
 export class ProjectCore {
   private projectState: ProjectState;
   private readonly cleanups: Cleanup[] = [];
+  /** Aufräumarbeiten, die erst nach Beginn des Abbaus angemeldet wurden und sofort laufen. */
+  private readonly lateCleanups: Promise<void>[] = [];
   private disposing: Promise<void> | null = null;
+  private disposeFinished = false;
 
   constructor(
     /** Normalisierter Pfad des Projektordners. */
@@ -22,6 +28,7 @@ export class ProjectCore {
     private readonly stateFile: StateFile<ProjectState>,
     private readonly events: EventSink,
     private readonly log: (message: string) => void = () => {},
+    private readonly cleanupTimeoutMs = DEFAULT_CLEANUP_TIMEOUT_MS,
   ) {
     this.projectState = stateFile.load();
   }
@@ -60,15 +67,23 @@ export class ProjectCore {
 
   /**
    * Meldet eine Aufräumarbeit für den Abbau an, etwa „Sprachserver beenden“. Sie darf asynchron sein; der
-   * Abbau wartet auf sie. Aufräumarbeiten laufen in umgekehrter Reihenfolge der Anmeldung.
+   * Abbau wartet auf sie, höchstens bis zum Zeitlimit. Aufräumarbeiten laufen in umgekehrter Reihenfolge der
+   * Anmeldung. Wer sich erst während oder nach dem Abbau anmeldet (etwa ein Dienst, der asynchron gestartet ist),
+   * wird sofort aufgeräumt.
    */
   onDispose(cleanup: Cleanup): void {
-    this.cleanups.push(cleanup);
+    if (this.disposing === null) {
+      this.cleanups.push(cleanup);
+      return;
+    }
+    const run = this.runCleanup(cleanup);
+    if (!this.disposeFinished) this.lateCleanups.push(run);
   }
 
   /**
-   * Baut den Projekt-Kern geordnet ab: alle Aufräumarbeiten nacheinander (ein Fehler hält die übrigen nicht
-   * auf), danach wird der Projekt-Zustand sofort geschrieben. Mehrfacher Aufruf liefert denselben Abbau.
+   * Baut den Projekt-Kern geordnet ab: Der Zustand wird sofort geschrieben, dann laufen alle Aufräumarbeiten
+   * nacheinander (ein Fehler oder eine hängende Arbeit hält die übrigen nicht auf), am Ende wird der Zustand noch
+   * einmal geschrieben. Mehrfacher Aufruf liefert denselben Abbau.
    */
   dispose(): Promise<void> {
     this.disposing ??= this.runDispose();
@@ -76,13 +91,31 @@ export class ProjectCore {
   }
 
   private async runDispose(): Promise<void> {
-    for (const cleanup of [...this.cleanups].reverse()) {
-      try {
-        await cleanup();
-      } catch (err) {
-        this.log(`Aufräumen im Projekt ${this.path} fehlgeschlagen: ${(err as Error).message}`);
-      }
-    }
+    // Sofort sichern: Wer das Projekt gleich wieder öffnet oder die App beendet, soll den letzten Stand sehen.
     this.stateFile.flush();
+    for (const cleanup of [...this.cleanups].reverse()) await this.runCleanup(cleanup);
+    // Spät angemeldete Arbeiten können ihrerseits weitere anmelden; solange es neue gibt, weiter warten.
+    for (let done = 0; done < this.lateCleanups.length; done = this.lateCleanups.length) {
+      await Promise.all(this.lateCleanups.slice(done));
+    }
+    this.disposeFinished = true;
+    this.stateFile.flush();
+  }
+
+  private async runCleanup(cleanup: Cleanup): Promise<void> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), this.cleanupTimeoutMs);
+    });
+    try {
+      const result = await Promise.race([Promise.resolve().then(cleanup), timeout]);
+      if (result === 'timeout') {
+        this.log(`Aufräumen im Projekt ${this.path} nach ${this.cleanupTimeoutMs} ms abgebrochen.`);
+      }
+    } catch (err) {
+      this.log(`Aufräumen im Projekt ${this.path} fehlgeschlagen: ${(err as Error).message}`);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }

@@ -13,7 +13,7 @@
     "test": "vitest run",
     "test:slow": "vitest run --config vitest.slow.config.mts",
     "test:ui": "node build.mjs && vitest run --config vitest.ui.config.mts",
-    "test:packaged": "node build.mjs && electron-builder --win --dir && node scripts/test-packaged.mjs",
+    "test:packaged": "node build.mjs && node scripts/test-packaged.mjs",
     "dist": "node build.mjs && electron-builder --win"
   },
   "build": {

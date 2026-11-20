@@ -40,9 +40,38 @@ export function emptyProjectState(projectPath: string): ProjectState {
   return { schemaVersion: 1, path: projectPath };
 }
 
+/** Prüft die Felder eines gelesenen App-Zustands; Ungültiges wird durch den Standardwert ersetzt. */
+export function normalizeAppState(raw: Record<string, unknown>): AppState {
+  const settings = isRecord(raw.settings) ? raw.settings : {};
+  return {
+    schemaVersion: 1,
+    recentProjects: stringArray(raw.recentProjects),
+    openProjects: stringArray(raw.openProjects),
+    settings: {
+      ...(typeof settings.terminalShell === 'string' ? { terminalShell: settings.terminalShell } : {}),
+    },
+  };
+}
+
+/** Prüft die Felder eines gelesenen Projekt-Zustands; Ungültiges wird durch den Standardwert ersetzt. */
+export function normalizeProjectState(projectPath: string, raw: Record<string, unknown>): ProjectState {
+  return {
+    schemaVersion: 1,
+    path: projectPath,
+    ...(isBounds(raw.windowBounds) ? { windowBounds: raw.windowBounds } : {}),
+  };
+}
+
 /** Eine Bounds-Angabe aus einer Datei ist nur brauchbar, wenn alle vier Werte endliche Zahlen sind. */
 export function isBounds(value: unknown): value is Bounds {
-  if (typeof value !== 'object' || value === null) return false;
-  const b = value as Record<string, unknown>;
-  return ['x', 'y', 'width', 'height'].every((k) => typeof b[k] === 'number' && Number.isFinite(b[k]));
+  if (!isRecord(value)) return false;
+  return ['x', 'y', 'width', 'height'].every((k) => typeof value[k] === 'number' && Number.isFinite(value[k]));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }

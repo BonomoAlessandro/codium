@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -29,6 +31,24 @@ describe('Projektpfade', () => {
 
   it('unterscheidet gleichnamige Ordner an verschiedenen Orten', () => {
     expect(projectStateFileName('C:\\A\\app')).not.toBe(projectStateFileName('C:\\B\\app'));
+  });
+
+  it('löst bei vorhandenen Ordnern Kurznamen und Junctions zum echten Pfad auf', () => {
+    // os.tmpdir() liefert unter Windows oft einen Kurznamen wie C:\Users\ALESSA~1\...; mkdtemp übernimmt ihn.
+    const raw = fs.mkdtempSync(path.join(os.tmpdir(), 'codium-pfad-'));
+    try {
+      const real = fs.realpathSync.native(raw);
+      const project = path.join(real, 'Projekt');
+      const junction = path.join(real, 'Verknuepfung');
+      fs.mkdirSync(project);
+      fs.symlinkSync(project, junction, 'junction');
+
+      expect(normalizeProjectPath(path.join(raw, 'projekt'))).toBe(project);
+      expect(projectKey(junction)).toBe(projectKey(project));
+      expect(projectStateFileName(path.join(raw, 'Projekt'))).toBe(projectStateFileName(project));
+    } finally {
+      fs.rmSync(raw, { recursive: true, force: true });
+    }
   });
 
   it('macht aus dem Ordnernamen einen lesbaren Dateinamen', () => {

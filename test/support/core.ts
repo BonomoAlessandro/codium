@@ -27,6 +27,7 @@ export function createTestCore(dataDir: string, options: TestCoreOptions = {}): 
     events,
     appInfo: { name: 'Codium', version: '0.0.0-test' },
     saveDebounceMs: 5,
+    cleanupTimeoutMs: 200,
     log: (message) => logs.push(message),
   });
   return { core, ports, events, logs, dataDir };

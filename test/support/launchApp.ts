@@ -3,6 +3,7 @@
 
 import { createRequire } from 'node:module';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { _electron, type ElectronApplication } from 'playwright-core';
 import { dataFolder } from '../../src/main/dataFolder';
@@ -12,12 +13,19 @@ import { shieldedGitEnv } from './git';
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
-/** Wirft, wenn die Umgebung den Testmodus nicht einschaltet. Ohne Testmodus startet kein Test die App. */
+/**
+ * Wirft, wenn die Umgebung den Testmodus nicht einschaltet oder der Datenordner nicht im Temp-Ordner liegt.
+ * Ohne Testmodus startet kein Test die App.
+ */
 export function assertTestModeEnv(env: Record<string, string | undefined>): void {
   if (env.CODIUM_TEST_HIDDEN !== '1' || !env.CODIUM_TEST_DATA_DIR) {
     throw new Error(
       'Codium startet in Tests nur im Testmodus: CODIUM_TEST_HIDDEN=1 und CODIUM_TEST_DATA_DIR müssen gesetzt sein.',
     );
+  }
+  const tempRoot = realLower(os.tmpdir());
+  if (!realLower(env.CODIUM_TEST_DATA_DIR).startsWith(tempRoot + path.sep)) {
+    throw new Error(`Der Datenordner im Testmodus muss im Temp-Ordner liegen: ${env.CODIUM_TEST_DATA_DIR}`);
   }
 }
 
@@ -43,7 +51,7 @@ export async function launchCodium(options: LaunchOptions): Promise<LaunchedApp>
   }
   Object.assign(env, { CODIUM_TEST_HIDDEN: '1', CODIUM_TEST_DATA_DIR: options.dataRoot }, options.env);
   assertTestModeEnv(env);
-  seedTestSettings(options.dataRoot);
+  useCmdAsShell(options.dataRoot);
 
   const electronPath = createRequire(__filename)('electron') as string;
   const app = await _electron.launch({ executablePath: electronPath, args: [PROJECT_ROOT], cwd: PROJECT_ROOT, env });
@@ -54,12 +62,26 @@ export async function launchCodium(options: LaunchOptions): Promise<LaunchedApp>
   };
 }
 
-/** Stellt cmd als Shell ein, damit keine PowerShell mit dem Profil des Nutzers startet (Spielregeln). */
-function seedTestSettings(dataRoot: string): void {
+/**
+ * Stellt cmd als Shell ein, damit keine PowerShell mit dem Profil des Nutzers startet (Spielregeln). Ein
+ * vorbereiteter Zustand eines Tests bleibt erhalten; nur die Shell wird hineingemischt.
+ */
+function useCmdAsShell(dataRoot: string): void {
   const file = path.join(dataFolder(dataRoot, false), APP_STATE_FILE);
-  if (fs.existsSync(file)) return;
+  let state: Record<string, unknown> = { ...emptyAppState() };
+  if (fs.existsSync(file)) state = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')) as Record<string, unknown>;
+  const settings = typeof state.settings === 'object' && state.settings !== null ? state.settings : {};
+  state.settings = { ...settings, terminalShell: 'cmd' };
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const state = emptyAppState();
-  state.settings.terminalShell = 'cmd';
   fs.writeFileSync(file, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+}
+
+function realLower(dir: string): string {
+  let resolved = path.resolve(dir);
+  try {
+    resolved = fs.realpathSync.native(resolved);
+  } catch {
+    // Fehlt der Ordner, bleibt der aufgelöste Pfad.
+  }
+  return resolved.toLowerCase();
 }

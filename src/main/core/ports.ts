@@ -41,8 +41,17 @@ export interface WindowPort {
   getBounds(windowId: number): Bounds | null;
   setBounds(windowId: number, bounds: Bounds): void;
   displays(): DisplayInfo[];
-  /** Meldet, wenn ein Fenster geschlossen wurde. */
-  onClosed(listener: (windowId: number) => void): void;
+  /**
+   * Meldet, wenn ein Fenster geschlossen wurde, mit seiner letzten normalen Lage (gelesen, solange es noch
+   * existierte). Im Testmodus ist die Lage `null`, weil Fenster dort ihre Lage nicht speichern.
+   */
+  onClosed(listener: (windowId: number, lastBounds: Bounds | null) => void): void;
+  /** Meldet, wenn ein Fenster den Fokus bekommt (für „zuletzt benutztes Fenster“). */
+  onFocused(listener: (windowId: number) => void): void;
+  /** Meldet, wenn die Seite eines Fensters geladen und bereit für Ereignisse ist (auch nach Neuladen). */
+  onReady(listener: (windowId: number) => void): void;
+  /** Meldet einmal, wenn Windows die Sitzung beendet (Abmelden, Herunterfahren). */
+  onSessionEnd(listener: () => void): void;
 }
 
 /** Der Ordnerdialog von Windows (im Testmodus über `CODIUM_TEST_PICK_DIR`). */
@@ -60,8 +69,10 @@ export interface SecretsPort {
   decrypt(encrypted: string): Promise<string>;
 }
 
-/** Papierkorb, Explorer, Zwischenablage (im Testmodus nachgebildet bzw. aufgezeichnet). */
+/** Papierkorb, Explorer, Zwischenablage, Browser (im Testmodus nachgebildet bzw. aufgezeichnet). */
 export interface ShellActionsPort {
+  /** Öffnet eine Web-Adresse (http, https, mailto) im Standardbrowser bzw. Mailprogramm. */
+  openExternal(url: string): Promise<void>;
   /** Verschiebt eine Datei oder einen Ordner in den Papierkorb. */
   trash(targetPath: string): Promise<void>;
   /** Zeigt eine Datei markiert im Explorer. */

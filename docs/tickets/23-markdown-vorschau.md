@@ -23,7 +23,7 @@ Dieses Ticket kam nach der Zerlegung dazu; es gehört zu Etappe 1 und wird gleic
 - **Bilder:** relative Pfade gegen den Ordner der `.md`-Datei aufgelöst und über den Vertrag als Daten geladen, höchstens 10 MB pro Bild. Der Kern lehnt Pfade ausserhalb des Projekts ab; Bilder aus dem Netz werden nicht geladen. Statt eines abgelehnten Bildes steht der Alternativtext.
 - **Synchrones Scrollen:** Die Blöcke der Vorschau tragen ihre Quellzeilen. In der geteilten Ansicht scrollt die Vorschau so, dass der Block zur obersten sichtbaren Editorzeile oben steht (nur Editor → Vorschau).
 - **Links:**
-  - Der Port „Shell-Aktionen“ bekommt eine Funktion „Web-Adresse im Standardbrowser öffnen“, im Testmodus nur aufgezeichnet. Web-Links (http, https, mailto) öffnen darüber.
+  - Web-Links (http, https, mailto) öffnen über die Funktion „Web-Adresse öffnen“ des Ports „Shell-Aktionen“, die es seit Ticket 01 gibt (im Testmodus nur aufgezeichnet).
   - Relative Links und Anker werden nicht verfolgt; beim Überfahren zeigt ein Tooltip das Ziel.
 - **Aussehen:** dunkel, passend zu Codium, angelehnt an die Markdown-Vorschau von IntelliJ.
 

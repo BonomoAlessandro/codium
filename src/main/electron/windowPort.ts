@@ -1,5 +1,6 @@
 // Echter Port „Fenster“ mit Electron. Im Testmodus öffnen Fenster ausserhalb des Bildschirms, ohne
-// Aktivierung und ohne Taskleisten-Eintrag; „nach vorne holen“ wird nur aufgezeichnet.
+// Aktivierung und ohne Taskleisten-Eintrag; „nach vorne holen“ wird nur aufgezeichnet, und Fenster melden
+// keine Lage zum Speichern.
 
 import { BrowserWindow, nativeTheme, screen } from 'electron';
 import type { Bounds, DisplayInfo, WindowOpenOptions, WindowPort } from '../core/ports';
@@ -15,7 +16,11 @@ export interface ElectronWindowPortOptions {
 }
 
 export class ElectronWindowPort implements WindowPort {
-  private readonly closedListeners: Array<(windowId: number) => void> = [];
+  private readonly closedListeners: Array<(windowId: number, lastBounds: Bounds | null) => void> = [];
+  private readonly focusedListeners: Array<(windowId: number) => void> = [];
+  private readonly readyListeners: Array<(windowId: number) => void> = [];
+  private readonly sessionEndListeners: Array<() => void> = [];
+  private sessionEnded = false;
 
   constructor(private readonly options: ElectronWindowPortOptions) {}
 
@@ -45,8 +50,25 @@ export class ElectronWindowPort implements WindowPort {
     win.webContents.on('will-navigate', (event) => event.preventDefault());
     win.webContents.on('will-redirect', (event) => event.preventDefault());
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+    // Die Lage wird gelesen, solange das Fenster noch existiert; im Testmodus wird keine Lage gemeldet.
+    let lastBounds: Bounds | null = null;
+    win.on('close', () => {
+      if (!hidden && !win.isDestroyed()) lastBounds = win.getNormalBounds();
+    });
     win.on('closed', () => {
-      for (const listener of this.closedListeners) listener(id);
+      for (const listener of this.closedListeners) listener(id, lastBounds);
+    });
+    win.on('focus', () => {
+      for (const listener of this.focusedListeners) listener(id);
+    });
+    win.webContents.on('dom-ready', () => {
+      for (const listener of this.readyListeners) listener(id);
+    });
+    win.on('session-end', () => {
+      if (this.sessionEnded) return;
+      this.sessionEnded = true;
+      for (const listener of this.sessionEndListeners) listener();
     });
 
     win.once('ready-to-show', () => {
@@ -99,7 +121,19 @@ export class ElectronWindowPort implements WindowPort {
     }));
   }
 
-  onClosed(listener: (windowId: number) => void): void {
+  onClosed(listener: (windowId: number, lastBounds: Bounds | null) => void): void {
     this.closedListeners.push(listener);
+  }
+
+  onFocused(listener: (windowId: number) => void): void {
+    this.focusedListeners.push(listener);
+  }
+
+  onReady(listener: (windowId: number) => void): void {
+    this.readyListeners.push(listener);
+  }
+
+  onSessionEnd(listener: () => void): void {
+    this.sessionEndListeners.push(listener);
   }
 }

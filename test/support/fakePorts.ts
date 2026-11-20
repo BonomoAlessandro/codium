@@ -30,14 +30,20 @@ export class FakeWindowPort implements WindowPort {
   readonly focused: number[] = [];
   readonly closed: number[] = [];
   displayList: DisplayInfo[] = [PRIMARY_DISPLAY];
+  /** Ob ein geöffnetes Fenster sofort „bereit“ meldet, wie nach dem Laden der Seite. */
+  autoReady = true;
   private nextId = 1;
   private readonly bounds = new Map<number, Bounds>();
-  private readonly closedListeners: Array<(windowId: number) => void> = [];
+  private readonly closedListeners: Array<(windowId: number, lastBounds: Bounds | null) => void> = [];
+  private readonly focusedListeners: Array<(windowId: number) => void> = [];
+  private readonly readyListeners: Array<(windowId: number) => void> = [];
+  private readonly sessionEndListeners: Array<() => void> = [];
 
   open(options: WindowOpenOptions): number {
     const windowId = this.nextId++;
     this.opened.push({ windowId, ...options });
     this.bounds.set(windowId, options.bounds ?? { x: 100, y: 100, width: 1280, height: 800 });
+    if (this.autoReady) this.simulateReady(windowId);
     return windowId;
   }
 
@@ -45,12 +51,13 @@ export class FakeWindowPort implements WindowPort {
     this.focused.push(windowId);
   }
 
-  /** Schliesst ein Fenster so, wie der Nutzer es täte: Die Abmeldung kommt über `onClosed`. */
+  /** Schliesst ein Fenster so, wie der Nutzer es täte: Die Meldung samt letzter Lage kommt über `onClosed`. */
   close(windowId: number): void {
-    if (!this.bounds.has(windowId)) return;
+    const lastBounds = this.bounds.get(windowId);
+    if (!lastBounds) return;
     this.closed.push(windowId);
     this.bounds.delete(windowId);
-    for (const listener of this.closedListeners) listener(windowId);
+    for (const listener of this.closedListeners) listener(windowId, lastBounds);
   }
 
   getBounds(windowId: number): Bounds | null {
@@ -65,8 +72,35 @@ export class FakeWindowPort implements WindowPort {
     return this.displayList;
   }
 
-  onClosed(listener: (windowId: number) => void): void {
+  onClosed(listener: (windowId: number, lastBounds: Bounds | null) => void): void {
     this.closedListeners.push(listener);
+  }
+
+  onFocused(listener: (windowId: number) => void): void {
+    this.focusedListeners.push(listener);
+  }
+
+  onReady(listener: (windowId: number) => void): void {
+    this.readyListeners.push(listener);
+  }
+
+  onSessionEnd(listener: () => void): void {
+    this.sessionEndListeners.push(listener);
+  }
+
+  /** Der Nutzer klickt in ein Fenster. */
+  simulateFocus(windowId: number): void {
+    for (const listener of this.focusedListeners) listener(windowId);
+  }
+
+  /** Die Seite eines Fensters ist geladen. */
+  simulateReady(windowId: number): void {
+    for (const listener of this.readyListeners) listener(windowId);
+  }
+
+  /** Windows beendet die Sitzung. */
+  simulateSessionEnd(): void {
+    for (const listener of this.sessionEndListeners) listener();
   }
 
   /** Die offenen Fenster. */
@@ -102,13 +136,18 @@ export class FakeSecrets implements SecretsPort {
   }
 }
 
-/** Papierkorb als Ordner, Explorer aufgezeichnet, Zwischenablage im Speicher. */
+/** Papierkorb als Ordner, Explorer und Browser aufgezeichnet, Zwischenablage im Speicher. */
 export class FakeShellActions implements ShellActionsPort {
+  readonly opened: string[] = [];
   readonly trashed: Array<{ path: string; movedTo: string }> = [];
   readonly shownInExplorer: string[] = [];
   clipboard = '';
 
   constructor(private readonly trashDir: string) {}
+
+  async openExternal(url: string): Promise<void> {
+    this.opened.push(url);
+  }
 
   async trash(targetPath: string): Promise<void> {
     fs.mkdirSync(this.trashDir, { recursive: true });

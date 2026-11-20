@@ -1,14 +1,22 @@
 // Projekte werden über ihren normalisierten absoluten Pfad identifiziert. Lädt nie Electron.
 
 import { createHash } from 'node:crypto';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 /**
  * Normalisierter absoluter Pfad: aufgelöst, mit den Trennern des Systems, ohne abschliessenden Trenner
- * (ausser beim Laufwerk selbst, etwa `C:\`). Die Schreibweise bleibt erhalten, damit sie angezeigt werden kann.
+ * (ausser beim Laufwerk selbst, etwa `C:\`). Für einen vorhandenen Ordner ist es sein echter Pfad: Kurznamen
+ * wie `ALESSA~1`, Junctions und symbolische Links sind aufgelöst, die Schreibweise ist die auf der Festplatte.
+ * Für einen fehlenden Ordner bleibt die angegebene Schreibweise.
  */
 export function normalizeProjectPath(projectPath: string): string {
-  const resolved = path.resolve(projectPath);
+  let resolved = path.resolve(projectPath);
+  try {
+    resolved = fs.realpathSync.native(resolved);
+  } catch {
+    // Ordner fehlt oder ist nicht lesbar: beim aufgelösten Pfad bleiben.
+  }
   const root = path.parse(resolved).root;
   let result = resolved;
   while (result.length > root.length && /[\\/]$/.test(result)) result = result.slice(0, -1);

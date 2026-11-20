@@ -47,6 +47,7 @@ export class ElectronSecrets implements SecretsPort {
  */
 export class ElectronShellActions implements ShellActionsPort {
   private testClipboard = '';
+  private trashCounter = 0;
 
   constructor(
     private readonly testMode: TestMode,
@@ -61,7 +62,8 @@ export class ElectronShellActions implements ShellActionsPort {
       return;
     }
     fs.mkdirSync(this.testTrashDir, { recursive: true });
-    const destination = path.join(this.testTrashDir, `${Date.now()}-${path.basename(targetPath)}`);
+    // Eindeutig auch bei gleichen Namen in derselben Millisekunde.
+    const destination = path.join(this.testTrashDir, `${Date.now()}-${this.trashCounter++}-${path.basename(targetPath)}`);
     try {
       fs.renameSync(targetPath, destination);
     } catch {
@@ -70,6 +72,16 @@ export class ElectronShellActions implements ShellActionsPort {
       fs.rmSync(targetPath, { recursive: true, force: true });
     }
     this.recorder.record('trash', { path: targetPath, movedTo: destination });
+  }
+
+  async openExternal(url: string): Promise<void> {
+    // Nur Web- und Mail-Adressen; alles andere (etwa file:) wäre ein Weg, beliebige Programme zu starten.
+    if (!/^(https?:|mailto:)/i.test(url)) throw new Error(`Keine Web-Adresse: ${url}`);
+    if (this.testMode.hidden) {
+      this.recorder.record('open-external', { url });
+      return;
+    }
+    await shell.openExternal(url);
   }
 
   showInExplorer(targetPath: string): void {

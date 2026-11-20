@@ -55,3 +55,43 @@ Das Fundament für alle weiteren Tickets. Für den Nutzer ändert sich fast nich
 
 - Vorlage sind Ports und Testmodus von THub (Fundstellen im Ticket-README).
 - Der Vertrag soll so angelegt sein, dass spätere Tickets Befehle und Ereignisse ergänzen, ohne die Grundmechanik zu ändern.
+
+## Review
+
+Unabhängiges Review durch einen zweiten Agenten am 2026-11-20 (20 Befunde). Eingearbeitet:
+
+- **Beenden während eines Abbaus:** Der App-Kern hält laufende Abbauten fest; Beenden wartet auf sie, auch wenn das letzte Fenster den Abbau schon gestartet hat.
+- **Wiederöffnen während eines Abbaus:** Das Öffnen eines Projekts wartet auf den laufenden Abbau desselben Projekts und liest so den zuletzt gesicherten Stand. Der Abbau schreibt den Zustand gleich zu Beginn.
+- **Fenster-Port für Ticket 02:** Meldung „geschlossen“ mit letzter Lage (im Testmodus ohne), „Fokus bekommen“, „Seite bereit“ und „Sitzung von Windows beendet“.
+- **Zustandsdateien:**
+  - Schreibfehler werden gemeldet, ohne zu werfen; der Stand bleibt für den nächsten Versuch vorgemerkt.
+  - Vorübergehende Fehler werden einige Male wiederholt.
+  - Eine unlesbare Datei und eine Datei einer neueren Version werden nicht überschrieben.
+  - Die Felder werden pro Schema geprüft.
+- **Aufräumarbeiten** haben ein Zeitlimit (5 s). Wer sich erst während oder nach dem Abbau anmeldet, wird sofort aufgeräumt.
+- **Ereignisse vor dem Laden der Seite:** Der Kern hält sie zurück, bis das Fenster bereit ist. Das Preload hat nur noch einen Listener und hält Ereignisse ohne Abonnenten zurück.
+- **Testmodus:**
+  - Eine nicht abgefangene Ausnahme beendet die App, statt einen Dialog auf dem Desktop zu zeigen. Scheitert der Start, beendet sich die App mit Meldung.
+  - Aufgezeichnet wird nur im Testmodus.
+- **Lebenszyklus im Kern:** Der App-Kern reagiert selbst auf geschlossene Fenster; das lässt sich an Teststelle 1 testen.
+- **Tests:**
+  - Der Weg von `CODIUM_TEST_NO_GIT` bis zum System-Port ist getestet.
+  - Der Oberflächentest prüft, dass das Fenster auf keinem Bildschirm liegt und keinen Fokus hat.
+  - Ein Test durchsucht Kern und System-Port nach Electron.
+  - Die Zeitabhängigkeiten sind entschärft.
+- **Vertrag:** Fehler tragen einen Code und Daten. Befehle, die ein Projekt brauchen, lehnen ohne Projekt mit `NO_PROJECT` ab. Ereignisse lassen sich auch an Fenster ohne Projekt schicken.
+- **Port „Shell-Aktionen“:**
+  - Er kann eine Web-Adresse öffnen, im Testmodus nur aufgezeichnet (gebraucht ab Ticket 23).
+  - Der Papierkorb im Testmodus vergibt eindeutige Namen.
+- **Projektpfade:** Kurznamen wie `ALESSA~1` und Junctions werden zum echten Pfad aufgelöst.
+- **Testgerüst:**
+  - Die Starthilfe mischt cmd als Shell in einen vorhandenen Zustand und verlangt einen Datenordner im Temp-Ordner.
+  - Neu: eine Hilfe für den Test-Zwischenspeicher.
+  - `test:packaged` räumt die leeren Download-Ordner von electron-builder weg.
+
+Verworfen bzw. verschoben:
+
+- **Prüfung der Befehlsparameter zur Laufzeit:** Die Oberfläche ist eigener, abgeschotteter Code. Geprüft wird in den Befehlen, die Pfade oder Werte von aussen verarbeiten, sobald es sie gibt (ab Ticket 04).
+- **Haken für Migrationen des Zustands:** Es gibt noch kein älteres Schema. Der Schutz einer neueren Datei vor dem Überschreiben ist umgesetzt, Migrationen kommen mit der ersten Schemaänderung.
+
+Beobachtung: Ein einzelner Lauf von `npm run test:ui` hing einmal bis zum Zeitlimit; in sechs weiteren Läufen trat das nicht mehr auf (vermutlich ein langsamer erster Start nach dem Bauen). Falls es wiederkommt, als eigenes Ticket erfassen.

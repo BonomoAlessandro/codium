@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { createRepoWithRemote, git, TEST_GIT_USER } from '../support/git';
 import { useTempDirs } from '../support/tempDir';
 
-describe('Git-Testgerüst', () => {
+// Jeder Test startet ein Dutzend Git-Prozesse; unter Windows mit Virenscanner kann das einige Sekunden dauern.
+describe('Git-Testgerüst', { timeout: 30_000 }, () => {
   const tempDir = useTempDirs();
 
   it('legt eine Arbeitskopie an, die einem Bare-Remote folgt', () => {

@@ -39,8 +39,11 @@ export interface TestEvent {
 export class TestRecorder {
   readonly events: TestEvent[] = [];
 
+  /** @param enabled nur im Testmodus wird aufgezeichnet, sonst wüchse die Liste im Betrieb unbegrenzt */
+  constructor(private readonly enabled: boolean) {}
+
   record(kind: string, detail?: unknown): void {
-    this.events.push({ kind, detail, at: Date.now() });
+    if (this.enabled) this.events.push({ kind, detail, at: Date.now() });
   }
 }
 

@@ -56,7 +56,14 @@ export interface RequestMessage {
  * Antwort auf eine Anfrage. Fehler kommen als Wert zurück statt als geworfene Ausnahme, damit die Meldung
  * unverändert in der Oberfläche ankommt.
  */
-export type ResponseMessage = { ok: true; result: unknown } | { ok: false; error: { message: string } };
+export type ResponseMessage = { ok: true; result: unknown } | { ok: false; error: CommandFailure };
+
+/** Ein gescheiterter Befehl: Meldung, dazu optional ein Code und strukturierte Daten (etwa eine Dateiliste). */
+export interface CommandFailure {
+  message: string;
+  code?: string;
+  data?: unknown;
+}
 
 /** Ereignis über den IPC-Kanal `IPC.event`. */
 export interface EventMessage {

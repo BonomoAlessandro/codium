@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
 import * as path from 'node:path';
 import { IPC, type EventMessage, type RequestMessage, type ResponseMessage } from '../shared/types';
 import { AppCore } from './core/appCore';
@@ -12,8 +12,17 @@ import { readTestMode, TEST_RECORDER_GLOBAL, TestRecorder } from './testMode';
 
 // Testmodus für automatische Prüfungen (siehe testMode.ts). Gilt auch für die gebaute App.
 const testMode = readTestMode(process.env);
-const recorder = new TestRecorder();
-if (testMode.hidden) (globalThis as Record<string, unknown>)[TEST_RECORDER_GLOBAL] = recorder;
+const recorder = new TestRecorder(testMode.hidden);
+if (testMode.hidden) {
+  (globalThis as Record<string, unknown>)[TEST_RECORDER_GLOBAL] = recorder;
+  // Electron zeigt bei einer nicht abgefangenen Ausnahme einen Dialog auf dem Desktop, der den Hauptprozess
+  // blockiert. Im Testmodus stattdessen protokollieren und beenden.
+  process.on('uncaughtException', (err) => {
+    console.error('Nicht abgefangene Ausnahme im Testmodus:', err);
+    app.exit(1);
+  });
+}
+process.on('unhandledRejection', (reason) => console.error('Nicht behandelte Ablehnung:', reason));
 
 // Datenordner %APPDATA%\Codium, unpaketiert (npm start) %APPDATA%\Codium-dev, damit die Entwicklung eine
 // installierte App nie berührt. Im Testmodus ersetzt CODIUM_TEST_DATA_DIR die Wurzel %APPDATA%; Electron selbst
@@ -36,6 +45,17 @@ if (app.requestSingleInstanceLock()) {
 }
 
 function start(): void {
+  try {
+    startCore();
+  } catch (err) {
+    // Ohne Kern gibt es kein Fenster; statt eines unsichtbaren, hängenden Prozesses melden und beenden.
+    console.error('Codium konnte nicht starten:', err);
+    if (!testMode.hidden) dialog.showErrorBox('Codium konnte nicht starten', String(err));
+    app.exit(1);
+  }
+}
+
+function startCore(): void {
   // Im Dev-Modus ein Menü mit DevTools und Neu laden; die installierte App hat keines.
   Menu.setApplicationMenu(app.isPackaged ? null : Menu.buildFromTemplate(DEV_MENU));
 
@@ -68,7 +88,6 @@ function start(): void {
     const windowId = BrowserWindow.fromWebContents(event.sender)?.id ?? -1;
     return appCore.router.dispatch({ windowId }, message?.name, message?.params);
   });
-  appCore.ports.windows.onClosed((windowId) => void appCore.closeProjectCore(windowId));
 
   // Vorerst ein einziges Fenster ohne Projekt; Projekt- und Willkommensfenster folgen mit Ticket 02.
   appCore.ports.windows.open({ kind: 'welcome', title: 'Codium' });
