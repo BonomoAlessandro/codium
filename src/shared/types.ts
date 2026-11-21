@@ -365,10 +365,12 @@ export interface Commands {
   /**
    * „Clone Repository“: klont `url` in den absoluten Ordner `directory` (mit Fortschritt in der Statusleiste des
    * Fensters) und öffnet das Projekt wie `app.openProject`. Ein bestehender, nicht leerer Ordner: `FILE_EXISTS`. Ohne
-   * Git: `GIT_NOT_FOUND`. Scheitert Git, kommt seine Meldung im Wortlaut (`GIT_FAILED`), und was der Klon angelegt
-   * hat, ist entfernt.
+   * Git: `GIT_NOT_FOUND`. Scheitert Git oder wird der Klon abgebrochen (`app.cancelClone`, Beenden von Codium), kommt
+   * `GIT_FAILED` mit der Meldung von Git im Wortlaut, und die Ordner, die der Klon selbst angelegt hat, sind entfernt.
    */
   'app.clone': { params: { url: string; directory: string }; result: ProjectInfo };
+  /** Bricht die laufenden Klone des anfragenden Fensters ab (Git samt Kindprozessen wird beendet). */
+  'app.cancelClone': { params: void; result: void };
   /** Das mit Codium mitgelieferte README (Markdown), für „Open README“. */
   'app.readme': { params: void; result: { text: string } };
   /**

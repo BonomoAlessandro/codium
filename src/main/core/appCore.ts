@@ -29,7 +29,7 @@ import type { EventSink, Ports, WindowPlacement } from './ports';
 import { ProgressReporter } from './progress';
 import { DEFAULT_CLEANUP_TIMEOUT_MS, ProjectCore } from './projectCore';
 import { FolderQueries, type FolderStatus } from './folderQueries';
-import { cloneRepository } from './clone';
+import { startClone, type CloneJob } from './clone';
 import { registerEditorCommands } from './editorCommands';
 import { JDTLS_MIN_JAVA, detectJdks, hasJavaMarkers, jdkForLanguageServer, sameJdkPath } from './jdks';
 import { registerFileCommands } from './fileCommands';
@@ -127,6 +127,8 @@ export class AppCore {
   private relaunchRequested = false;
   private readonly log: (message: string) => void;
   private shuttingDown: Promise<void> | null = null;
+  /** Laufende Klone je Fenster; beim Beenden werden sie abgebrochen (sonst liefe Git verwaist weiter). */
+  private readonly clones = new Map<CloneJob, { windowId: number; target: string }>();
   /** Das gefundene Git (Pfad), `null` ohne Git: Die Git-Funktionen bleiben dann aus (ab Ticket 15). */
   readonly gitPath: string | null;
 
@@ -397,10 +399,11 @@ export class AppCore {
   shutdown(): Promise<void> {
     this.shuttingDown ??= (async () => {
       this.quitting = true;
+      const cancelling = [...this.clones.keys()].map((job) => job.cancel());
       this.savePlacements();
       this.appStateFile.flush();
       const closing = [...this.projects.keys()].map((windowId) => this.closeProjectCore(windowId));
-      await Promise.all([...closing, ...this.disposals.values()]);
+      await Promise.all([...closing, ...cancelling, ...this.disposals.values()]);
       this.appStateFile.flush();
     })();
     return this.shuttingDown;
@@ -466,6 +469,9 @@ export class AppCore {
       return this.ports.folderPicker.pickFolder({ windowId: ctx.windowId, title: typeof title === 'string' ? title : 'Select Folder' });
     });
     this.router.register('app.clone', (ctx, params) => this.clone(ctx.windowId, params));
+    this.router.register('app.cancelClone', async (ctx) => {
+      await Promise.all([...this.clones].filter(([, c]) => c.windowId === ctx.windowId).map(([job]) => job.cancel()));
+    });
     this.router.register('app.readme', () => {
       const text = this.options.readmePath ? this.ports.system.readTextFile(this.options.readmePath) : null;
       if (text === null) throw new CommandError('The README that comes with Codium was not found.', ErrorCode.fileNotFound);
@@ -575,13 +581,25 @@ export class AppCore {
     if (typeof url !== 'string' || url.trim() === '') throw new CommandError('A repository URL is expected.', ErrorCode.invalidParams);
     if (!isAbsoluteCommandPath(directory)) throw new CommandError('An absolute directory is expected.', ErrorCode.invalidParams);
     const target = path.resolve(directory);
-    await cloneRepository({
+    // Zwei Klone ins selbe Ziel liefen sonst beide in denselben (leeren) Ordner.
+    const key = target.toLowerCase();
+    if ([...this.clones.values()].some((c) => c.target === key)) {
+      throw new CommandError(`“${target}” is already being cloned.`, ErrorCode.fileExists, { path: target });
+    }
+    const job = startClone({
       git: this.gitPath,
       url: url.trim(),
       directory: target,
       env: this.options.processEnv ?? process.env,
       progress: this.progressForWindow(windowId),
     });
+    this.clones.set(job, { windowId, target: key });
+    try {
+      await job.done;
+    } finally {
+      this.clones.delete(job);
+    }
+    this.assertNotQuitting();
     this.updateState((state) => {
       state.cloneParent = path.dirname(target);
     });

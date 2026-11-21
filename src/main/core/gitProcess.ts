@@ -33,9 +33,23 @@ export function gitEnvironment(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   };
 }
 
+/** Ein laufender Aufruf von Git, der sich abbrechen lässt. */
+export interface GitProcess {
+  done: Promise<GitRun>;
+  /** Beendet Git samt Kindprozessen (etwa `git remote-https`, den Credential Manager) und wartet darauf. */
+  kill(): Promise<void>;
+}
+
 /** Führt Git aus und liefert Exit-Code und Ausgaben. Scheitert nur, wenn Git sich nicht starten lässt. */
 export function runGit(git: string, args: string[], options: GitRunOptions): Promise<GitRun> {
-  return new Promise((resolve, reject) => {
+  return startGit(git, args, options).done;
+}
+
+/** Startet Git; `done` wie bei `runGit`, dazu ein Abbruch des ganzen Prozessbaums. */
+export function startGit(git: string, args: string[], options: GitRunOptions): GitProcess {
+  let pid: number | undefined;
+  let finished = false;
+  const done = new Promise<GitRun>((resolve, reject) => {
     const child = spawn(git, args, {
       cwd: options.cwd,
       env: gitEnvironment(options.env ?? process.env),
@@ -55,11 +69,42 @@ export function runGit(git: string, args: string[], options: GitRunOptions): Pro
       pending = parts.pop() ?? '';
       for (const line of parts) if (line !== '') options.onStderrLine(line);
     });
+    pid = child.pid;
     child.on('error', reject);
     child.on('close', (code) => {
+      finished = true;
       if (pending !== '' && options.onStderrLine) options.onStderrLine(pending);
       resolve({ code, stdout: Buffer.concat(out).toString('utf8'), stderr: err });
     });
+  });
+  return {
+    done,
+    kill: async () => {
+      if (finished || pid === undefined) return;
+      await killTree(pid);
+      await done.catch(() => {});
+    },
+  };
+}
+
+/**
+ * Beendet einen Prozess samt Kindern. Unter Windows trifft `child.kill()` nur Git selbst, nicht `git remote-https`
+ * oder den Credential Manager; deshalb `taskkill /T`.
+ */
+function killTree(pid: number): Promise<void> {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32') {
+      try {
+        process.kill(pid);
+      } catch {
+        // Schon beendet.
+      }
+      resolve();
+      return;
+    }
+    const killer = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+    killer.on('error', () => resolve());
+    killer.on('close', () => resolve());
   });
 }
 

@@ -53,7 +53,48 @@ describe('Repository klonen', () => {
       await dialog.getByRole('button', { name: 'Clone' }).click();
       await expect.poll(() => dialog.getByRole('alert').innerText()).toMatch(/does not exist|not appear to be a git repository/i);
       expect(fs.existsSync(target)).toBe(false);
+      // Der Fokus steht wieder in der Adresse: korrigieren und mit Enter erneut klonen geht ohne Klick.
+      await expect.poll(() => dialog.getByLabel('URL').evaluate((el) => el === document.activeElement)).toBe(true);
       await page.keyboard.press('Escape');
+      await expect.poll(() => dialog.count()).toBe(0);
+    } finally {
+      await codium.close();
+    }
+  });
+
+  it('bricht einen hängenden Klon mit „Cancel“ ab und beendet Git', async () => {
+    const base = tempDir();
+    const target = path.join(base, 'hanging', 'app');
+    // Eine Quelle, die nie antwortet (Transport `ext::`, nur hier erlaubt); Node schreibt seine Prozessnummer.
+    const pidFile = path.join(base, 'remote.pid');
+    const node = process.execPath.replace(/%/g, '%%').replace(/ /g, '% ');
+    const script = 'require("fs").writeFileSync(process.env.CODIUM_PIDFILE,""+process.pid);setInterval(()=>0,1e3)';
+    const codium = await launchCodium({
+      dataRoot: tempDir(),
+      env: { CODIUM_PIDFILE: pidFile, GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'protocol.ext.allow', GIT_CONFIG_VALUE_0: 'always' },
+    });
+    try {
+      const page = await codium.page(WELCOME);
+      await page.getByRole('button', { name: 'Clone Repository' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Clone Repository' });
+      await dialog.getByLabel('URL').fill(`ext::${node} -e ${script}`);
+      await dialog.getByLabel('Directory').fill(target);
+      await dialog.getByRole('button', { name: 'Clone' }).click();
+      await expect.poll(() => fs.existsSync(pidFile), { timeout: 15_000 }).toBe(true);
+      await dialog.getByRole('button', { name: 'Cancel' }).click();
+      await expect.poll(() => dialog.getByRole('alert').innerText()).toBe('Cloning was cancelled.');
+      const alive = () => {
+        try {
+          process.kill(Number(fs.readFileSync(pidFile, 'utf8')), 0);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      expect(alive()).toBe(false);
+      expect(fs.existsSync(path.join(base, 'hanging'))).toBe(false);
+      // Danach schliesst „Cancel“ den Dialog wie gewohnt.
+      await dialog.getByRole('button', { name: 'Cancel' }).click();
       await expect.poll(() => dialog.count()).toBe(0);
     } finally {
       await codium.close();

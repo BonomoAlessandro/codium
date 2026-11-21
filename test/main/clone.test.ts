@@ -93,6 +93,91 @@ describe('Repository klonen', () => {
     expect(test.ports.windows.openTitles).toEqual([WELCOME]);
   });
 
+  /**
+   * Eine Quelle, die nie antwortet: der Transport `ext::` (nur in diesem Test erlaubt) startet Node, das seine
+   * Prozessnummer in eine Datei schreibt und dann wartet. So lässt sich ein hängender Klon abbrechen.
+   */
+  function hangingSource(base: string, env: NodeJS.ProcessEnv) {
+    const pidFile = path.join(base, 'remote.pid');
+    const node = process.execPath.replace(/%/g, '%%').replace(/ /g, '% ');
+    const script = 'require("fs").writeFileSync(process.env.CODIUM_PIDFILE,""+process.pid);setInterval(()=>0,1e3)';
+    Object.assign(env, {
+      CODIUM_PIDFILE: pidFile,
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'protocol.ext.allow',
+      GIT_CONFIG_VALUE_0: 'always',
+    });
+    const alive = () => {
+      try {
+        process.kill(Number(fs.readFileSync(pidFile, 'utf8')), 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    return { url: `ext::${node} -e ${script}`, started: () => fs.existsSync(pidFile), alive };
+  }
+
+  async function until(condition: () => boolean, ms = 15_000): Promise<void> {
+    const end = Date.now() + ms;
+    while (!condition()) {
+      if (Date.now() > end) throw new Error('Bedingung nicht erfüllt');
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+
+  it('bricht einen hängenden Klon ab und entfernt nur, was er selbst angelegt hat', async () => {
+    const { base, source, test, welcome } = await setup();
+    const hanging = hangingSource(base, source.env);
+    fs.mkdirSync(path.join(base, 'existing'));
+    const target = path.join(base, 'existing', 'new', 'deeper', 'app');
+    const cloning = call(test, welcome, 'app.clone', { url: hanging.url, directory: target }).catch((e: unknown) => e);
+    await until(hanging.started);
+    expect(hanging.alive()).toBe(true);
+    // Ein zweiter Klon ins selbe Ziel wird abgelehnt, ohne den ersten zu stören.
+    await expect(call(test, welcome, 'app.clone', { url: source.remote, directory: target })).rejects.toMatchObject({
+      code: ErrorCode.fileExists,
+    });
+    expect(fs.existsSync(target)).toBe(true);
+
+    await call(test, welcome, 'app.cancelClone');
+    expect(await cloning).toMatchObject({ code: ErrorCode.gitFailed, message: 'Cloning was cancelled.' });
+    // Git samt seinem Kindprozess ist beendet; Ziel und die angelegten Elternordner sind weg, der vorhandene bleibt.
+    expect(hanging.alive()).toBe(false);
+    expect(fs.existsSync(path.join(base, 'existing', 'new'))).toBe(false);
+    expect(fs.readdirSync(path.join(base, 'existing'))).toEqual([]);
+    expect(test.ports.windows.openTitles).toEqual([WELCOME]);
+  });
+
+  it('beendet beim Beenden von Codium einen laufenden Klon, statt Git verwaist weiterlaufen zu lassen', async () => {
+    const { base, source, test, welcome } = await setup();
+    const hanging = hangingSource(base, source.env);
+    const target = path.join(base, 'quit', 'app');
+    const cloning = call(test, welcome, 'app.clone', { url: hanging.url, directory: target }).catch((e: unknown) => e);
+    await until(hanging.started);
+    await test.core.shutdown();
+    expect(hanging.alive()).toBe(false);
+    expect(await cloning).toMatchObject({ code: ErrorCode.gitFailed });
+    expect(fs.existsSync(path.join(base, 'quit'))).toBe(false);
+  });
+
+  it('löscht nach einem Fehler keinen Ordner, den es vorher gab, und meldet eine Datei als Ziel richtig', async () => {
+    const { base, source, test, welcome } = await setup();
+    // Fehlende Quelle mit tiefem Ziel: auch die angelegten Elternordner verschwinden wieder.
+    await expect(
+      call(test, welcome, 'app.clone', { url: path.join(base, 'missing.git'), directory: path.join(base, 'a', 'b', 'c') }),
+    ).rejects.toMatchObject({ code: ErrorCode.gitFailed });
+    expect(fs.existsSync(path.join(base, 'a'))).toBe(false);
+
+    const file = path.join(base, 'file.txt');
+    fs.writeFileSync(file, 'x');
+    await expect(call(test, welcome, 'app.clone', { url: source.remote, directory: file })).rejects.toMatchObject({
+      code: ErrorCode.fileExists,
+      message: expect.stringContaining('is not a folder'),
+    });
+    expect(fs.readFileSync(file, 'utf8')).toBe('x');
+  });
+
   it('ist ohne Git aus', async () => {
     const base = tempDir();
     const test = createTestCore(path.join(base, 'data'), { system: { programs: {} } });

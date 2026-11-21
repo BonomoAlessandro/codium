@@ -48,6 +48,7 @@ function CloneDialog({ api, onClose }: { api: CodiumApi; onClose: () => void }) 
   const [cloning, setCloning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const urlRef = useRef<HTMLInputElement>(null);
   const previousFocus = useRef<Element | null>(null);
   const cloningRef = useRef(cloning);
   cloningRef.current = cloning;
@@ -69,7 +70,8 @@ function CloneDialog({ api, onClose }: { api: CodiumApi; onClose: () => void }) 
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        if (!cloningRef.current) onCloseRef.current();
+        if (cloningRef.current) void api.request('app.cancelClone').catch(() => {});
+        else onCloseRef.current();
       } else if (e.key === 'Tab' && dialogRef.current) {
         keepFocusInside(e, dialogRef.current);
       }
@@ -104,6 +106,11 @@ function CloneDialog({ api, onClose }: { api: CodiumApi; onClose: () => void }) 
     } catch (err) {
       setError(errorText(err));
       setCloning(false);
+      // Die Felder waren inaktiv, der Fokus lag auf nichts: zurück in die Adresse, zum Korrigieren und erneuten Enter.
+      window.setTimeout(() => {
+        urlRef.current?.focus();
+        urlRef.current?.select();
+      }, 0);
     }
   };
 
@@ -128,6 +135,7 @@ function CloneDialog({ api, onClose }: { api: CodiumApi; onClose: () => void }) 
         <div className="settings-grid">
           <label htmlFor={`${id}-url`}>URL</label>
           <input
+            ref={urlRef}
             id={`${id}-url`}
             className="settings-input"
             value={url}
@@ -166,7 +174,7 @@ function CloneDialog({ api, onClose }: { api: CodiumApi; onClose: () => void }) 
           <button type="button" className="button-primary" disabled={!ready} onClick={() => void clone()}>
             Clone
           </button>
-          <button type="button" disabled={cloning} onClick={onClose}>
+          <button type="button" onClick={() => (cloning ? void api.request('app.cancelClone').catch(() => {}) : onClose())}>
             Cancel
           </button>
         </div>
