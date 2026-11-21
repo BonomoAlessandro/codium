@@ -53,7 +53,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
   - `npm run test:slow`: Sprachserver, Terminal, Datenbank, Netz
   - `npm run test:ui`: Playwright gegen `dist/` mit dem Electron aus den Entwicklungsabhängigkeiten
   - `npm run test:packaged`: Prüfungen am gepackten Paket ohne Fenster
-- **Vorlage THub** (`C:\workspace\custom\termhub`, ein Projekt desselben Nutzers):
+- **Vorlage THub** (`C:\workspace\THub`, ein Projekt desselben Nutzers):
   - `src/main/workspace/ports.ts`: Ports des Kerns
   - `src/main/main.ts`: Testmodus mit `THUB_TEST_HIDDEN`, `THUB_TEST_DATA_DIR`, `THUB_TEST_PICK_DIR`
   - `src/main/ptyManager.ts`: Terminal mit node-pty
