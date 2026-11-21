@@ -119,13 +119,18 @@ export interface PanelSizes {
   bottom: number;
 }
 
+/** Die Seite links oder rechts, die bei Platzmangel Vorrang hat: die zuletzt gezogene. */
+export type WidthPriority = 'left' | 'right' | null;
+
 /**
  * Die angezeigten Grössen: die gespeicherten, aber nie unter der Mindestgrösse und nie so gross, dass der Code-Bereich
  * kleiner würde als seine Mindestgrösse. Reicht der Platz nicht für links und rechts zusammen (etwa in einem
- * verkleinerten Fenster), schrumpfen beide anteilig, höchstens bis zur Mindestgrösse. Die gespeicherten Grössen
- * bleiben dabei, wie sie sind; im grösseren Fenster zeigen sie sich wieder.
+ * verkleinerten oder halb angedockten Fenster), weicht wie in IntelliJ zuerst die Seite, die nicht zuletzt gezogen wurde,
+ * bis zu ihrer Mindestbreite, erst dann die zuletzt gezogene. Ohne zuletzt gezogene Seite schrumpfen beide anteilig.
+ * Die gespeicherten Grössen bleiben dabei, wie sie sind; im grösseren Fenster zeigen sie sich wieder. Unten gibt es
+ * keine Gegenseite: Das untere Werkzeugfenster wird nur auf die Höhe begrenzt, die der Code-Bereich übrig lässt.
  */
-export function panelSizes(layout: ToolWindowLayout, area: LayoutArea): PanelSizes {
+export function panelSizes(layout: ToolWindowLayout, area: LayoutArea, priority: WidthPriority = null): PanelSizes {
   const bottom = layout.bottom.open
     ? clamp(layout.bottom.size, BOTTOM_MIN_SIZE, Math.max(BOTTOM_MIN_SIZE, area.height - CODE_MIN_HEIGHT))
     : 0;
@@ -133,7 +138,16 @@ export function panelSizes(layout: ToolWindowLayout, area: LayoutArea): PanelSiz
   const right = layout.right.open ? Math.max(layout.right.size, SIDE_MIN_SIZE) : 0;
   const available = area.width - CODE_MIN_WIDTH;
   if (left + right <= available) return { left, right, bottom };
-  // Zu breit: Was über der Mindestgrösse liegt, schrumpft bei beiden im selben Verhältnis.
+  if (left > 0 && right > 0 && priority !== null) {
+    // Zuerst weicht die andere Seite bis zur Mindestbreite, dann die bevorzugte.
+    const preferred = priority === 'left' ? left : right;
+    const preferredShown = Math.min(preferred, Math.max(SIDE_MIN_SIZE, available - SIDE_MIN_SIZE));
+    const otherShown = Math.max(SIDE_MIN_SIZE, available - preferredShown);
+    return priority === 'left'
+      ? { left: preferredShown, right: otherShown, bottom }
+      : { left: otherShown, right: preferredShown, bottom };
+  }
+  // Was über der Mindestgrösse liegt, schrumpft bei beiden im selben Verhältnis (oder bei der einzigen offenen Seite).
   const minimum = (left > 0 ? SIDE_MIN_SIZE : 0) + (right > 0 ? SIDE_MIN_SIZE : 0);
   const flexible = (left > 0 ? left - SIDE_MIN_SIZE : 0) + (right > 0 ? right - SIDE_MIN_SIZE : 0);
   const factor = flexible > 0 ? clamp((available - minimum) / flexible, 0, 1) : 0;
@@ -142,25 +156,14 @@ export function panelSizes(layout: ToolWindowLayout, area: LayoutArea): PanelSiz
 }
 
 /**
- * Übernimmt die angezeigten Grössen der offenen Seiten ins Layout, etwa zu Beginn des Ziehens an einer Trennlinie:
- * Gezogen wird von dem aus, was der Nutzer sieht.
- */
-export function withShownSizes(layout: ToolWindowLayout, area: LayoutArea): ToolWindowLayout {
-  const sizes = panelSizes(layout, area);
-  const result = structuredClone(layout);
-  for (const side of TOOL_WINDOW_SIDES) if (result[side].open) result[side].size = sizes[side];
-  return result;
-}
-
-/**
- * Mindest- und Höchstgrösse einer Seite bei dieser Fläche. Die Höchstgrösse lässt dem Code-Bereich seine Mindestgrösse,
- * links und rechts auch neben dem offenen Werkzeugfenster der Gegenseite (in seiner angezeigten Grösse).
+ * Mindest- und Höchstgrösse einer Seite beim Ziehen. Die Höchstgrösse lässt dem Code-Bereich seine Mindestgrösse; eine
+ * offene Gegenseite darf dabei bis auf ihre Mindestbreite verdrängt werden, wie in IntelliJ.
  */
 export function sizeLimits(side: ToolWindowSide, layout: ToolWindowLayout, area: LayoutArea): { min: number; max: number } {
   if (side === 'bottom') return { min: BOTTOM_MIN_SIZE, max: Math.max(BOTTOM_MIN_SIZE, area.height - CODE_MIN_HEIGHT) };
   const opposite = side === 'left' ? 'right' : 'left';
-  const occupied = panelSizes(layout, area)[opposite];
-  return { min: SIDE_MIN_SIZE, max: Math.max(SIDE_MIN_SIZE, area.width - CODE_MIN_WIDTH - occupied) };
+  const displaced = layout[opposite].open ? SIDE_MIN_SIZE : 0;
+  return { min: SIDE_MIN_SIZE, max: Math.max(SIDE_MIN_SIZE, area.width - CODE_MIN_WIDTH - displaced) };
 }
 
 /** Die Grösse beim Ziehen an einer Trennlinie: die verlangte, begrenzt auf Mindest- und Höchstgrösse, ganze Pixel. */
@@ -172,33 +175,27 @@ export function dragSize(side: ToolWindowSide, requested: number, layout: ToolWi
 /** Ein Ziehen an der Trennlinie einer Seite, vom Beginn an. */
 export interface Resize {
   side: ToolWindowSide;
-  /** Angezeigte Grösse der gezogenen Seite zu Beginn. */
+  /** Angezeigte Grösse der gezogenen Seite zu Beginn: Gezogen wird von dem aus, was zu sehen ist. */
   startSize: number;
-  /** Das Layout, wie es zu Beginn zu sehen war (angezeigte Grössen aller offenen Seiten). */
-  shown: ToolWindowLayout;
   /** Das gespeicherte Layout zu Beginn. */
   stored: ToolWindowLayout;
 }
 
-/** Beginnt das Ziehen an einer Trennlinie: Gezogen wird von dem aus, was zu sehen ist. */
-export function beginResize(layout: ToolWindowLayout, side: ToolWindowSide, area: LayoutArea): Resize {
-  const shown = withShownSizes(layout, area);
-  return { side, startSize: shown[side].size, shown, stored: layout };
+/** Beginnt das Ziehen an einer Trennlinie, bei der bisherigen Vorrang-Seite (`priority`) für die angezeigte Grösse. */
+export function beginResize(layout: ToolWindowLayout, side: ToolWindowSide, area: LayoutArea, priority: WidthPriority): Resize {
+  return { side, startSize: panelSizes(layout, area, priority)[side], stored: layout };
 }
 
 /**
- * Das Ziehen ist bei der verlangten Grösse: `shown` ist das anzuzeigende Layout, `stored` das zu speichernde. Die
- * Grenzen rechnen mit den angezeigten Grössen der übrigen Seiten, so bleibt der Code-Bereich sichtbar. Gespeichert wird
- * nur die neue Grösse der gezogenen Seite; die Gegenseite behält ihre gespeicherte, auch wenn sie in einem kleinen
- * Fenster gerade schmaler zu sehen ist.
+ * Das zu speichernde Layout, wenn das Ziehen bei der verlangten Grösse ist: Nur die gezogene Seite bekommt ihre neue
+ * Grösse, die Gegenseite behält ihre gespeicherte. Angezeigt wird es mit der gezogenen Seite als Vorrang-Seite
+ * (`panelSizes(…, side)`); so steht die gezogene Breite auch nach dem Loslassen, und die Gegenseite weicht, höchstens
+ * bis zu ihrer Mindestbreite.
  */
-export function resizeTo(resize: Resize, requested: number, area: LayoutArea): { shown: ToolWindowLayout; stored: ToolWindowLayout } {
-  const { side } = resize;
-  const size = dragSize(side, requested, resize.shown, area);
-  return {
-    shown: { ...resize.shown, [side]: { ...resize.shown[side], size } },
-    stored: { ...resize.stored, [side]: { ...resize.stored[side], size } },
-  };
+export function resizeTo(resize: Resize, requested: number, area: LayoutArea): ToolWindowLayout {
+  const { side, stored } = resize;
+  const size = dragSize(side, requested, stored, area);
+  return { ...stored, [side]: { ...stored[side], size } };
 }
 
 function clamp(value: number, min: number, max: number): number {

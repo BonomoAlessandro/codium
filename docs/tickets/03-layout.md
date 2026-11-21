@@ -66,15 +66,18 @@ Unabhängiges Review durch einen zweiten Agenten am 2026-11-21. Kein schwerer Be
 
 - **Offenes Menü nahm nach einem Alt-Kürzel weiter Tasten an** (nachgewiesen): Menü öffnen, Pfeil runter, Alt + 1, Enter führte „Open Folder…“ aus, mit Pfeil hoch wäre es „Exit“ gewesen. Jetzt schliesst sich das Menü, sobald der Fokus es verlässt. Die Kürzel der App schliessen offene Menüs zuerst (`closeOpenMenus` in `src/renderer/popup/Menu.tsx`), und ein geschlossenes Menü nimmt sofort keine Tasten mehr an, auch bevor React es entfernt hat. Ein Oberflächentest spielt genau diesen Ablauf durch, mit Pfeil runter und Pfeil hoch; ohne die Korrektur schlägt er fehl.
 - **Spezifikation an die Symbolleisten angeglichen:** „Symbolleiste“ unter den Begriffen, Abschnitt „Oberfläche“, Präzisierung 24 und eine neue Präzisierung 37 beschreiben die Aufteilung wie im neuen IntelliJ.
-- **Ziehen in einem kleinen Fenster überschrieb die Gegenseite** (nachgewiesen): Gespeichert wird jetzt nur die neue Grösse der gezogenen Seite. Die Grenzen rechnen weiter mit den angezeigten Grössen der übrigen Seiten (`beginResize` und `resizeTo` in `toolWindowLayout.ts`, mit Einheitstest).
+- **Ziehen in einem kleinen Fenster** (nachgewiesen, nach der Nachprüfung umgebaut). Zuerst überschrieb Ziehen die gespeicherte Grösse der Gegenseite. Die erste Korrektur liess sie zwar unberührt, aber nach dem Loslassen schrumpften wieder beide Seiten anteilig. Jeder Versuch zu verbreitern machte die Seite schmaler: Fenster 720 × 400, links 280 und rechts 320 gespeichert; links 1 px breiter gezogen, war die Seite nach dem Loslassen 176 statt 200 px breit. Das trat schon bei Fenstern unter etwa 920 px auf, etwa halb angedockt. Jetzt wie in IntelliJ:
+  - Die Oberfläche merkt sich die zuletzt gezogene Seite, ohne sie zu speichern. Bei Platzmangel weicht zuerst die andere Seite bis zu ihrer Mindestbreite, erst dann die gezogene (`panelSizes` mit Vorrang-Seite).
+  - Beim Ziehen darf die Höchstgrösse die offene Gegenseite bis auf deren Mindestbreite verdrängen.
+  - Die gezogene Breite bleibt nach dem Loslassen stehen. Gespeichert wird nur die gezogene Seite; die Gegenseite behält ihre gespeicherte Breite und zeigt sie im grösseren Fenster wieder.
+  - Unten gibt es keine Gegenseite: Das untere Werkzeugfenster wird nur auf die Höhe begrenzt, die der Code-Bereich übrig lässt.
+  - Einheitstests (`beginResize`, `resizeTo`, `panelSizes` in `toolWindowLayout.ts`). Ein Oberflächentest spielt den Fall des Prüfers in einem Fenster von 720 × 400 durch; gegen den vorherigen Stand scheitert er mit genau dessen Zahlen (176 statt 200).
 - **Zieh-Zeiger blieb hängen,** wenn das Werkzeugfenster während des Ziehens verschwand (nachgewiesen). Bewegung und Loslassen kommen jetzt über das Fenster; Klicks auf Symbole, „Hide“ und die Kürzel beenden ein laufendes Ziehen zuerst. Oberflächentest: Ziehen, mittendrin Alt + 1 zweimal; danach kein Zieh-Zeiger mehr, und weitere Bewegungen ändern nichts.
 - **Fortschritt im Willkommensfenster:** Eine schmale Leiste unten erscheint, solange eine Arbeit läuft (Ticket 10, Klonen). Die Anzeige teilt sich `ProgressIndicator.tsx` mit der Statusleiste. Oberflächentest über `__codiumTestHooks`.
 - **Werkzeugfenster bleiben nach dem ersten Öffnen eingehängt** und werden beim Schliessen und Wechseln nur verborgen; Dateibaum und Terminal behalten so ihren Zustand. Oberflächentest: Eine Markierung am Inhalt übersteht Schliessen, Wechseln und Öffnen.
 - **Knöpfe an Meldungen** sind auf Vollständigkeit geprüft (`assertNever` in `App.tsx`).
 
-Bewusst so geblieben:
-
-- **Ziehen in einem Fenster, das für beide Seiten zu klein ist:** Während des Ziehens bleibt die Gegenseite in ihrer angezeigten Breite stehen. Nach dem Loslassen gilt wieder die anteilige Verkleinerung beider Seiten; die gezogene Seite kann dann etwas schmaler erscheinen als gezogen. Dafür bleibt die gespeicherte Breite der Gegenseite unberührt, und im grösseren Fenster sind beide wieder so breit wie gespeichert.
+Nachprüfung durch denselben Agenten: Sieben der acht Befunde sind bestätigt behoben. Das Verhalten beim Ziehen im kleinen Fenster, zuerst als bewusst so geblieben geführt, ist nach IntelliJ umgebaut (oben).
 
 Entscheidungen bei der Umsetzung, die Ticket und Spezifikation nicht vorgeben:
 
@@ -84,5 +87,5 @@ Entscheidungen bei der Umsetzung, die Ticket und Spezifikation nicht vorgeben:
 - **Kürzel wie in IntelliJ:** Ein verborgenes Werkzeugfenster wird gezeigt und bekommt den Fokus, ein sichtbares ohne Fokus bekommt den Fokus, ein sichtbares mit Fokus wird geschlossen. Ein Klick auf das Symbol schaltet immer um und setzt beim Öffnen den Fokus hinein. Während einer Rückfrage ruhen die Kürzel. Die Belegung steht in `src/renderer/keymap.ts` (Grundlage für Ticket 06).
 - **Rückfrage beim Entfernen:** Das „×“ an einem zuletzt geöffneten Projekt im Willkommensfenster fragt „Remove Recent Project“, wie IntelliJ. „Remove from List“ an einer Meldung entfernt ohne Rückfrage.
 - **Standard-Layout:** links „Project“ offen (280 px), unten „Terminal“ (260 px) und rechts „Database“ (320 px) zu. Grössen werden in Pixeln gespeichert.
-- **Mindestgrössen:** Werkzeugfenster links und rechts 150 px, unten 100 px; der Code-Bereich bleibt mindestens 240 × 120 px. In einem zu kleinen Fenster schrumpfen links und rechts anteilig, die gespeicherten Grössen bleiben.
+- **Mindestgrössen:** Werkzeugfenster links und rechts 150 px, unten 100 px; der Code-Bereich bleibt mindestens 240 × 120 px. Ist das Fenster zu schmal für links und rechts, weicht zuerst die Seite, die nicht zuletzt gezogen wurde; wurde in diesem Fenster noch keine gezogen, schrumpfen beide anteilig. Die gespeicherten Grössen bleiben.
 - **Willkommensfenster** mit eigener Kopfzeile (Titel, Fensterknöpfe von Windows), Fensterfarbe immer `#1e1f22`, `nativeTheme.themeSource = 'dark'`.

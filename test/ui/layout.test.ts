@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import type { Locator, Page } from 'playwright-core';
 import { describe, expect, it } from 'vitest';
 import type { RecentProject, ResponseMessage } from '../../src/shared/types';
-import { CODE_MIN_HEIGHT, CODE_MIN_WIDTH } from '../../src/renderer/project/toolWindowLayout';
+import { CODE_MIN_HEIGHT, CODE_MIN_WIDTH, SIDE_MIN_SIZE } from '../../src/renderer/project/toolWindowLayout';
 import { WINDOW_BACKGROUND } from '../../src/shared/theme';
 import { launchCodium, prepareAppState, type LaunchedApp } from '../support/launchApp';
 import { useTempDirs } from '../support/tempDir';
@@ -260,6 +260,57 @@ describe('Layout des Projektfensters', () => {
       await expect.poll(() => shownToolWindows(page)).toEqual(['Commit', 'Terminal']);
       expect((await box(sideArea(page, 'left'))).width).toBe(expected.left);
       expect((await box(sideArea(page, 'bottom'))).height).toBe(expected.bottom);
+    });
+  });
+
+  it('in einem kleinen Fenster bleibt die gezogene Breite stehen; die Gegenseite behält ihre gespeicherte', async () => {
+    const { dataRoot } = setup();
+    const { codium, page } = await launchAlpha(dataRoot);
+    await withApp(codium, async () => {
+      // Die Grösse des eigenen Fensters über Electron; die Lage ausserhalb der Bildschirme bleibt.
+      const setWindowSize = (width: number, height: number) =>
+        codium.app.evaluate(
+          ({ BrowserWindow }, size) => {
+            const win = BrowserWindow.getAllWindows()[0];
+            const { x, y } = win.getBounds();
+            win.setBounds({ x, y, width: size.width, height: size.height });
+          },
+          { width, height },
+        );
+      const left = sideArea(page, 'left');
+      const right = sideArea(page, 'right');
+      const editor = page.getByRole('main', { name: 'Editor' });
+      const splitter = page.getByRole('separator', { name: 'Resize Project' });
+
+      // Links 280 und rechts 320 gespeichert, das Fenster 720 × 400: zu eng für beide.
+      await stripeButton(page, 'Database').click();
+      await expect.poll(() => shownToolWindows(page)).toEqual(['Project', 'Database']);
+      await setWindowSize(720, 400);
+      await expect.poll(async () => (await box(right)).width).toBeLessThan(320);
+      const before = (await box(left)).width;
+      expect(before).toBeLessThan(280);
+
+      // Breiter ziehen macht die Seite breiter, auch nach dem Loslassen.
+      await dragBy(page, splitter, 1, 0);
+      expect((await box(left)).width).toBe(before + 1);
+      await dragBy(page, splitter, 30, 0);
+      expect((await box(left)).width).toBe(before + 31);
+
+      // Weit nach rechts: Die Gegenseite weicht bis auf ihre Mindestbreite, der Code-Bereich behält seine.
+      await dragBy(page, splitter, 300, 0);
+      const widest = (await box(left)).width;
+      expect(widest).toBeGreaterThan(before + 31);
+      expect((await box(right)).width).toBe(SIDE_MIN_SIZE);
+      expect(Math.abs((await box(editor)).width - CODE_MIN_WIDTH)).toBeLessThanOrEqual(1);
+
+      // Im grossen Fenster: links die gezogene Breite, rechts wieder die gespeicherten 320.
+      await setWindowSize(1280, 800);
+      await expect.poll(async () => (await box(right)).width).toBe(320);
+      expect((await box(left)).width).toBe(widest);
+      const stored = (await page.evaluate(() =>
+        (window as unknown as { codium: { invoke(name: string): Promise<unknown> } }).codium.invoke('project.layout'),
+      )) as ResponseMessage & { ok: true };
+      expect(stored.result).toMatchObject({ left: { size: widest }, right: { size: 320 } });
     });
   });
 

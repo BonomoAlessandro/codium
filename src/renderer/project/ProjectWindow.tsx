@@ -39,6 +39,7 @@ import {
   visibleLayout,
   type Availability,
   type LayoutArea,
+  type WidthPriority,
 } from './toolWindowLayout';
 
 interface ProjectWindowProps {
@@ -82,8 +83,11 @@ export function ProjectWindow({ api, project, actions, work }: ProjectWindowProp
   const sides = useRef(new Map<ToolWindowSide, HTMLElement>());
   /** Werkzeugfenster, die schon einmal offen waren; sie bleiben eingehängt. */
   const mounted = useRef(new Set<ToolWindowId>());
-  /** Während des Ziehens das angezeigte Layout (die Gegenseite in ihrer angezeigten Grösse), sonst `null`. */
-  const [dragView, setDragView] = useState<ToolWindowLayout | null>(null);
+  /**
+   * Die zuletzt gezogene Seite links oder rechts; bei Platzmangel weicht zuerst die andere (wie in IntelliJ). Sie gilt
+   * nur, solange das Fenster offen ist, und wird nicht gespeichert.
+   */
+  const [priority, setPriority] = useState<WidthPriority>(null);
   const drag = useRef<ActiveDrag | null>(null);
 
   /** Das Layout, wie es sich gerade zeigt; Grundlage jeder Änderung. */
@@ -99,7 +103,6 @@ export function ProjectWindow({ api, project, actions, work }: ProjectWindowProp
     drag.current = null;
     active.release();
     document.body.classList.remove(...RESIZE_CLASSES);
-    setDragView(null);
     if (layoutRef.current) change(layoutRef.current, true);
   }, [change, layoutRef]);
 
@@ -195,7 +198,9 @@ export function ProjectWindow({ api, project, actions, work }: ProjectWindowProp
     const handle = e.currentTarget;
     const pointerId = e.pointerId;
     handle.setPointerCapture(pointerId);
-    const resize = beginResize(current, side, currentArea);
+    // Gezogen wird von der angezeigten Grösse aus; ab jetzt hat die gezogene Seite Vorrang, wenn der Platz nicht reicht.
+    const resize = beginResize(current, side, currentArea, priority);
+    if (side !== 'bottom') setPriority(side);
     const start = side === 'bottom' ? e.clientY : e.clientX;
     const onMove = (ev: PointerEvent) => {
       const latestArea = areaValue.current;
@@ -203,9 +208,7 @@ export function ProjectWindow({ api, project, actions, work }: ProjectWindowProp
       const delta = (side === 'bottom' ? ev.clientY : ev.clientX) - start;
       // Links wächst nach rechts, rechts nach links, unten nach oben.
       const requested = side === 'left' ? resize.startSize + delta : resize.startSize - delta;
-      const next = resizeTo(resize, requested, latestArea);
-      change(next.stored, false);
-      setDragView(next.shown);
+      change(resizeTo(resize, requested, latestArea), false);
     };
     const onEnd = (ev: PointerEvent) => {
       if (ev.pointerId === pointerId) stopDrag();
@@ -222,12 +225,11 @@ export function ProjectWindow({ api, project, actions, work }: ProjectWindowProp
         if (handle.isConnected && handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
       },
     };
-    setDragView(resize.shown);
     document.body.classList.add(side === 'bottom' ? 'resizing-rows' : 'resizing-columns');
   };
 
-  const shown = dragView ?? (layout ? visibleLayout(layout, available) : null);
-  const sizes = shown && area ? panelSizes(shown, area) : null;
+  const shown = layout ? visibleLayout(layout, available) : null;
+  const sizes = shown && area ? panelSizes(shown, area, priority) : null;
   if (shown && sizes) for (const s of ['left', 'bottom', 'right'] as const) if (shown[s].open) mounted.current.add(shown[s].active);
 
   const side = (s: ToolWindowSide) => {

@@ -17,7 +17,6 @@ import {
   sizeLimits,
   toggleToolWindow,
   visibleLayout,
-  withShownSizes,
   type Availability,
 } from '../../src/renderer/project/toolWindowLayout';
 
@@ -90,13 +89,15 @@ describe('Werkzeugfenster: Grössen', () => {
     expect(dragSize('bottom', 5000, LAYOUT, AREA)).toBe(AREA.height - CODE_MIN_HEIGHT);
   });
 
-  it('links und rechts zusammen lassen dem Code-Bereich seine Mindestbreite', () => {
+  it('beim Ziehen darf eine offene Gegenseite bis auf ihre Mindestbreite verdrängt werden', () => {
     const both = toggleToolWindow(LAYOUT, 'database');
-    expect(sizeLimits('left', both, AREA).max).toBe(AREA.width - CODE_MIN_WIDTH - 320);
-    expect(sizeLimits('right', both, AREA).max).toBe(AREA.width - CODE_MIN_WIDTH - 300);
+    expect(sizeLimits('left', both, AREA).max).toBe(AREA.width - CODE_MIN_WIDTH - SIDE_MIN_SIZE);
+    expect(sizeLimits('right', both, AREA).max).toBe(AREA.width - CODE_MIN_WIDTH - SIDE_MIN_SIZE);
+    // Ohne Gegenseite bleibt nur der Code-Bereich.
+    expect(sizeLimits('left', LAYOUT, AREA).max).toBe(AREA.width - CODE_MIN_WIDTH);
   });
 
-  it('in einem zu kleinen Fenster schrumpfen beide Seiten anteilig, nie unter die Mindestgrösse', () => {
+  it('in einem zu kleinen Fenster schrumpfen beide Seiten anteilig, solange keine zuletzt gezogen wurde', () => {
     const wide: ToolWindowLayout = {
       left: { active: 'project', open: true, size: 650 },
       bottom: { active: 'terminal', open: true, size: 900 },
@@ -109,32 +110,48 @@ describe('Werkzeugfenster: Grössen', () => {
 
     const tiny = panelSizes(wide, { width: 400, height: 150 });
     expect(tiny).toEqual({ left: SIDE_MIN_SIZE, right: SIDE_MIN_SIZE, bottom: BOTTOM_MIN_SIZE });
-    // Die gespeicherten Grössen bleiben; nur zum Ziehen werden die angezeigten übernommen.
-    expect(withShownSizes(wide, { width: 840, height: 400 }).left.size).toBe(sizes.left);
-    expect(wide.left.size).toBe(650);
+    expect(panelSizes(wide, { width: 400, height: 150 }, 'left')).toEqual(tiny);
   });
 
-  it('Ziehen in einem kleinen Fenster speichert nur die gezogene Seite; die Gegenseite behält ihre Grösse', () => {
+  it('bei Platzmangel weicht zuerst die Seite, die nicht zuletzt gezogen wurde, bis zu ihrer Mindestbreite', () => {
+    const both: ToolWindowLayout = { ...LAYOUT, left: { ...LAYOUT.left, size: 280 }, right: { ...LAYOUT.right, open: true, size: 320 } };
+    const small = { width: 720, height: 335 };
+    const room = small.width - CODE_MIN_WIDTH;
+    expect(room).toBeLessThan(280 + 320);
+    expect(panelSizes(both, small, 'left')).toEqual({ left: 280, right: room - 280, bottom: 0 });
+    expect(panelSizes(both, small, 'right')).toEqual({ left: room - 320, right: 320, bottom: 0 });
+    // Reicht es nicht einmal dafür, weicht danach auch die bevorzugte Seite, nie unter die Mindestbreite.
+    const huge = { ...both, left: { ...both.left, size: 900 } };
+    expect(panelSizes(huge, small, 'left')).toEqual({ left: room - SIDE_MIN_SIZE, right: SIDE_MIN_SIZE, bottom: 0 });
+  });
+
+  it('Ziehen in einem kleinen Fenster: Die gezogene Breite bleibt stehen, die Gegenseite behält ihre gespeicherte', () => {
+    // Der Fall aus dem Review: links 280 und rechts 320 gespeichert, zu eng für beide.
     const both: ToolWindowLayout = { ...LAYOUT, left: { ...LAYOUT.left, size: 280 }, right: { ...LAYOUT.right, open: true, size: 320 } };
     const small = { width: 640, height: 335 };
     const before = panelSizes(both, small);
-    // Zu eng für beide: Sie zeigen sich schmaler als gespeichert.
-    expect(before.right).toBeLessThan(320);
+    expect(before.left).toBeLessThan(280);
 
-    const resize = beginResize(both, 'left', small);
+    // Ein Pixel breiter: Die Seite wird breiter, nicht schmaler, auch nach dem Loslassen.
+    const resize = beginResize(both, 'left', small, null);
     expect(resize.startSize).toBe(before.left);
     const step = resizeTo(resize, resize.startSize + 1, small);
-    expect(step.stored.left.size).toBe(before.left + 1);
-    expect(step.stored.right.size).toBe(320);
-    // Zu sehen bleibt die Gegenseite, wie sie war.
-    expect(panelSizes(step.shown, small)).toEqual({ left: before.left + 1, right: before.right, bottom: 0 });
+    expect(step.left.size).toBe(before.left + 1);
+    expect(step.right.size).toBe(320);
+    const afterStep = panelSizes(step, small, 'left');
+    expect(afterStep.left).toBe(before.left + 1);
+    expect(afterStep.right).toBe(small.width - CODE_MIN_WIDTH - afterStep.left);
 
-    // Die Höchstgrösse rechnet mit der angezeigten Breite der Gegenseite, der Code-Bereich bleibt.
-    const far = resizeTo(resize, 5000, small);
-    expect(far.stored.left.size).toBe(small.width - CODE_MIN_WIDTH - before.right);
-    expect(far.stored.right.size).toBe(320);
-    // Im grossen Fenster ist die Gegenseite wieder so breit wie gespeichert.
-    expect(panelSizes(far.stored, AREA).right).toBe(320);
+    // Weit nach rechts: bis die Gegenseite auf ihre Mindestbreite verdrängt ist.
+    const far = resizeTo(resize, resize.startSize + 300, small);
+    expect(far.left.size).toBe(small.width - CODE_MIN_WIDTH - SIDE_MIN_SIZE);
+    expect(far.right.size).toBe(320);
+    expect(panelSizes(far, small, 'left')).toEqual({ left: far.left.size, right: SIDE_MIN_SIZE, bottom: 0 });
+
+    // Ein neues Ziehen beginnt bei der gezogenen Breite.
+    expect(beginResize(far, 'left', small, 'left').startSize).toBe(far.left.size);
+    // Im grossen Fenster: links die gezogene Breite, rechts wieder die gespeicherten 320.
+    expect(panelSizes(far, AREA, 'left')).toEqual({ left: far.left.size, right: 320, bottom: 0 });
   });
 
   it('eine zu kleine gespeicherte Grösse zeigt sich in der Mindestgrösse', () => {
