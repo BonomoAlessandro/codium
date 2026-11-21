@@ -52,3 +52,7 @@ Spezifikation: „Git“ (Grundsätze, Git-Konsole, Zustand, Kein Repository, Br
 ## Abnahme von Hand
 
 - [ ] In einem echten Repository mit vielen Branches findet das Suchfeld den richtigen Branch.
+
+## Hinweise
+
+- **Git-Daten bei Worktrees, Submodulen und Unterordnern** (aus dem Review von Ticket 04): Die Dateiüberwachung meldet „Git-Daten geändert“ nur für einen Ordner `.git` direkt im Projektordner. Ist `.git` eine Datei (Worktree, Submodul), steht darin der Pfad zum Git-Verzeichnis (`gitdir: …`); dieses Verzeichnis auflösen und HEAD, Index und Refs dort mitüberwachen, bei Worktrees auch die gemeinsamen Refs des Haupt-Repositorys. Dasselbe gilt, wenn der Projektordner ein Unterordner eines Repositorys ist und `.git` ausserhalb des Projekts liegt.

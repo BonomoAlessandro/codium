@@ -786,6 +786,7 @@ Wo die Oberfläche eigene Logik ohne DOM hat (etwa Markdown in HTML samt Quellze
   - geteilter Code-Bereich, Vorschau-Tab
   - in der Markdown-Vorschau: Folgen relativer Links und Anker, Bilder aus dem Netz, Bearbeiten in der Vorschau, Scrollen von der Vorschau zurück in den Editor, Export nach HTML oder PDF
   - Ziehen und Ablegen im Dateibaum
+  - Kopieren und Einfügen von Dateien zwischen dem Explorer und Codium oder zwischen zwei Codium-Fenstern (siehe Präzisierung 38)
   - Überall suchen (zweimal Shift), Ersetzen im ganzen Projekt, Aktionen suchen
   - Umstellen der Kodierung einer Datei
 - **Datenbank:**
@@ -889,3 +890,4 @@ Diese Punkte wurden beim Schreiben der Spezifikation oder nach dem Review ergän
 35. **Synchrones Scrollen** nur vom Editor zur Vorschau.
 36. **Ansicht pro Datei** im Projekt-Zustand gemerkt; Vorschau nur für Dateien bis 5 MB.
 37. **Aufteilung der Symbolleisten** (bei der Umsetzung von Ticket 03 geschärft, nach der Skizze aus der Befragung und dem neuen IntelliJ): Es gibt keine eigene Leiste am unteren Rand. Die linke Symbolleiste trägt oben „Project“ und „Commit“ und in ihrer unteren Gruppe „Terminal“, „Git“ und „Find“, die rechte „Database“. Die Bestätigung durch den Nutzer steht in der Prüfliste von Ticket 03.
+38. **Kopieren und Einfügen im Dateibaum** (bei der Umsetzung von Ticket 04 geschärft): Die Zwischenablage für Dateien gehört zum Projektfenster, nicht zu Windows; „Copy“ und „Paste“ wirken innerhalb eines Projekts, und die gemerkten Pfade folgen Umbenennungen und Löschungen. „Copy Path“ schreibt dagegen in die Zwischenablage von Windows. Bei einem Namenskonflikt bekommen mehrere Einträge automatisch einen Zusatz („Name (2).ext“); bei einem einzelnen schlägt der Dialog „Copy“ diesen Namen vor.
