@@ -16,7 +16,7 @@ import { ErrorCode, type CommandParams, type EventName, type Events, type FileEn
 import { KnownDirs, OwnChanges, keyOf } from './fileTracking';
 import { FileWatcher, isGitName } from './fileWatcher';
 import { IoLimiter } from './ioLimiter';
-import { PathGuard, isMissingError, notFound } from './pathGuard';
+import { PathGuard, alreadyExists, fileError, isMissingError } from './pathGuard';
 import type { ShellActionsPort } from './ports';
 import { isKeyWithin } from './projectPath';
 import { CommandError } from './router';
@@ -33,6 +33,7 @@ const collator = new Intl.Collator('en', { sensitivity: 'base' });
 export interface FileServiceHost {
   readonly path: string;
   emit<K extends EventName>(name: K, payload: Events[K]): void;
+  onDispose(cleanup: () => void | Promise<void>): void;
 }
 
 export interface FileServiceOptions {
@@ -50,6 +51,8 @@ export class FileService {
   private readonly known = new KnownDirs();
   private readonly own = new OwnChanges();
   private readonly watcher: FileWatcher;
+  /** Laufende Dateioperationen, auf die der Abbau wartet. */
+  private readonly running = new Set<Promise<unknown>>();
 
   constructor(
     private readonly host: FileServiceHost,
@@ -66,6 +69,11 @@ export class FileService {
       log: options.log,
       debounceMs: options.watchDebounceMs,
       maxDelayMs: options.watchMaxDelayMs,
+    });
+    // Eine laufende Operation (etwa das Kopieren eines grossen Ordners) darf noch fertig werden, höchstens bis zum
+    // Zeitlimit der Aufräumarbeiten; sonst bliebe beim Beenden eine halbe Kopie zurück.
+    host.onDispose(async () => {
+      await Promise.allSettled([...this.running]);
     });
     void this.watcher.start();
   }
@@ -93,14 +101,37 @@ export class FileService {
   }
 
   createFile(params: CommandParams<'files.createFile'>): Promise<string> {
-    return this.create(params, false);
+    return this.track(() => this.create(params, false));
   }
 
   createDirectory(params: CommandParams<'files.createDirectory'>): Promise<string> {
-    return this.create(params, true);
+    return this.track(() => this.create(params, true));
   }
 
-  async rename(params: CommandParams<'files.rename'>): Promise<string> {
+  rename(params: CommandParams<'files.rename'>): Promise<string> {
+    return this.track(() => this.renameNow(params));
+  }
+
+  /** Verschiebt in den Papierkorb (über den Port); liegt ein Eintrag in einem anderen, genügt der äussere. */
+  delete(params: CommandParams<'files.delete'>): Promise<void> {
+    return this.track(() => this.deleteNow(params));
+  }
+
+  /** Kopiert in einen Ordner; bei einem Namenskonflikt mit Zusatz („Name (2).ext“), mit `newName` unter diesem Namen. */
+  copy(params: CommandParams<'files.copy'>): Promise<string[]> {
+    return this.track(() => this.copyNow(params));
+  }
+
+  /** Führt eine Dateioperation aus und merkt sie sich, bis sie fertig ist. */
+  private track<T>(work: () => Promise<T>): Promise<T> {
+    const run = work();
+    this.running.add(run);
+    const done = () => this.running.delete(run);
+    run.then(done, done);
+    return run;
+  }
+
+  private async renameNow(params: CommandParams<'files.rename'>): Promise<string> {
     const source = await this.guard.existing(field(params, 'path'));
     if (this.guard.isRoot(source)) throw invalidParams('The project folder cannot be renamed.');
     const newName = requireName(field(params, 'newName'));
@@ -123,8 +154,7 @@ export class FileService {
     return target;
   }
 
-  /** Verschiebt in den Papierkorb (über den Port); liegt ein Eintrag in einem anderen, genügt der äussere. */
-  async delete(params: CommandParams<'files.delete'>): Promise<void> {
+  private async deleteNow(params: CommandParams<'files.delete'>): Promise<void> {
     const targets = await this.existingList(field(params, 'paths'));
     if (targets.some((t) => this.guard.isRoot(t))) throw invalidParams('The project folder cannot be deleted.');
     for (const target of outermost(targets)) {
@@ -147,8 +177,7 @@ export class FileService {
     }
   }
 
-  /** Kopiert in einen Ordner; bei einem Namenskonflikt mit Zusatz („Name (2).ext“), mit `newName` unter diesem Namen. */
-  async copy(params: CommandParams<'files.copy'>): Promise<string[]> {
+  private async copyNow(params: CommandParams<'files.copy'>): Promise<string[]> {
     const target = await this.existingDirectory(field(params, 'target'));
     const sources = await this.existingList(field(params, 'sources'));
     const rawName = field(params, 'newName');
@@ -309,41 +338,12 @@ function invalidParams(message: string): CommandError {
   return new CommandError(message, ErrorCode.invalidParams);
 }
 
-function alreadyExists(target: string): CommandError {
-  return new CommandError(`“${path.basename(target)}” already exists.`, ErrorCode.fileExists, { path: target });
-}
-
 /** Ein einzelner, unter Windows erlaubter Name. */
 function requireName(value: unknown): string {
   if (typeof value !== 'string') throw invalidParams('A name is expected.');
   const problem = fileNameProblem(value);
   if (problem) throw new CommandError(problem, ErrorCode.invalidFileName);
   return value;
-}
-
-/** Englische Gründe für häufige Fehler des Dateisystems. */
-const REASONS: Record<string, string> = {
-  EACCES: 'access denied.',
-  EPERM: 'access denied, or the file is in use.',
-  EBUSY: 'the file is in use.',
-  ENOSPC: 'not enough disk space.',
-  EROFS: 'the drive is read-only.',
-  ENAMETOOLONG: 'the path is too long.',
-  ENOTEMPTY: 'the folder is not empty.',
-  ENOTDIR: 'a part of the path is not a folder.',
-};
-
-/** Ein Fehler des Dateisystems als Fehler des Befehls. */
-function fileError(err: unknown, target: string, action: string): CommandError {
-  if (err instanceof CommandError) return err;
-  const code = (err as NodeJS.ErrnoException | undefined)?.code ?? '';
-  if (code === 'ENOENT') return notFound(target);
-  if (code === 'EEXIST' || code === 'ERR_FS_CP_EEXIST') return alreadyExists(target);
-  const reason = REASONS[code] ?? `${code || (err as Error).message}.`;
-  return new CommandError(`Could not ${action} “${path.basename(target)}”: ${reason}`, ErrorCode.fileOperationFailed, {
-    path: target,
-    code,
-  });
 }
 
 /** Ordner vor Dateien, dann alphabetisch; bei gleichem Namen ohne Gross-/Kleinschreibung entscheidet die Schreibweise. */

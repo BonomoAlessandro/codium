@@ -2,7 +2,7 @@
 
 Eine kleine eigene IDE im Stil von IntelliJ, als Desktop-App für Windows.
 
-> Stand: im Aufbau nach der [Spezifikation](docs/specs/codium-v1.md) und den [Tickets](docs/tickets/README.md). Projekte öffnen in eigenen Fenstern mit Kopfzeile, Werkzeugfenstern (noch ohne Inhalt), Statusleiste, Meldungen und Rückfragen.
+> Stand: im Aufbau nach der [Spezifikation](docs/specs/codium-v1.md) und den [Tickets](docs/tickets/README.md). Projekte öffnen in eigenen Fenstern mit Kopfzeile, Werkzeugfenstern, Statusleiste, Meldungen und Rückfragen. Das Werkzeugfenster „Project“ zeigt den Dateibaum mit Dateioperationen und Dateiüberwachung; die übrigen Werkzeugfenster sind noch ohne Inhalt.
 
 ## Stack
 
@@ -42,10 +42,13 @@ src/
   shared/types.ts      Vertrag Renderer ↔ Kern: Befehle, Ereignisse, Knöpfe an Meldungen, Werkzeugfenster,
                        API unter window.codium, IPC-Kanäle
   shared/theme.ts      Farben und Höhe der Kopfzeile, die Fenster und Oberfläche gemeinsam brauchen
+  shared/fileNames.ts  Erlaubte Datei- und Ordnernamen unter Windows, Namen für Kopien
   main/main.ts         Electron-Hauptprozess: Einzelinstanz, Testmodus, verbindet Kern, Ports und IPC
   main/core/           Kern ohne Electron: App-Kern (Fenster, Projekte, Beenden), Projekt-Kern, Ports,
                        Zustandsdateien (samt Layout der Werkzeugfenster), Fensterlage, Abfragen auf
-                       Projektordnern, Fortschritt, Befehlsverteilung
+                       Projektordnern, Fortschritt, Befehlsverteilung; Datei-Dienst (fileService.ts) mit
+                       Prüfung der Pfade (pathGuard.ts), Dateiüberwachung (fileWatcher.ts) und begrenzt
+                       vielen gleichzeitigen Dateizugriffen (ioLimiter.ts)
   main/earlyStart.ts   Was vor allem anderen läuft: Fehlerbehandlung im Testmodus, Grösse des Threadpools
   main/electron/       Echte Ports mit Electron (Fenster, Ordnerauswahl, Geheimnisse, Shell-Aktionen)
   main/system/         Echter Port „System“ ohne Electron
@@ -60,8 +63,9 @@ src/
     WelcomeScreen.tsx  Willkommensfenster mit „Open Folder“ und zuletzt geöffneten Projekten
     RecentProjects.tsx „Open Folder“ und zuletzt geöffnete Projekte (Willkommensfenster, Projektmenü)
     project/           Projektfenster: Kopfzeile mit Projektmenü, Symbolleisten, Werkzeugfenster mit
-                       Trennlinien, Code-Bereich, Statusleiste; Regeln ohne DOM in toolWindowLayout.ts
-    popup/             Aufklappmenü und Rückfragen (useAsk)
+                       Trennlinien, Code-Bereich, Statusleiste; Regeln ohne DOM in toolWindowLayout.ts.
+                       Dateibaum in ProjectView.tsx, seine Regeln ohne DOM in fileTree.ts
+    popup/             Aufklappmenü mit Untermenüs, Rückfragen (useAsk) und Eingaben (useAskText)
     Notices.tsx        Meldungen unten rechts (Regeln in noticeRules.ts)
     progress.ts        Fortschritt laufender Arbeiten (Regeln); ProgressIndicator.tsx zeigt ihn in der
                        Statusleiste und im Willkommensfenster
@@ -91,7 +95,6 @@ Noch zu spezifizieren, unter anderem:
 - Umfang der ersten Version: welche Sprachen, welche Funktionen
 - Code-Editor (Kandidat: Monaco, der Editor aus VS Code)
 - Sprachverständnis: Vervollständigung, Fehler, Navigation (Kandidat: Language Server über LSP)
-- Projekt-Fenster und Dateibaum
 - Integriertes Terminal (Kandidat: xterm.js + node-pty wie in THub)
 - Ausführen und Debuggen
 - Layout und Aussehen: Titelleiste, Werkzeugfenster, Statusleiste, Design hell/dunkel

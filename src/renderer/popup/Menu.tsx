@@ -1,11 +1,14 @@
-// Aufklappmenü unter einem Element (etwa das Projektmenü in der Kopfzeile), nach dem Vorbild THub. Bedienung mit
-// der Maus oder mit Pfeiltasten, Enter und Escape.
+// Aufklappmenü unter einem Element (etwa das Projektmenü in der Kopfzeile) oder an einer Stelle (Rechtsklick-Menü),
+// nach dem Vorbild THub und IntelliJ. Bedienung mit der Maus oder mit Pfeiltasten, Enter und Escape; Untermenüs
+// öffnen mit Pfeil rechts, Enter oder beim Überfahren und schliessen mit Pfeil links oder Escape. Inaktive Einträge
+// sind sichtbar, aber nicht wählbar.
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { ChevronRightIcon } from '../icons';
 import { menuKey } from './menuKeys';
 
-/** Ein Eintrag im Menü: Trennlinie oder wählbarer Eintrag. */
+/** Ein Eintrag im Menü: Trennlinie, wählbarer Eintrag oder Untermenü. */
 export type MenuEntry =
   | { kind: 'separator' }
   | {
@@ -15,10 +18,18 @@ export type MenuEntry =
       detail?: string;
       /** Gedämpft dargestellt, etwa ein Projekt, dessen Ordner fehlt. */
       muted?: boolean;
+      /** Tastenkürzel zur Anzeige rechts, etwa „Ctrl+C“. */
+      shortcut?: string;
+      /** Sichtbar, aber nicht wählbar. */
+      disabled?: boolean;
       run(): void;
-    };
+    }
+  | { kind: 'submenu'; label: string; disabled?: boolean; entries: MenuEntry[] };
 
-type MenuItem = Extract<MenuEntry, { kind: 'item' }>;
+type Selectable = Exclude<MenuEntry, { kind: 'separator' }>;
+
+/** Wo das Menü aufgeht: unter einem Element oder an einer Stelle im Fenster (etwa beim Rechtsklick). */
+export type MenuAnchor = HTMLElement | { x: number; y: number };
 
 /** Abstand des Menüs zum Fensterrand und zum Element darüber. */
 const MARGIN = 6;
@@ -41,12 +52,17 @@ interface MenuProps {
   /** Name des Menüs für Screenreader. */
   label: string;
   entries: MenuEntry[];
-  /** Das Element, unter dem das Menü aufgeht. Ein Klick darauf schliesst das Menü nicht; das regelt das Element. */
-  anchor: HTMLElement;
+  /** Wo das Menü aufgeht. Ein Klick auf ein Element als Anker schliesst das Menü nicht; das regelt das Element. */
+  anchor: MenuAnchor;
   /** Den ersten Eintrag gleich hervorheben, etwa wenn das Menü per Tastatur geöffnet wurde. */
   highlightFirst?: boolean;
   /** Das Menü schliesst sich (Escape, Klick daneben, Fenster verliert den Fokus, Eintrag gewählt). */
   onClose(): void;
+}
+
+/** Ob ein Eintrag wählbar ist (keine Trennlinie, nicht inaktiv). */
+function isSelectable(entry: MenuEntry): entry is Selectable {
+  return entry.kind !== 'separator' && !entry.disabled;
 }
 
 /**
@@ -55,22 +71,16 @@ interface MenuProps {
  */
 export function Menu({ label, entries, anchor, highlightFirst = false, onClose }: MenuProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const id = useId();
-  const items = entries.filter((e): e is MenuItem => e.kind === 'item');
-  const [highlighted, setHighlighted] = useState(highlightFirst && items.length > 0 ? 0 : -1);
-
-  // Für die Handler am Fenster: immer der zuletzt angezeigte Stand.
-  const current = useRef({ highlighted, items, onClose });
-  current.current = { highlighted, items, onClose };
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   // Geschlossen heisst sofort: Bis React das Menü entfernt hat, nimmt es keine Tasten mehr an.
   const closed = useRef(false);
   const close = () => {
     if (closed.current) return;
     closed.current = true;
-    current.current.onClose();
+    onCloseRef.current();
   };
-
-  const choose = (item: MenuItem) => {
+  const choose = (item: Extract<MenuEntry, { kind: 'item' }>) => {
     close();
     item.run();
   };
@@ -85,51 +95,139 @@ export function Menu({ label, entries, anchor, highlightFirst = false, onClose }
     // `close` liest nur aus Refs.
   }, []);
 
-  // Unter dem Element aufgehen, im Fenster gehalten; dann den Fokus übernehmen.
+  // Am Anker aufgehen, im Fenster gehalten; dann den Fokus übernehmen.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const r = anchor.getBoundingClientRect();
-    const top = clamp(r.bottom + GAP, MARGIN, window.innerHeight - el.offsetHeight - MARGIN);
-    el.style.left = `${clamp(r.left, MARGIN, window.innerWidth - el.offsetWidth - MARGIN)}px`;
-    el.style.top = `${top}px`;
+    const point = anchor instanceof HTMLElement ? null : anchor;
+    const r = anchor instanceof HTMLElement ? anchor.getBoundingClientRect() : null;
+    const left = point ? point.x : (r?.left ?? 0);
+    let top = point ? point.y : (r?.bottom ?? 0) + GAP;
+    // Unten zu wenig Platz: über der Stelle aufgehen, wie unter Windows üblich.
+    if (point && top + el.offsetHeight > window.innerHeight - MARGIN) top = point.y - el.offsetHeight;
+    el.style.left = `${clamp(left, MARGIN, window.innerWidth - el.offsetWidth - MARGIN)}px`;
+    el.style.top = `${clamp(top, MARGIN, window.innerHeight - el.offsetHeight - MARGIN)}px`;
     el.focus({ preventScroll: true });
   }, [anchor]);
 
-  // Tasten (in der Capture-Phase) bedienen das Menü; Klick daneben, Fokusverlust und Grössenänderung schliessen es.
+  // Klick daneben, Fokusverlust und Grössenänderung schliessen das Menü.
+  useEffect(() => {
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Node;
+      if (!ref.current?.contains(target) && !(anchor instanceof HTMLElement && anchor.contains(target))) close();
+    };
+    window.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('blur', close);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('blur', close);
+      window.removeEventListener('resize', close);
+    };
+    // `close` liest nur aus Refs und braucht deshalb keine Abhängigkeit.
+  }, [anchor]);
+
+  return createPortal(
+    <MenuPanel
+      panelRef={ref}
+      label={label}
+      entries={entries}
+      highlightFirst={highlightFirst}
+      isClosed={() => closed.current}
+      onChoose={choose}
+      onCloseAll={close}
+      onBlur={(next) => {
+        // Verlässt der Fokus das Menü (etwa durch ein Tastenkürzel), schliesst es sich; den Fokus auf dem Element, an
+        // dem es hängt, regelt dessen Klick (es schaltet das Menü um).
+        if (next && (ref.current?.contains(next) || (anchor instanceof HTMLElement && anchor.contains(next)))) return;
+        close();
+      }}
+    />,
+    document.body,
+  );
+}
+
+interface MenuPanelProps {
+  label: string;
+  entries: MenuEntry[];
+  highlightFirst: boolean;
+  /** Nur das Hauptmenü: Ref, Fokus und Verlassen des Fokus. */
+  panelRef?: React.RefObject<HTMLDivElement | null>;
+  onBlur?: (next: Node | null) => void;
+  /** Ein Untermenü: Lage neben seinem Eintrag und Schliessen nur dieses Untermenüs. */
+  besides?: DOMRect;
+  onCloseSelf?: () => void;
+  isClosed: () => boolean;
+  onChoose: (item: Extract<MenuEntry, { kind: 'item' }>) => void;
+  onCloseAll: () => void;
+}
+
+/** Eine Ebene des Menüs. Tasten bedient immer die innerste offene Ebene. */
+function MenuPanel({ label, entries, highlightFirst, panelRef, onBlur, besides, onCloseSelf, isClosed, onChoose, onCloseAll }: MenuPanelProps) {
+  const ownRef = useRef<HTMLDivElement>(null);
+  const ref = panelRef ?? ownRef;
+  const id = useId();
+  const selectable = entries.filter(isSelectable);
+  const [highlighted, setHighlighted] = useState(highlightFirst && selectable.length > 0 ? 0 : -1);
+  const [openSub, setOpenSub] = useState<{ index: number; rect: DOMRect; viaKeyboard: boolean } | null>(null);
+  const itemRefs = useRef(new Map<number, HTMLButtonElement>());
+
+  // Für die Handler am Fenster: immer der zuletzt angezeigte Stand.
+  const current = useRef({ highlighted, selectable, openSub });
+  current.current = { highlighted, selectable, openSub };
+
+  const openSubmenu = (index: number, viaKeyboard: boolean) => {
+    const button = itemRefs.current.get(index);
+    if (button) setOpenSub({ index, rect: button.getBoundingClientRect(), viaKeyboard });
+  };
+
+  const activate = (index: number, viaKeyboard: boolean) => {
+    const entry = current.current.selectable[index];
+    if (!entry) return;
+    if (entry.kind === 'submenu') openSubmenu(index, viaKeyboard);
+    else onChoose(entry);
+  };
+
+  // Ein Untermenü neben seinem Eintrag, im Fenster gehalten (sonst links davon).
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !besides) return;
+    let left = besides.right - 2;
+    if (left + el.offsetWidth > window.innerWidth - MARGIN) left = besides.left - el.offsetWidth + 2;
+    el.style.left = `${clamp(left, MARGIN, window.innerWidth - el.offsetWidth - MARGIN)}px`;
+    el.style.top = `${clamp(besides.top - 7, MARGIN, window.innerHeight - el.offsetHeight - MARGIN)}px`;
+  }, [besides, ref]);
+
+  // Tasten in der Capture-Phase. Ist ein Untermenü offen, bedient es die Tasten selbst.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (closed.current) return;
-      const { highlighted: h, items: list } = current.current;
+      if (isClosed() || current.current.openSub) return;
+      const { highlighted: h, selectable: list } = current.current;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === 'ArrowRight' && list[h]?.kind === 'submenu') openSubmenu(h, true);
+        else if (e.key === 'ArrowLeft') onCloseSelf?.();
+        return;
+      }
       const action = menuKey(e.key, h, list.length);
       if (!action) return;
       e.preventDefault();
       e.stopPropagation();
       if (action.type === 'highlight') setHighlighted(action.index);
-      else if (action.type === 'choose') choose(list[action.index]);
-      else close();
-    };
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target as Node;
-      if (!ref.current?.contains(target) && !anchor.contains(target)) close();
+      else if (action.type === 'choose') activate(action.index, true);
+      else if (e.key === 'Escape' && onCloseSelf) onCloseSelf();
+      else onCloseAll();
     };
     window.addEventListener('keydown', onKeyDown, true);
-    window.addEventListener('pointerdown', onPointerDown, true);
-    window.addEventListener('blur', close);
-    window.addEventListener('resize', close);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown, true);
-      window.removeEventListener('pointerdown', onPointerDown, true);
-      window.removeEventListener('blur', close);
-      window.removeEventListener('resize', close);
-    };
-    // `choose` und `close` lesen nur aus Refs und brauchen deshalb keine Abhängigkeit.
-  }, [anchor]);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+    // Die Handler lesen nur aus Refs.
+  }, []);
 
   const itemId = (index: number) => `${id}-${index}`;
   let index = -1;
 
-  return createPortal(
+  return (
     <div
       ref={ref}
       className="menu"
@@ -139,37 +237,74 @@ export function Menu({ label, entries, anchor, highlightFirst = false, onClose }
       aria-activedescendant={highlighted >= 0 ? itemId(highlighted) : undefined}
       // Klicks ins Menü lassen den Fokus beim Menü.
       onMouseDown={(e) => e.preventDefault()}
-      // Verlässt der Fokus das Menü (etwa durch ein Tastenkürzel), schliesst es sich; den Fokus auf dem Element, an dem
-      // es hängt, regelt dessen Klick (es schaltet das Menü um).
-      onBlur={(e) => {
-        const next = e.relatedTarget instanceof Node ? e.relatedTarget : null;
-        if (next && (ref.current?.contains(next) || anchor.contains(next))) return;
-        close();
-      }}
+      onBlur={onBlur ? (e) => onBlur(e.relatedTarget instanceof Node ? e.relatedTarget : null) : undefined}
+      onContextMenu={(e) => e.preventDefault()}
     >
       {entries.map((entry, i) => {
         if (entry.kind === 'separator') return <div key={i} className="menu-separator" role="separator" />;
-        const own = ++index;
-        const classes = ['menu-item', own === highlighted && 'highlighted', entry.muted && 'muted'].filter(Boolean);
+        const own = entry.disabled ? -1 : ++index;
+        const isSub = entry.kind === 'submenu';
+        const classes = [
+          'menu-item',
+          own >= 0 && own === highlighted && 'highlighted',
+          entry.kind === 'item' && entry.muted && 'muted',
+          entry.disabled && 'disabled',
+        ].filter(Boolean);
+        const shortcut = entry.kind === 'item' ? entry.shortcut : undefined;
         return (
           <button
             key={i}
-            id={itemId(own)}
+            ref={(el) => {
+              if (el && own >= 0) itemRefs.current.set(own, el);
+            }}
+            id={own >= 0 ? itemId(own) : undefined}
             type="button"
             role="menuitem"
             tabIndex={-1}
             className={classes.join(' ')}
-            title={entry.detail}
-            onMouseMove={() => setHighlighted(own)}
-            onClick={() => choose(entry)}
+            title={entry.kind === 'item' ? entry.detail : undefined}
+            aria-disabled={entry.disabled ? true : undefined}
+            aria-haspopup={isSub ? 'menu' : undefined}
+            aria-expanded={isSub ? openSub?.index === own : undefined}
+            aria-keyshortcuts={shortcut}
+            onMouseMove={() => {
+              if (own < 0) return;
+              setHighlighted(own);
+              // Überfahren öffnet ein Untermenü und schliesst ein anderes.
+              if (isSub && openSub?.index !== own) openSubmenu(own, false);
+              else if (!isSub && openSub) setOpenSub(null);
+            }}
+            onClick={() => {
+              if (own >= 0) activate(own, false);
+            }}
           >
-            <span className="menu-item-label">{entry.label}</span>
-            {entry.detail && <span className="menu-item-detail">{entry.detail}</span>}
+            <span className="menu-item-row">
+              <span className="menu-item-label">{entry.label}</span>
+              {shortcut && (
+                <span className="menu-item-shortcut" aria-hidden="true">
+                  {shortcut}
+                </span>
+              )}
+              {isSub && <ChevronRightIcon />}
+            </span>
+            {entry.kind === 'item' && entry.detail && <span className="menu-item-detail">{entry.detail}</span>}
           </button>
         );
       })}
-    </div>,
-    document.body,
+      {openSub && selectable[openSub.index]?.kind === 'submenu' && (
+        <MenuPanel
+          key={openSub.index}
+          label={selectable[openSub.index].label}
+          entries={(selectable[openSub.index] as Extract<MenuEntry, { kind: 'submenu' }>).entries}
+          highlightFirst={openSub.viaKeyboard}
+          besides={openSub.rect}
+          onCloseSelf={() => setOpenSub(null)}
+          isClosed={isClosed}
+          onChoose={onChoose}
+          onCloseAll={onCloseAll}
+        />
+      )}
+    </div>
   );
 }
 

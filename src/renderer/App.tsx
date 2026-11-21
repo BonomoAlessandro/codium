@@ -56,7 +56,7 @@ function Root() {
     <>
       {windowInfo?.kind === 'welcome' && <WelcomeScreen api={api} actions={actions} title={windowInfo.title} work={work} />}
       {windowInfo?.kind === 'project' && (
-        <ProjectWindow api={api} project={windowInfo.project} actions={actions} work={work} />
+        <ProjectWindow api={api} project={windowInfo.project} actions={actions} work={work} notify={notify} />
       )}
       <NoticeList notices={notices} onDismiss={dismiss} />
     </>

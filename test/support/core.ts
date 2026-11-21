@@ -23,6 +23,8 @@ export interface TestCoreOptions {
   system?: FakeSystemOptions;
   /** Zeitlimit für Dateiabfragen auf Projektordnern (Standard des Kerns: 2 s). */
   folderQueryTimeoutMs?: number;
+  /** Höchstdauer einer Aufräumarbeit beim Abbau (Standard der Tests: 200 ms). */
+  cleanupTimeoutMs?: number;
 }
 
 /** Erzeugt einen App-Kern auf einem Datenordner, mit nachgemachten Ports und sofortigem Schreiben. */
@@ -36,7 +38,7 @@ export function createTestCore(dataDir: string, options: TestCoreOptions = {}): 
     events,
     appInfo: { name: 'Codium', version: '0.0.0-test' },
     saveDebounceMs: 5,
-    cleanupTimeoutMs: 200,
+    cleanupTimeoutMs: options.cleanupTimeoutMs ?? 200,
     folderQueryTimeoutMs: options.folderQueryTimeoutMs,
     log: (message) => logs.push(message),
   });

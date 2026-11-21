@@ -33,6 +33,8 @@
   --text-faint: #6f737a;
   --icon: #ced0d6;
   --link: #548af7;
+  /* Ordner im Dateibaum */
+  --folder: #a5a8ae;
 
   /* Hervorhebung und Zustände */
   --accent: #3574f0;

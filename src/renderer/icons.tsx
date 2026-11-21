@@ -73,6 +73,41 @@ export const ChevronDownIcon = () => (
   </Icon>
 );
 
+export const ChevronRightIcon = () => (
+  <Icon size={12}>
+    <path d="M6 4l4 4-4 4" />
+  </Icon>
+);
+
+/** Ordner im Dateibaum, gefüllt wie in IntelliJ. */
+export const FolderIcon = () => (
+  <svg className="icon icon-folder" width={16} height={16} viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+    <path d="M1.5 3.5a1 1 0 0 1 1-1h3.6l1.6 1.6h5.8a1 1 0 0 1 1 1v7.4a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" fill="currentColor" />
+  </svg>
+);
+
+export const FileIcon = () => (
+  <Icon>
+    <path d="M4 1.5h5.2L12.5 4.8v9.2a.5.5 0 0 1-.5.5H4a.5.5 0 0 1-.5-.5V2a.5.5 0 0 1 .5-.5z" />
+    <path d="M9 1.7V5h3.3" />
+  </Icon>
+);
+
+/** „Select Opened File“: Fadenkreuz wie in IntelliJ. */
+export const LocateIcon = () => (
+  <Icon>
+    <circle cx="8" cy="8" r="4.5" />
+    <circle cx="8" cy="8" r="1.2" />
+    <path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15" />
+  </Icon>
+);
+
+export const CollapseAllIcon = () => (
+  <Icon>
+    <path d="M4.5 6.5L8 3l3.5 3.5M4.5 13L8 9.5l3.5 3.5" />
+  </Icon>
+);
+
 export const HideIcon = () => (
   <Icon>
     <path d="M4 8h8" />

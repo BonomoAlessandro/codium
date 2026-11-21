@@ -6,6 +6,7 @@
 // Weitergearbeitet wird immer mit dem geprüften, normalisierten Pfad, nie mit dem übergebenen.
 
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { ErrorCode } from '../../shared/types';
 import { isAbsoluteCommandPath, isKeyWithin, lexicalProjectKey, normalizeProjectPath } from './projectPath';
 import { CommandError } from './router';
@@ -25,6 +26,38 @@ export function outsideProject(target: string): CommandError {
 
 export function notFound(target: string): CommandError {
   return new CommandError(`Not found: ${target}`, ErrorCode.fileNotFound, { path: target });
+}
+
+export function alreadyExists(target: string): CommandError {
+  return new CommandError(`“${path.basename(target)}” already exists.`, ErrorCode.fileExists, { path: target });
+}
+
+/** Englische Gründe für häufige Fehler des Dateisystems. */
+const REASONS: Record<string, string> = {
+  EACCES: 'access denied.',
+  EPERM: 'access denied, or the file is in use.',
+  EBUSY: 'the file is in use.',
+  ENOSPC: 'not enough disk space.',
+  EROFS: 'the drive is read-only.',
+  ENAMETOOLONG: 'the path is too long.',
+  ENOTEMPTY: 'the folder is not empty.',
+  ENOTDIR: 'a part of the path is not a folder.',
+};
+
+/**
+ * Ein Fehler des Dateisystems als Fehler des Befehls mit englischer Meldung, etwa „Could not rename “a.txt”: the file
+ * is in use.“ `action` ist das Verb dazu.
+ */
+export function fileError(err: unknown, target: string, action: string): CommandError {
+  if (err instanceof CommandError) return err;
+  const code = (err as NodeJS.ErrnoException | undefined)?.code ?? '';
+  if (code === 'ENOENT') return notFound(target);
+  if (code === 'EEXIST' || code === 'ERR_FS_CP_EEXIST') return alreadyExists(target);
+  const reason = REASONS[code] ?? `${code || (err as Error).message}.`;
+  return new CommandError(`Could not ${action} “${path.basename(target)}”: ${reason}`, ErrorCode.fileOperationFailed, {
+    path: target,
+    code,
+  });
 }
 
 export class PathGuard {
@@ -70,7 +103,7 @@ export class PathGuard {
       real = await this.io(() => fs.promises.realpath(normalized));
     } catch (err) {
       if (isMissingError(err)) throw notFound(normalized);
-      throw err;
+      throw fileError(err, normalized, 'read');
     }
     if (!isKeyWithin(lexicalProjectKey(real), lexicalProjectKey(await this.realRootPath()))) throw outsideProject(normalized);
     return normalized;
@@ -87,7 +120,7 @@ export class PathGuard {
     }
     return this.realRoot.catch((err: unknown) => {
       if (isMissingError(err)) throw notFound(this.root);
-      throw err;
+      throw fileError(err, this.root, 'read');
     });
   }
 }

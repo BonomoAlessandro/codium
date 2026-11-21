@@ -16,14 +16,17 @@ import {
   type ToolWindowLayout,
   type ToolWindowSide,
 } from '../../shared/types';
-import { HideIcon, TOOL_WINDOW_ICONS } from '../icons';
+import { TOOL_WINDOW_ICONS } from '../icons';
 import { commandForKey, shortcutLabel } from '../keymap';
+import type { Notify } from '../Notices';
 import { isDialogOpen } from '../popup/Dialogs';
 import { closeOpenMenus } from '../popup/Menu';
 import type { RunningWork } from '../progress';
 import type { ProjectActions } from '../RecentProjects';
 import { Header } from './Header';
+import { ProjectView } from './ProjectView';
 import { StatusBar } from './StatusBar';
+import { ToolWindowHeader } from './ToolWindowHeader';
 import {
   STRIPES,
   TOOL_WINDOWS,
@@ -47,6 +50,23 @@ interface ProjectWindowProps {
   project: ProjectInfo;
   actions: ProjectActions;
   work: readonly RunningWork[];
+  notify: Notify;
+}
+
+/** Name des Ereignisses am Dokument, mit dem der Dateibaum „Datei öffnen“ meldet (Nutzlast `{ path }`). */
+export const OPEN_FILE_EVENT = 'codium:open-file';
+
+/**
+ * „Datei öffnen“ aus dem Dateibaum (Doppelklick, Enter, neue Datei). Ticket 05 öffnet hier einen Tab; bis dahin geht
+ * die Anfrage als Ereignis an das Dokument, wo Tests sie sehen.
+ */
+function requestOpenFile(path: string): void {
+  document.dispatchEvent(new CustomEvent(OPEN_FILE_EVENT, { detail: { path } }));
+}
+
+/** Setzt den Fokus in ein Werkzeugfenster: auf sein Hauptelement (etwa den Dateibaum), sonst auf das Fenster selbst. */
+function focusToolWindow(section: HTMLElement | undefined): void {
+  (section?.querySelector<HTMLElement>('[data-autofocus]') ?? section)?.focus({ preventScroll: true });
 }
 
 /**
@@ -71,7 +91,7 @@ interface ActiveDrag {
   release: () => void;
 }
 
-export function ProjectWindow({ api, project, actions, work }: ProjectWindowProps) {
+export function ProjectWindow({ api, project, actions, work, notify }: ProjectWindowProps) {
   const { layout, layoutRef, change } = useToolWindowLayout(api);
   const areaRef = useRef<HTMLDivElement>(null);
   const area = useElementSize(areaRef);
@@ -126,7 +146,7 @@ export function ProjectWindow({ api, project, actions, work }: ProjectWindowProp
     (current: ToolWindowLayout, id: ToolWindowId) => {
       // Erst zeichnen, dann den Fokus hinein; so schliesst das nächste Kürzel das Werkzeugfenster wieder.
       flushSync(() => change(showToolWindow(current, id), true));
-      sections.current.get(id)?.focus({ preventScroll: true });
+      focusToolWindow(sections.current.get(id));
     },
     [change],
   );
@@ -178,7 +198,7 @@ export function ProjectWindow({ api, project, actions, work }: ProjectWindowProp
       if (action === 'show') {
         showAndFocus(current, id);
       } else if (action === 'focus') {
-        section?.focus({ preventScroll: true });
+        focusToolWindow(section);
       } else if (action === 'hide') {
         moveFocusOutOf(side);
         change(hideSide(current, side), true);
@@ -259,15 +279,16 @@ export function ProjectWindow({ api, project, actions, work }: ProjectWindowProp
             tabIndex={-1}
             hidden={!open || active !== id}
           >
-            <div className="tool-window-header">
-              <span className="tool-window-title">{TOOL_WINDOWS[id].title}</span>
-              <button type="button" className="icon-button" aria-label="Hide" title="Hide" onClick={() => hide(s)}>
-                <HideIcon />
-              </button>
-            </div>
-            <div className="tool-window-body">
-              <p className="tool-window-placeholder">{TOOL_WINDOWS[id].placeholder}</p>
-            </div>
+            {id === 'project' ? (
+              <ProjectView api={api} project={project} notify={notify} onHide={() => hide(s)} onOpenFile={requestOpenFile} />
+            ) : (
+              <>
+                <ToolWindowHeader title={TOOL_WINDOWS[id].title} onHide={() => hide(s)} />
+                <div className="tool-window-body">
+                  <p className="tool-window-placeholder">{TOOL_WINDOWS[id].placeholder}</p>
+                </div>
+              </>
+            )}
           </section>
         ))}
         {open && (

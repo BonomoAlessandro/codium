@@ -12,7 +12,7 @@ import type {
   FileOperation,
   FilesChangedEvent,
 } from '../../src/shared/types';
-import { createTestCore, restart, type TestCore } from '../support/core';
+import { createTestCore, restart, type TestCore, type TestCoreOptions } from '../support/core';
 import { useTempDirs } from '../support/tempDir';
 
 const WELCOME = 'Welcome to Codium';
@@ -23,7 +23,7 @@ describe('Datei-Dienst', () => {
   const tempDir = useTempDirs();
 
   /** Ein Projekt „Alpha“ mit vorgegebenen Dateien (Pfad → Inhalt; endet der Pfad auf „/“, ein Ordner), offen in Codium. */
-  async function openAlpha(files: Record<string, string> = {}) {
+  async function openAlpha(files: Record<string, string> = {}, options: TestCoreOptions = {}) {
     const root = tempDir();
     const project = path.join(root, 'Alpha');
     fs.mkdirSync(project);
@@ -35,7 +35,7 @@ describe('Datei-Dienst', () => {
         fs.writeFileSync(target, content);
       }
     }
-    const test = createTestCore(path.join(root, 'data'));
+    const test = createTestCore(path.join(root, 'data'), options);
     await test.core.start();
     await call(test, test.ports.windows.windowTitled(WELCOME), 'app.openProject', { path: project });
     const windowId = test.ports.windows.windowTitled(title('Alpha'));
@@ -294,6 +294,20 @@ describe('Datei-Dienst', () => {
       expect(operations(test, windowId)[0]).toEqual({ kind: 'copied', from: at('Main.java'), to: at('Main (2).java'), isDirectory: false });
     });
 
+    it('lässt eine laufende Kopie beim Abbau des Projekt-Kerns noch fertig werden', async () => {
+      const files: Record<string, string> = {};
+      for (let i = 0; i < 300; i++) files[`big/file-${i}.txt`] = 'x'.repeat(1000);
+      // Das Zeitlimit der Aufräumarbeiten reicht hier für die ganze Kopie (im Betrieb 5 s).
+      const { test, windowId, project, at } = await openAlpha(files, { cleanupTimeoutMs: 30_000 });
+
+      const copying = call(test, windowId, 'files.copy', { sources: [at('big')], target: project });
+      await test.core.closeProjectCore(windowId);
+
+      // Schon wenn der Abbau fertig ist, ist die Kopie vollständig.
+      expect(fs.existsSync(at('big (2)')) && fs.readdirSync(at('big (2)')).length).toBe(300);
+      expect(await copying).toEqual([at('big (2)')]);
+    });
+
     it('kopiert Pfade in die Zwischenablage und zeigt im Explorer, beides über den Port', async () => {
       const { test, windowId, at } = await openAlpha({ 'a.txt': '', 'dir/': '' });
 
@@ -442,6 +456,19 @@ describe('Datei-Dienst', () => {
       await settle(test, windowId, project);
       expect(changes(test, windowId).filter((c) => /[\\/]\.git([\\/]|$)/i.test(c.path))).toEqual([]);
       expect(changes(test, windowId).filter((c) => !c.path.includes('marker-'))).toEqual([]);
+    });
+
+    it('erreicht auch Dienste im Kern, die die Ereignisse des Projekts abonnieren', async () => {
+      const { test, windowId, project, at } = await openAlpha();
+      await untilWatching(test, windowId, project);
+      const core = test.core.projectCoreForWindow(windowId)!;
+      const seen: string[] = [];
+      core.subscribe('files.changed', (event) => seen.push(...event.changes.map((c) => `${c.kind} ${path.basename(c.path)}`)));
+      core.subscribe('files.operation', (op) => seen.push(op.kind));
+
+      await call(test, windowId, 'files.createDirectory', { parent: project, name: 'docs' });
+      fs.writeFileSync(at('outside-change.txt'), '');
+      await expect.poll(() => seen).toEqual(['created', 'created outside-change.txt']);
     });
 
     it('meldet eigene Dateioperationen nicht als Änderung von aussen', async () => {
