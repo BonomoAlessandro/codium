@@ -1,6 +1,6 @@
 // Datei-Dienst eines Projekts: Ordnerinhalte für den Dateibaum, Dateioperationen und die Überwachung des
-// Projektordners (fileWatcher.ts). Lesen und Schreiben von Dateiinhalten kommen mit den Tickets 05 und 07. Lädt nie
-// Electron.
+// Projektordners (fileWatcher.ts), Lesen von Dateiinhalten für Tabs (fileContent.ts). Das Schreiben kommt mit
+// Ticket 07. Lädt nie Electron.
 //
 // - Jeder Befehl prüft seine Pfade (pathGuard.ts): absolut, vorhanden und auch nach dem Auflösen von `..`,
 //   Junctions und symbolischen Links im Projekt. Was nur den Eintrag selbst betrifft (Löschen, Umbenennen, Pfad
@@ -14,7 +14,16 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { copyName, fileNameProblem, GIT_FOLDER_PROBLEM, isGitFolderName, splitNewName } from '../../shared/fileNames';
-import { ErrorCode, type CommandParams, type EventName, type Events, type FileEntry } from '../../shared/types';
+import {
+  ErrorCode,
+  MAX_OPEN_FILE_BYTES,
+  type CommandParams,
+  type EventName,
+  type Events,
+  type FileContent,
+  type FileEntry,
+} from '../../shared/types';
+import { decodeFileContent } from './fileContent';
 import { KnownDirs, OwnChanges, keyOf } from './fileTracking';
 import { FileWatcher } from './fileWatcher';
 import { IoLimiter } from './ioLimiter';
@@ -176,6 +185,37 @@ export class FileService {
   /** „Open in Explorer“ (über den Port). */
   async showInExplorer(params: CommandParams<'files.showInExplorer'>): Promise<void> {
     this.options.shell.showInExplorer(await this.guard.entry(field(params, 'path')));
+  }
+
+  /**
+   * Liest eine Datei für einen Tab (siehe `FileContent` und fileContent.ts). Ab `MAX_OPEN_FILE_BYTES` wird nichts
+   * gelesen; wächst die Datei zwischen Prüfung und Lesen über die Grenze, gilt sie ebenfalls als zu gross.
+   */
+  async read(params: CommandParams<'files.read'>): Promise<FileContent> {
+    const file = await this.guard.existing(field(params, 'path'));
+    const stats = await this.fileOp(() => fs.promises.stat(file), file, 'read');
+    if (stats.isDirectory()) throw new CommandError(`Not a file: ${file}`, ErrorCode.notAFile, { path: file });
+    if (stats.size >= MAX_OPEN_FILE_BYTES) return { kind: 'tooLarge', size: stats.size };
+    const data = await this.fileOp(() => fs.promises.readFile(file), file, 'read');
+    if (data.length >= MAX_OPEN_FILE_BYTES) return { kind: 'tooLarge', size: data.length };
+    return decodeFileContent(file, data);
+  }
+
+  /**
+   * Welche der Pfade Dateien im Projekt sind, die es gibt (geprüft wie bei `read`). Für das Wiederherstellen der Tabs;
+   * ein Pfad, der sich nicht prüfen lässt, gilt als fehlend.
+   */
+  async existingFiles(paths: readonly string[]): Promise<boolean[]> {
+    return Promise.all(
+      paths.map(async (target) => {
+        try {
+          const file = await this.guard.existing(target);
+          return (await this.io(() => fs.promises.stat(file))).isFile();
+        } catch {
+          return false;
+        }
+      }),
+    );
   }
 
   /** Führt eine Dateioperation aus und merkt sie sich, bis sie fertig ist. */

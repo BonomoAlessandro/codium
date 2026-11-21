@@ -22,6 +22,7 @@ export function registerFileCommands(register: RegisterProjectCommand): void {
   register('files.suggestCopyName', (project, params) => project.files.suggestCopyName(params));
   register('files.copyPaths', (project, params) => project.files.copyPaths(params));
   register('files.showInExplorer', (project, params) => project.files.showInExplorer(params));
+  register('files.read', (project, params) => project.files.read(params));
   register('project.expandedFolders', (project) => expandedFolders(project));
   register('project.setExpandedFolders', (project, params) => setExpandedFolders(project, params));
 }

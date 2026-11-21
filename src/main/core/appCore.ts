@@ -1,6 +1,7 @@
 // App-Kern: besitzt den App-Zustand, die Fenster mit ihren Projekt-Kernen und den Vertrag mit der Oberfläche.
 // Er entscheidet, welche Fenster beim Start aufgehen, dass ein Projekt nur einmal offen ist und wann Codium
-// endet. Spätere Tickets ergänzen Einstellungen und Voraussetzungen. Lädt nie Electron.
+// endet. Er besitzt die Einstellungen (ab Ticket 05 die Schriftgrösse) und schickt Änderungen an alle Fenster.
+// Spätere Tickets ergänzen Voraussetzungen. Lädt nie Electron.
 //
 // Abfragen auf Projektordnern laufen asynchron, mit Zeitlimit und mit Rücksicht auf nicht erreichbare
 // Netzlaufwerke (siehe folderQueries.ts). Vergleiche von Projektpfaden gehen ohne Dateizugriff über einen
@@ -9,7 +10,10 @@
 import * as path from 'node:path';
 import {
   ErrorCode,
+  MAX_FONT_SIZE,
+  MIN_FONT_SIZE,
   type AppInfo,
+  type AppSettings,
   type CommandName,
   type CommandParams,
   type CommandResult,
@@ -25,6 +29,7 @@ import type { EventSink, Ports, WindowPlacement } from './ports';
 import { ProgressReporter } from './progress';
 import { DEFAULT_CLEANUP_TIMEOUT_MS, ProjectCore } from './projectCore';
 import { FolderQueries, type FolderStatus } from './folderQueries';
+import { registerEditorCommands } from './editorCommands';
 import { registerFileCommands } from './fileCommands';
 import {
   isAbsoluteCommandPath,
@@ -39,7 +44,9 @@ import {
   PROJECT_STATE_DIR,
   RECENT_PROJECTS_LIMIT,
   SCHEMA_VERSION,
+  appSettings,
   defaultLayout,
+  isFontSize,
   emptyAppState,
   emptyProjectState,
   normalizeAppState,
@@ -374,6 +381,36 @@ export class AppCore {
       });
     });
     registerFileCommands((name, handler) => this.registerProjectCommand(name, handler));
+    registerEditorCommands((name, handler) => this.registerProjectCommand(name, handler));
+    this.router.register('app.settings', () => appSettings(this.appState.settings));
+    this.router.register('app.updateSettings', (_ctx, params) => this.updateSettings(params));
+  }
+
+  /**
+   * Ändert Einstellungen: Erst werden alle angegebenen Felder geprüft, dann gespeichert. Die neuen Einstellungen gehen
+   * an alle Fenster, auch an das Willkommensfenster.
+   */
+  private updateSettings(params: unknown): AppSettings {
+    if (typeof params !== 'object' || params === null || Array.isArray(params)) {
+      throw new CommandError('Settings are expected.', ErrorCode.invalidParams);
+    }
+    const changes = params as Record<string, unknown>;
+    for (const name of Object.keys(changes)) {
+      if (name !== 'fontSize') throw new CommandError(`Unknown setting: ${name}`, ErrorCode.invalidParams);
+    }
+    if ('fontSize' in changes && !isFontSize(changes.fontSize)) {
+      throw new CommandError(
+        `The font size must be a whole number from ${MIN_FONT_SIZE} to ${MAX_FONT_SIZE}.`,
+        ErrorCode.invalidParams,
+      );
+    }
+    this.updateState((state) => {
+      if (isFontSize(changes.fontSize)) state.settings.fontSize = changes.fontSize;
+    });
+    const settings = appSettings(this.appState.settings);
+    const windows = [...this.projects.keys(), ...(this.welcomeWindowId === null ? [] : [this.welcomeWindowId])];
+    for (const windowId of windows) this.emitToWindow(windowId, 'app.settingsChanged', settings);
+    return settings;
   }
 
   /** `openProject`; mit `remember = false` bleibt die Reihenfolge der zuletzt geöffneten Projekte, wie sie ist. */

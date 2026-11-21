@@ -5,9 +5,14 @@
 // Ohne sie legt StateFile jede Datei mit Version 1 als kaputt beiseite.
 
 import {
+  DEFAULT_FONT_SIZE,
+  MAX_FONT_SIZE,
+  MIN_FONT_SIZE,
   TOOL_WINDOW_SIDE,
   TOOL_WINDOW_SIDES,
   isToolWindowId,
+  type AppSettings,
+  type CursorState,
   type ToolWindowLayout,
   type ToolWindowSide,
   type ToolWindowSideLayout,
@@ -24,6 +29,8 @@ export const RECENT_PROJECTS_LIMIT = 20;
 export interface Settings {
   /** Shell fürs Terminal (Ticket 11); vom Testgerüst auf cmd gesetzt. */
   terminalShell?: string;
+  /** Schriftgrösse der Editoren; ohne Angabe `DEFAULT_FONT_SIZE`. */
+  fontSize?: number;
 }
 
 /** App-Zustand im Datenordner. */
@@ -55,6 +62,47 @@ export interface ProjectState {
    * leere Pfad. Ohne Angabe ist nur der Projektordner aufgeklappt.
    */
   expandedFolders?: string[];
+  /**
+   * Offene Datei-Tabs in ihrer Reihenfolge, relativ zum Projektordner mit „/“ getrennt (wie `expandedFolders`). Ohne
+   * Angabe sind keine Tabs offen.
+   */
+  tabs?: string[];
+  /** Der aktive Tab, einer aus `tabs`. */
+  activeTab?: string;
+  /**
+   * Cursor und Scrollstand je Datei, Schlüssel wie bei `tabs` (unter Windows klein geschrieben, damit eine andere
+   * Schreibweise derselben Datei keinen zweiten Eintrag anlegt). Die zuletzt geänderten stehen am Ende; es bleiben
+   * höchstens `MAX_CURSORS`.
+   */
+  cursors?: Record<string, CursorState>;
+}
+
+/** Höchstzahl gespeicherter Tabs. */
+export const MAX_TABS = 1000;
+/** Höchstzahl Dateien, deren Cursor sich der Projekt-Zustand merkt. */
+export const MAX_CURSORS = 500;
+
+/** Die Einstellungen für die Oberfläche: gespeicherte Werte, sonst die Standardwerte. */
+export function appSettings(settings: Settings): AppSettings {
+  return { fontSize: settings.fontSize ?? DEFAULT_FONT_SIZE };
+}
+
+/** Ob eine Schriftgrösse gültig ist: eine ganze Zahl von `MIN_FONT_SIZE` bis `MAX_FONT_SIZE`. */
+export function isFontSize(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= MIN_FONT_SIZE && value <= MAX_FONT_SIZE;
+}
+
+/** Ein Cursor aus unbekannter Quelle: Zeile und Spalte ganze Zahlen ab 1, Scrollstand endlich und nicht negativ. */
+export function parseCursor(value: unknown): CursorState | undefined {
+  if (!isRecord(value)) return undefined;
+  const { line, column, scrollTop } = value;
+  if (!isPositiveInteger(line) || !isPositiveInteger(column)) return undefined;
+  if (typeof scrollTop !== 'number' || !Number.isFinite(scrollTop) || scrollTop < 0) return undefined;
+  return { line, column, scrollTop: Math.round(scrollTop) };
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1;
 }
 
 /** Höchstzahl gespeicherter aufgeklappter Ordner. */
@@ -124,6 +172,7 @@ export function normalizeAppState(raw: Record<string, unknown>): AppState {
     openProjects: stringArray(raw.openProjects),
     settings: {
       ...(typeof settings.terminalShell === 'string' ? { terminalShell: settings.terminalShell } : {}),
+      ...(isFontSize(settings.fontSize) ? { fontSize: settings.fontSize } : {}),
     },
     ...(welcomeWindow ? { welcomeWindow } : {}),
   };
@@ -136,16 +185,34 @@ export function normalizeProjectState(projectPath: string, raw: Record<string, u
   const expandedFolders = Array.isArray(raw.expandedFolders)
     ? stringArray(raw.expandedFolders).filter(isRelativeFolder).slice(0, MAX_EXPANDED_FOLDERS)
     : undefined;
+  const tabs = Array.isArray(raw.tabs)
+    ? stringArray(raw.tabs).filter((t) => t !== '' && isRelativeFolder(t)).slice(0, MAX_TABS)
+    : undefined;
+  const activeTab = typeof raw.activeTab === 'string' && tabs?.includes(raw.activeTab) ? raw.activeTab : undefined;
+  const cursors = normalizeCursors(raw.cursors);
   return {
     schemaVersion: 1,
     path: projectPath,
     ...(window ? { window } : {}),
     ...(layout ? { layout } : {}),
     ...(expandedFolders ? { expandedFolders } : {}),
+    ...(tabs ? { tabs } : {}),
+    ...(activeTab !== undefined ? { activeTab } : {}),
+    ...(cursors ? { cursors } : {}),
   };
 }
 
-/** Ein relativer Ordnerpfad aus der Zustandsdatei: mit „/“ getrennt, ohne Laufwerk, ohne leere Teile, `.` oder `..`. */
+/** Die gespeicherten Cursor: nur gültige Einträge mit relativem Pfad, höchstens die letzten `MAX_CURSORS`. */
+function normalizeCursors(value: unknown): Record<string, CursorState> | undefined {
+  if (!isRecord(value)) return undefined;
+  const entries = Object.entries(value).flatMap(([key, cursor]): Array<[string, CursorState]> => {
+    const parsed = parseCursor(cursor);
+    return parsed && key !== '' && isRelativeFolder(key) ? [[key, parsed]] : [];
+  });
+  return Object.fromEntries(entries.slice(-MAX_CURSORS));
+}
+
+/** Ein relativer Pfad aus der Zustandsdatei: mit „/“ getrennt, ohne Laufwerk, ohne leere Teile, `.` oder `..`. */
 function isRelativeFolder(value: string): boolean {
   if (value === '') return true;
   return value.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..' && !/[\\:]/.test(segment));

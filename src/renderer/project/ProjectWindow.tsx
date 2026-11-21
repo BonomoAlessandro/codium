@@ -5,8 +5,13 @@
 //
 // Ein Werkzeugfenster bleibt nach dem ersten Öffnen eingehängt und wird beim Schliessen nur verborgen, wie in
 // IntelliJ: Dateibaum, Terminal und Log behalten so ihren Zustand.
+//
+// Im Code-Bereich liegen die Datei-Tabs mit Monaco (editor/EditorArea.tsx). „Datei öffnen“ aus dem Dateibaum öffnet
+// dort einen Tab; der aktive Tab geht an den Dateibaum („Select Opened File“) und an die Statusleiste.
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
+import { EditorArea, type EditorAreaHandle, type EditorStatus } from '../editor/EditorArea';
+import { useSettings } from '../settings';
 import { flushSync } from 'react-dom';
 import {
   TOOL_WINDOW_SIDE,
@@ -53,17 +58,6 @@ interface ProjectWindowProps {
   notify: Notify;
 }
 
-/** Name des Ereignisses am Dokument, mit dem der Dateibaum „Datei öffnen“ meldet (Nutzlast `{ path }`). */
-export const OPEN_FILE_EVENT = 'codium:open-file';
-
-/**
- * „Datei öffnen“ aus dem Dateibaum (Doppelklick, Enter, neue Datei). Ticket 05 öffnet hier einen Tab; bis dahin geht
- * die Anfrage als Ereignis an das Dokument, wo Tests sie sehen.
- */
-function requestOpenFile(path: string): void {
-  document.dispatchEvent(new CustomEvent(OPEN_FILE_EVENT, { detail: { path } }));
-}
-
 /** Setzt den Fokus in ein Werkzeugfenster: auf sein Hauptelement (etwa den Dateibaum), sonst auf das Fenster selbst. */
 function focusToolWindow(section: HTMLElement | undefined): void {
   (section?.querySelector<HTMLElement>('[data-autofocus]') ?? section)?.focus({ preventScroll: true });
@@ -93,6 +87,12 @@ interface ActiveDrag {
 
 export function ProjectWindow({ api, project, actions, work, notify }: ProjectWindowProps) {
   const { layout, layoutRef, change } = useToolWindowLayout(api);
+  const settings = useSettings(api);
+  const editorRef = useRef<EditorAreaHandle>(null);
+  const [activeFile, setActiveFile] = useState<string | null>(null);
+  const [status, setStatus] = useState<EditorStatus | null>(null);
+  /** „Datei öffnen“ aus dem Dateibaum (Doppelklick, Enter, neue Datei): ein Tab mit dem Fokus im Editor. */
+  const openFile = useCallback((path: string) => editorRef.current?.open(path, { focus: true }), []);
   const areaRef = useRef<HTMLDivElement>(null);
   const area = useElementSize(areaRef);
   const areaValue = useRef<LayoutArea | null>(null);
@@ -280,7 +280,14 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
             hidden={!open || active !== id}
           >
             {id === 'project' ? (
-              <ProjectView api={api} project={project} notify={notify} onHide={() => hide(s)} onOpenFile={requestOpenFile} />
+              <ProjectView
+                api={api}
+                project={project}
+                notify={notify}
+                onHide={() => hide(s)}
+                onOpenFile={openFile}
+                openedFile={activeFile}
+              />
             ) : (
               <>
                 <ToolWindowHeader title={TOOL_WINDOWS[id].title} onHide={() => hide(s)} />
@@ -312,14 +319,25 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
         <div className="tool-area" ref={areaRef}>
           <div className="tool-area-row">
             {side('left')}
-            <CodeArea codeRef={codeRef} />
+            <main ref={codeRef} className="code-area" tabIndex={-1} aria-label="Editor">
+              <EditorArea
+                ref={editorRef}
+                api={api}
+                project={project}
+                notify={notify}
+                fontSize={settings.fontSize}
+                onActiveFileChange={setActiveFile}
+                onStatusChange={setStatus}
+                empty={<CodeHints />}
+              />
+            </main>
             {side('right')}
           </div>
           {side('bottom')}
         </div>
         <Stripe side="right" groups={[STRIPES.right.top, []]} layout={shown} onToggle={toggle} />
       </div>
-      <StatusBar work={work} />
+      <StatusBar work={work} editor={status} />
     </div>
   );
 }
@@ -426,23 +444,21 @@ const CODE_HINTS = [
   { label: 'Git', command: 'toolWindow.git' },
 ] as const;
 
-/** Code-Bereich in der Mitte, vorerst ohne Tabs (Ticket 05). */
-function CodeArea({ codeRef }: { codeRef: RefObject<HTMLElement | null> }) {
+/** Inhalt des Code-Bereichs ohne offene Tabs. */
+function CodeHints() {
   return (
-    <main ref={codeRef} className="code-area" tabIndex={-1} aria-label="Editor">
-      <div className="code-empty">
-        <p className="code-empty-title">No files are open</p>
-        <dl className="code-empty-hints">
-          {CODE_HINTS.map((hint) => (
-            <div key={hint.command} className="code-empty-hint">
-              <dt>{hint.label}</dt>
-              <dd>
-                <kbd>{shortcutLabel(hint.command)}</kbd>
-              </dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-    </main>
+    <div className="code-empty">
+      <p className="code-empty-title">No files are open</p>
+      <dl className="code-empty-hints">
+        {CODE_HINTS.map((hint) => (
+          <div key={hint.command} className="code-empty-hint">
+            <dt>{hint.label}</dt>
+            <dd>
+              <kbd>{shortcutLabel(hint.command)}</kbd>
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }

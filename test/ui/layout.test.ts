@@ -334,7 +334,12 @@ describe('Layout des Projektfensters', () => {
       const handle = await box(page.getByRole('separator', { name: 'Resize Project' }));
       const x = handle.x + handle.width / 2;
       const y = handle.y + handle.height / 2;
-      const pointer = () => page.evaluate(() => ({ classes: [...document.body.classList], cursor: getComputedStyle(document.body).cursor }));
+      // Nur die eigenen Klassen fürs Ziehen; Monaco setzt am `body` eigene (etwa `underline-links`).
+      const pointer = () =>
+        page.evaluate(() => ({
+          classes: [...document.body.classList].filter((c) => c.startsWith('resizing-')),
+          cursor: getComputedStyle(document.body).cursor,
+        }));
 
       await page.mouse.move(x, y);
       await page.mouse.down();

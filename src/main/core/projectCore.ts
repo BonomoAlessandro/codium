@@ -5,6 +5,7 @@
 // die Dateiereignisse des Datei-Dienstes.
 
 import type { EventName, Events, Notice, ProjectInfo } from '../../shared/types';
+import { followFileOperation } from './editorCommands';
 import { expandedFolderPaths } from './fileCommands';
 import { FileService } from './fileService';
 import type { EventSink, ShellActionsPort } from './ports';
@@ -74,6 +75,10 @@ export class ProjectCore {
       watchDebounceMs: options.watchDebounceMs,
       watchMaxDelayMs: options.watchMaxDelayMs,
       progressDelayMs: options.progressDelayMs,
+    });
+    // Tabs und Cursor im Zustand folgen Umbenennungen und Löschungen in Codium.
+    this.subscribe('files.operation', (op) => {
+      if (op.kind === 'renamed' || op.kind === 'deleted') this.updateState((state) => followFileOperation(this.path, state, op));
     });
   }
 

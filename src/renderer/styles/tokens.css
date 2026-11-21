@@ -12,6 +12,7 @@
   --stripe-width: 40px;
   --statusbar-height: 24px;
   --tool-window-header-height: 32px;
+  --editor-tabs-height: 38px;
 
   /* Flächen */
   --bg: #1e1f22;
@@ -24,6 +25,9 @@
   --separator: #1e1f22;
   --border: #4e5157;
   --border-popup: #43454a;
+  /* Linie unter den Datei-Tabs */
+  --border-subtle: #393b40;
+  --bg-tab-hover: #2b2d30;
   --scrim: rgba(0, 0, 0, 0.45);
   --shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
 
@@ -31,6 +35,8 @@
   --text: #dfe1e5;
   --text-muted: #868a91;
   --text-faint: #6f737a;
+  /* Beschriftung nicht aktiver Datei-Tabs */
+  --text-tab: #ced0d6;
   --icon: #ced0d6;
   --link: #548af7;
   /* Ordner im Dateibaum */

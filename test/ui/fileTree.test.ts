@@ -27,17 +27,12 @@ function selectedNames(page: Page): Promise<(string | null)[]> {
     .evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')));
 }
 
-/** Hört auf „Datei öffnen“ aus dem Baum (bis Ticket 05 ein Ereignis am Dokument). */
-async function listenForOpenRequests(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const w = window as unknown as { openRequests: string[] };
-    w.openRequests = [];
-    document.addEventListener('codium:open-file', (e) => w.openRequests.push((e as CustomEvent<{ path: string }>).detail.path));
-  });
-}
-
-function openRequests(page: Page): Promise<string[]> {
-  return page.evaluate(() => (window as unknown as { openRequests: string[] }).openRequests);
+/** Die Beschriftungen der offenen Datei-Tabs; „Datei öffnen“ aus dem Baum öffnet einen Tab. */
+function openTabs(page: Page): Promise<(string | null)[]> {
+  return page
+    .getByRole('tablist', { name: 'Editor Tabs' })
+    .getByRole('tab')
+    .evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')));
 }
 
 /** Öffnet das Rechtsklick-Menü einer Zeile. */
@@ -70,7 +65,6 @@ describe('Dateibaum', () => {
     try {
       const page = await codium.page(ALPHA);
       await item(page, 'Alpha').waitFor({ timeout: 15_000 });
-      await listenForOpenRequests(page);
       return { codium, page };
     } catch (err) {
       await codium.close();
@@ -117,7 +111,7 @@ describe('Dateibaum', () => {
       expect(fs.readFileSync(util, 'utf8')).toBe('');
       await item(page, 'Util.java').waitFor();
       await expect.poll(() => selectedNames(page)).toEqual(['Util.java']);
-      expect(await openRequests(page)).toEqual([util]);
+      await expect.poll(() => openTabs(page)).toEqual(['Util.java']);
 
       // Rename… zeigt bei Java-Dateien den Hinweis und markiert den Namen ohne Endung.
       await (await contextMenu(page, 'Util.java')).getByRole('menuitem', { name: 'Rename…', exact: true }).click();
@@ -204,8 +198,9 @@ describe('Dateibaum', () => {
       // Doppelklick tut nichts: keine Fehlermeldung, nichts geöffnet.
       await link.dblclick();
       await new Promise((resolve) => setTimeout(resolve, 300));
-      expect(await page.getByRole('alert').count()).toBe(0);
-      expect(await openRequests(page)).toEqual([]);
+      // Nur die Meldungen von Codium; Monaco hat eigene, leere Bereiche mit `role="alert"` für Screenreader.
+      expect(await page.locator('.notice[role="alert"]').count()).toBe(0);
+      expect(await openTabs(page)).toEqual([]);
 
       const menu = await contextMenu(page, 'shared');
       expect(await menu.getByRole('menuitem', { name: 'Copy', exact: true }).getAttribute('aria-disabled')).toBe('true');
@@ -237,9 +232,11 @@ describe('Dateibaum', () => {
       await item(page, 'Main.java').waitFor();
       await page.keyboard.press('ArrowDown');
       expect(await selectedNames(page)).toEqual(['Main.java']);
-      // Enter auf einer Datei löst „Datei öffnen“ aus.
+      // Enter auf einer Datei öffnet sie in einem Tab, mit dem Fokus im Editor; ein Klick holt ihn zurück in den Baum.
       await page.keyboard.press('Enter');
-      expect(await openRequests(page)).toEqual([path.join(alpha, 'src', 'main', 'Main.java')]);
+      await expect.poll(() => openTabs(page)).toEqual(['Main.java']);
+      await expect.poll(() => page.evaluate(() => document.activeElement?.closest('.editor-host') !== null)).toBe(true);
+      await item(page, 'Main.java').click();
       // Pfeil links geht zum Elternordner, ein zweites Mal klappt es ihn zu.
       await page.keyboard.press('ArrowLeft');
       expect(await selectedNames(page)).toEqual(['main']);

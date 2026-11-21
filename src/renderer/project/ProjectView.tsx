@@ -74,8 +74,10 @@ interface ProjectViewProps {
   project: ProjectInfo;
   notify: Notify;
   onHide: () => void;
-  /** „Datei öffnen“ (Doppelklick, Enter, neue Datei); Ticket 05 öffnet daraus einen Tab. */
+  /** „Datei öffnen“ (Doppelklick, Enter, neue Datei): öffnet einen Tab. */
   onOpenFile: (path: string) => void;
+  /** Die Datei des aktiven Tabs, für „Select Opened File“; `null` ohne Datei-Tab. */
+  openedFile: string | null;
 }
 
 interface ContextMenu {
@@ -84,7 +86,7 @@ interface ContextMenu {
   viaKeyboard: boolean;
 }
 
-export function ProjectView({ api, project, notify, onHide, onOpenFile }: ProjectViewProps) {
+export function ProjectView({ api, project, notify, onHide, onOpenFile, openedFile }: ProjectViewProps) {
   const root = project.path;
   const rootKey = pathKey(root);
   const ask = useAsk();
@@ -441,6 +443,22 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
     selectOnly(target);
   };
 
+  /** „Select Opened File“: klappt die Ordner bis zur Datei des aktiven Tabs auf, wählt sie aus und zeigt sie. */
+  const selectOpenedFile = () => {
+    if (openedFile === null || !isSameOrInside(openedFile, root) || pathKey(openedFile) === rootKey) return;
+    const folders: string[] = [];
+    for (let dir = parentPath(openedFile); pathKey(dir) !== rootKey && isSameOrInside(dir, root); dir = parentPath(dir)) folders.push(dir);
+    setExpanded((current) => {
+      const missing = [root, ...folders].filter((dir) => !current.has(pathKey(dir)));
+      if (missing.length === 0) return current;
+      const next = new Map(current);
+      for (const dir of missing) next.set(pathKey(dir), dir);
+      return next;
+    });
+    reveal(openedFile);
+    treeRef.current?.focus({ preventScroll: true });
+  };
+
   // ---------- Aktionen ----------
 
   const expand = (row: TreeRow) => {
@@ -785,8 +803,14 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
   return (
     <>
       <ToolWindowHeader title="Project" onHide={onHide}>
-        {/* Wirkt ab Ticket 05, wenn es offene Dateien gibt. */}
-        <button type="button" className="icon-button" aria-label="Select Opened File" title="Select Opened File" disabled>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="Select Opened File"
+          title="Select Opened File"
+          disabled={openedFile === null}
+          onClick={selectOpenedFile}
+        >
           <LocateIcon />
         </button>
         <button type="button" className="icon-button" aria-label="Collapse All" title="Collapse All" onClick={collapseAll}>

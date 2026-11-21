@@ -2,7 +2,7 @@
 
 Eine kleine eigene IDE im Stil von IntelliJ, als Desktop-App für Windows.
 
-> Stand: im Aufbau nach der [Spezifikation](docs/specs/codium-v1.md) und den [Tickets](docs/tickets/README.md). Projekte öffnen in eigenen Fenstern mit Kopfzeile, Werkzeugfenstern, Statusleiste, Meldungen und Rückfragen. Das Werkzeugfenster „Project“ zeigt den Dateibaum mit Dateioperationen und Dateiüberwachung; die übrigen Werkzeugfenster sind noch ohne Inhalt.
+> Stand: im Aufbau nach der [Spezifikation](docs/specs/codium-v1.md) und den [Tickets](docs/tickets/README.md). Projekte öffnen in eigenen Fenstern mit Kopfzeile, Werkzeugfenstern, Statusleiste, Meldungen und Rückfragen. Das Werkzeugfenster „Project“ zeigt den Dateibaum mit Dateioperationen und Dateiüberwachung. Dateien öffnen in Tabs mit Monaco (Farben nach IntelliJ „Dark“, JetBrains Mono), Bilder als Bild; Eingaben werden noch nicht gespeichert. Die übrigen Werkzeugfenster sind noch ohne Inhalt.
 
 ## Stack
 
@@ -48,7 +48,8 @@ src/
                        Zustandsdateien (samt Layout der Werkzeugfenster), Fensterlage, Abfragen auf
                        Projektordnern, Fortschritt, Befehlsverteilung; Datei-Dienst (fileService.ts) mit
                        Prüfung der Pfade (pathGuard.ts), Dateiüberwachung (fileWatcher.ts) und begrenzt
-                       vielen gleichzeitigen Dateizugriffen (ioLimiter.ts)
+                       vielen gleichzeitigen Dateizugriffen (ioLimiter.ts), Lesen von Dateien für Tabs
+                       (fileContent.ts); Tabs und Cursor im Projekt-Zustand (editorCommands.ts)
   main/earlyStart.ts   Was vor allem anderen läuft: Fehlerbehandlung im Testmodus, Grösse des Threadpools
   main/electron/       Echte Ports mit Electron (Fenster, Ordnerauswahl, Geheimnisse, Shell-Aktionen)
   main/system/         Echter Port „System“ ohne Electron
@@ -65,6 +66,9 @@ src/
     project/           Projektfenster: Kopfzeile mit Projektmenü, Symbolleisten, Werkzeugfenster mit
                        Trennlinien, Code-Bereich, Statusleiste; Regeln ohne DOM in toolWindowLayout.ts.
                        Dateibaum in ProjectView.tsx, seine Regeln ohne DOM in fileTree.ts
+    editor/            Datei-Tabs mit Monaco (EditorArea.tsx), Einrichten von Monaco ohne seine Sprachdienste
+                       (monaco.ts, siehe build.mjs), Farbschema (theme.ts), JSON-Farben, Regeln der Tabs (tabs.ts)
+    settings.ts        Einstellungen vom Kern (Schriftgrösse), aktuell bei jeder Änderung
     popup/             Aufklappmenü mit Untermenüs, Rückfragen (useAsk) und Eingaben (useAskText)
     Notices.tsx        Meldungen unten rechts (Regeln in noticeRules.ts)
     progress.ts        Fortschritt laufender Arbeiten (Regeln); ProgressIndicator.tsx zeigt ihn in der

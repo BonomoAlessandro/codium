@@ -1,6 +1,6 @@
 // Muss der erste Import bleiben: Fehlerbehandlung im Testmodus und Grösse des Threadpools (siehe earlyStart.ts).
 import './earlyStart';
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, session } from 'electron';
 import * as path from 'node:path';
 import { IPC, type EventMessage, type EventName, type RequestMessage, type ResponseMessage } from '../shared/types';
 import { AppCore } from './core/appCore';
@@ -58,6 +58,14 @@ async function startCore(): Promise<void> {
   nativeTheme.themeSource = 'dark';
   // Im Dev-Modus ein Menü mit DevTools und Neu laden; die installierte App hat keines.
   Menu.setApplicationMenu(app.isPackaged ? null : Menu.buildFromTemplate(DEV_MENU));
+  // Im Testmodus wird jeder Zugriff der Seiten aufgezeichnet (Seite, Skripte, Stile, Schriften, Worker, Bilder), damit
+  // Tests prüfen können, dass nichts aus dem Netz kommt.
+  if (testMode.hidden) {
+    session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+      recorder.record('web-request', { url: details.url, resourceType: details.resourceType });
+      callback({});
+    });
+  }
 
   const events: EventSink = {
     send(windowId, name, payload) {

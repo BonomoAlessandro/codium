@@ -65,6 +65,15 @@ export class ElectronWindowPort implements WindowPort {
     win.webContents.on('will-navigate', (event) => event.preventDefault());
     win.webContents.on('will-redirect', (event) => event.preventDefault());
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    // Im Testmodus landen Warnungen und Fehler der Seite (etwa Verstösse gegen die Sicherheitsrichtlinie) in der
+    // Aufzeichnung, auch die vor dem ersten Zugriff eines Tests.
+    if (hidden) {
+      win.webContents.on('console-message', (event) => {
+        if (event.level === 'warning' || event.level === 'error') {
+          this.options.recorder.record('console-message', { windowId: id, level: event.level, message: event.message, source: event.sourceId });
+        }
+      });
+    }
     // Den Titel bestimmt der Kern („Projektname – Codium“), nicht das <title> der Seite.
     win.on('page-title-updated', (event) => event.preventDefault());
 

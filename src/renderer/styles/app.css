@@ -476,9 +476,9 @@ kbd {
 }
 
 .code-area {
-  display: grid;
+  display: flex;
   flex: 1;
-  place-items: center;
+  flex-direction: column;
   min-width: 0;
   overflow: hidden;
   background: var(--bg);
@@ -486,8 +486,178 @@ kbd {
 }
 
 .code-empty {
+  align-self: center;
+  justify-self: center;
   color: var(--text-muted);
   text-align: center;
+}
+
+/* ---------- Datei-Tabs und Editor ---------- */
+
+.editor-tabs {
+  display: flex;
+  flex: none;
+  height: var(--editor-tabs-height);
+  overflow: hidden;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.editor-tab {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  max-width: 320px;
+  padding: 0 6px 0 10px;
+  color: var(--text-tab);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.editor-tab:hover {
+  background: var(--bg-tab-hover);
+}
+
+.editor-tab.active {
+  color: var(--text);
+}
+
+/* Der aktive Tab ist unten blau unterstrichen, wie im neuen IntelliJ. */
+.editor-tab.active::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+.editor-tab-icon {
+  display: inline-grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+
+.editor-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-tab-hint {
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+}
+
+/* „Ungespeichert“: ein Punkt vor dem Schliessen-Knopf. */
+.editor-tab-modified {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.editor-tab-close {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  visibility: hidden;
+}
+
+.editor-tab:hover .editor-tab-close,
+.editor-tab.active .editor-tab-close {
+  visibility: visible;
+}
+
+.editor-tab-close:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.editor-tab-close svg {
+  width: 12px;
+  height: 12px;
+}
+
+.editor-body {
+  position: relative;
+  display: grid;
+  flex: 1;
+  min-height: 0;
+}
+
+.editor-host {
+  position: absolute;
+  inset: 0;
+}
+
+/* Monaco bringt eigene Knöpfe und Fokusränder mit; die allgemeinen Regeln der App gelten dort nicht. */
+.editor-host button {
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+}
+
+.editor-host [tabindex='-1']:focus-visible {
+  outline: none;
+}
+
+/* Monaco lässt Text selbst markieren; die Hinweise und Bilder darunter ebenfalls. */
+.editor-notice,
+.editor-image {
+  align-self: center;
+  justify-self: center;
+  user-select: text;
+}
+
+.editor-notice {
+  max-width: 480px;
+  padding: 24px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.editor-notice-title {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.editor-notice-detail {
+  margin: 0;
+}
+
+.editor-image {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  max-width: 100%;
+  max-height: 100%;
+  padding: 24px;
+  overflow: auto;
+  box-sizing: border-box;
+}
+
+/* Schachbrett hinter dem Bild, damit Transparenz sichtbar ist, wie in IntelliJ. */
+.editor-image img {
+  max-width: 100%;
+  background: repeating-conic-gradient(#3a3c41 0% 25%, #2b2d30 0% 50%) 50% / 16px 16px;
+  image-rendering: auto;
+}
+
+.editor-image-info {
+  margin: 0;
+  color: var(--text-muted);
 }
 
 .code-empty-title {

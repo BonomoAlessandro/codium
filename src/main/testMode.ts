@@ -25,7 +25,11 @@ export function readTestMode(env: NodeJS.ProcessEnv): TestMode {
 
 /** Ein aufgezeichnetes Ereignis des Testmodus. */
 export interface TestEvent {
-  /** Was passiert wäre, etwa `window-focused`, `show-in-explorer`, `clipboard-write`. */
+  /**
+   * Was passiert wäre, etwa `window-focused`, `show-in-explorer`, `clipboard-write`. Dazu, was nur beobachtet wird:
+   * `web-request` (jeder Zugriff einer Seite, `{ url, resourceType }`) und `console-message` (Warnungen und Fehler einer
+   * Seite, `{ windowId, level, message, source }`).
+   */
   kind: string;
   detail?: unknown;
   /** Zeitpunkt in Millisekunden seit 1970. */

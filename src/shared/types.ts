@@ -148,6 +148,60 @@ export type FileOperation =
   | { kind: 'deleted'; path: string; isDirectory: boolean }
   | { kind: 'copied'; from: string; to: string; isDirectory: boolean };
 
+/** Kodierung einer Textdatei, wie der Datei-Dienst sie erkannt hat. */
+export type TextEncoding = 'utf-8' | 'utf-8-bom' | 'utf-16le' | 'utf-16be' | 'windows-1252';
+
+/** Zeilenende einer Textdatei: das in der Datei überwiegende, ohne Zeilenumbruch LF. */
+export type LineEnding = 'LF' | 'CRLF';
+
+/** Ab dieser Grösse in Bytes öffnet eine Textdatei ohne Sprachfunktionen und ohne Änderungsbalken. */
+export const LARGE_FILE_BYTES = 5 * 1024 * 1024;
+/** Ab dieser Grösse in Bytes öffnet eine Datei gar nicht, sondern zeigt nur einen Hinweis. */
+export const MAX_OPEN_FILE_BYTES = 50 * 1024 * 1024;
+
+/**
+ * Inhalt einer Datei für einen Tab. Erkannt wird in dieser Reihenfolge: Grösse ab `MAX_OPEN_FILE_BYTES` (`tooLarge`),
+ * Bild nach der Endung (PNG, JPEG, GIF, WebP, BMP, ICO; SVG ist Text), BOM (UTF-8, UTF-16 LE und BE), Null-Bytes in
+ * den ersten 8 KB (`binary`), gültiges UTF-8, sonst Windows-1252. `size` ist die Grösse in Bytes.
+ */
+export type FileContent =
+  | {
+      kind: 'text';
+      text: string;
+      encoding: TextEncoding;
+      lineEnding: LineEnding;
+      size: number;
+      /** Ab `LARGE_FILE_BYTES`: ohne Sprachfunktionen und ohne Änderungsbalken. */
+      large: boolean;
+    }
+  | { kind: 'image'; /** Das Bild als data-URL. */ dataUrl: string; size: number }
+  | { kind: 'binary'; size: number }
+  | { kind: 'tooLarge'; size: number };
+
+/** Einstellungen, die für alle Projekte gelten (im App-Zustand). Felder kommen mit den Tickets, die sie brauchen. */
+export interface AppSettings {
+  /** Schriftgrösse aller Editoren, wie Monaco sie zählt. */
+  fontSize: number;
+}
+
+export const DEFAULT_FONT_SIZE = 13;
+export const MIN_FONT_SIZE = 6;
+export const MAX_FONT_SIZE = 72;
+
+/** Cursor und Scrollstand eines Editors: Zeile und Spalte ab 1, Scrollstand in Pixeln von oben. */
+export interface CursorState {
+  line: number;
+  column: number;
+  scrollTop: number;
+}
+
+/** Die offenen Datei-Tabs eines Projekts in ihrer Reihenfolge (absolute Pfade) und der aktive Tab. */
+export interface EditorTabs {
+  tabs: string[];
+  /** Pfad des aktiven Tabs; `null` ohne Tabs. Muss einer der Tabs sein. */
+  active: string | null;
+}
+
 /**
  * Alle Codes gescheiterter Befehle, die die Oberfläche sehen kann. Die Meldung eines Fehlers mit einem dieser
  * Codes ist englisch und lässt sich so anzeigen. Ein Fehler ohne Code ist ein interner Fehler; seine Meldung ist
@@ -179,6 +233,8 @@ export const ErrorCode = {
   invalidFileName: 'INVALID_FILE_NAME',
   /** Eine Dateioperation ist am Dateisystem gescheitert (etwa fehlende Rechte, Datei in Gebrauch). */
   fileOperationFailed: 'FILE_OPERATION_FAILED',
+  /** Der Pfad ist ein Ordner, der Befehl braucht eine Datei; `data.path` ist der Pfad. */
+  notAFile: 'NOT_A_FILE',
 } as const;
 
 export type ErrorCodeValue = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -228,6 +284,31 @@ export interface Commands {
   'project.expandedFolders': { params: void; result: string[] };
   /** Speichert die aufgeklappten Ordner; Pfade ausserhalb des Projekts lehnt der Kern ab. */
   'project.setExpandedFolders': { params: { paths: string[] }; result: void };
+  /** Die Einstellungen; ohne gespeicherte die Standardwerte. */
+  'app.settings': { params: void; result: AppSettings };
+  /**
+   * Ändert Einstellungen (nur die angegebenen Felder) und liefert alle. Die Änderung geht als `app.settingsChanged`
+   * an alle Fenster. Ungültige Werte (etwa eine Schriftgrösse ausserhalb von 6 bis 72) lehnt der Kern mit
+   * `INVALID_PARAMS` ab.
+   */
+  'app.updateSettings': { params: Partial<AppSettings>; result: AppSettings };
+  /**
+   * Die gespeicherten Datei-Tabs des Projekts. Tabs von Dateien, die es nicht mehr gibt (oder die jetzt Ordner sind),
+   * entfallen still; war einer davon aktiv, wird sein Nachbar aktiv.
+   */
+  'project.tabs': { params: void; result: EditorTabs };
+  /**
+   * Speichert die offenen Datei-Tabs. Geprüft wird ohne Dateizugriff: absolute Pfade im Projekt, ohne Doppelte,
+   * `active` einer der Tabs oder `null` (sonst `INVALID_PARAMS`).
+   */
+  'project.setTabs': { params: EditorTabs; result: void };
+  /** Der zuletzt bekannte Cursor und Scrollstand einer Datei, `null`, wenn keiner gespeichert ist. */
+  'project.cursor': { params: { path: string }; result: CursorState | null };
+  /**
+   * Merkt sich Cursor und Scrollstand einer Datei (auch nach dem Schliessen ihres Tabs, für die zuletzt benutzten
+   * Dateien). Die Angaben folgen Umbenennungen in Codium und entfallen beim Löschen.
+   */
+  'project.setCursor': { params: { path: string; cursor: CursorState }; result: void };
 
   // Datei-Dienst. Jeder Befehl prüft, dass seine Pfade absolut sind (sonst `INVALID_PARAMS`), dass es sie gibt
   // (sonst `FILE_NOT_FOUND`) und dass sie auch nach dem Auflösen von `..`, Junctions und symbolischen Links im
@@ -264,6 +345,8 @@ export interface Commands {
   'files.copyPaths': { params: { paths: string[] }; result: void };
   /** „Open in Explorer“: zeigt die Datei oder den Ordner markiert im Explorer. */
   'files.showInExplorer': { params: { path: string }; result: void };
+  /** Liest eine Datei für einen Tab (siehe `FileContent`). Ein Ordner: `NOT_A_FILE`. */
+  'files.read': { params: { path: string }; result: FileContent };
 }
 
 /** Alle Ereignisse: Name → Nutzlast. */
@@ -272,6 +355,8 @@ export interface Events {
   'app.notice': Notice;
   /** Fortschritt einer Arbeit des Kerns für das Fenster (Statusleiste). */
   'app.progress': ProgressEvent;
+  /** Die Einstellungen haben sich geändert (an alle Fenster); die Nutzlast sind alle Einstellungen. */
+  'app.settingsChanged': AppSettings;
   /** Dateien des Projekts wurden von aussen angelegt, geändert oder gelöscht (gebündelt). */
   'files.changed': FilesChangedEvent;
   /** Codium hat eine Dateioperation ausgeführt. */
