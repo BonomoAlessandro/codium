@@ -36,7 +36,7 @@ Codium wird eine Desktop-IDE für Windows im Stil des neuen IntelliJ, nur dunkel
 - **Willkommensfenster:** das Fenster ohne Projekt, mit zuletzt geöffneten Projekten, „Open Folder“ und „Clone Repository“.
 - **Kopfzeile:** die oberste Leiste eines Projektfensters mit Projektmenü, Branch-Menü und den Fensterknöpfen von Windows.
 - **Werkzeugfenster:** die ein- und ausklappbaren Bereiche an den Rändern. Links „Project“ (Dateibaum) und „Commit“ (Änderungsansicht), unten „Terminal“, „Git“ (mit den Reitern „Log“ und „Console“) und „Find“ (Trefferlisten, nur sichtbar, solange es welche gibt), rechts „Database“.
-- **Symbolleiste:** die schmale Leiste an einem Rand mit den Symbolen der Werkzeugfenster dieser Seite.
+- **Symbolleiste:** die schmale Leiste am linken bzw. rechten Rand mit den Symbolen der Werkzeugfenster, wie im neuen IntelliJ. Die linke trägt oben die Symbole der Werkzeugfenster links und in ihrer unteren Gruppe die der Werkzeugfenster unten; die rechte trägt die der Werkzeugfenster rechts.
 - **Code-Bereich:** die Mitte mit den Tabs. Ein Tab zeigt eine Datei, eine Vergleichsansicht, eine Bibliotheksklasse, einen Tabelleninhalt, ein Bild oder einen Hinweis.
 - **Änderungsansicht:** das Werkzeugfenster „Commit“ mit den geänderten Dateien, den Häkchen und der Commit-Nachricht.
 - **Vergleichsansicht:** ein Tab, der zwei Stände einer Datei nebeneinander oder in einer Spalte zeigt.
@@ -348,11 +348,11 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
 - **Fensterrahmen:** Die Kopfzeile wird von Codium selbst gezeichnet; die Fensterknöpfe von Windows bleiben über die Titelleisten-Überlagerung von Electron erhalten. Der Fenstertitel in der Taskleiste lautet „Projektname – Codium“.
 - **Kopfzeile:** links das Projektmenü (Projektname mit Pfeil), daneben das Branch-Menü (Branchname, voraus/zurück). In einem Ordner ohne Git-Repository fehlt das Branch-Menü.
 - **Werkzeugfenster:**
-  - Symbolleisten links, rechts und unten.
+  - Symbolleisten links und rechts wie im neuen IntelliJ: links oben „Project“ und „Commit“, links in der unteren Gruppe „Terminal“, „Git“ und „Find“, rechts „Database“. Die Symbole der unteren Gruppe öffnen ihr Werkzeugfenster unten.
   - Pro Seite ist höchstens ein Werkzeugfenster sichtbar; ein Klick auf das Symbol des sichtbaren Fensters schliesst es, ein Klick auf ein anderes wechselt.
   - Grössen per Ziehen an den Trennlinien; Mindest- und Höchstgrössen verhindern, dass der Code-Bereich verschwindet.
   - Das untere Werkzeugfenster geht über die ganze Breite zwischen den Symbolleisten.
-  - Das Werkzeugfenster „Find“ erscheint in der unteren Symbolleiste, sobald es Trefferlisten gibt (abgelegte Projektsuche, Verwendungen über Alt + F7), und verschwindet, wenn der Nutzer alle schliesst. Jede Trefferliste ist ein eigener Reiter.
+  - Das Werkzeugfenster „Find“ erscheint in der unteren Gruppe der linken Symbolleiste, sobald es Trefferlisten gibt (abgelegte Projektsuche, Verwendungen über Alt + F7), und verschwindet, wenn der Nutzer alle schliesst. Jede Trefferliste ist ein eigener Reiter.
 - **Rückfragen** (Löschen, Rollback, nicht gemergter Branch, offene Änderungen in der Datenbank) sind Dialoge in der Oberfläche, nicht Dialoge von Windows.
 - **Statusleiste:** links Fortschritt laufender Arbeiten, rechts Zeile:Spalte, Zeilenende, Kodierung.
 - **Meldungen:** Hinweise unten rechts, gestapelt. Erfolg und Information verschwinden nach etwa fünf Sekunden, Fehler bleiben, bis sie geschlossen werden. Ein Hinweis kann Knöpfe tragen (etwa „Pull“ nach einem abgelehnten Push, „Open README“ bei fehlenden Voraussetzungen).
@@ -875,7 +875,7 @@ Diese Punkte wurden beim Schreiben der Spezifikation oder nach dem Review ergän
 21. **Umbenennen im Dateibaum** merkt bei versionierten Dateien die Umbenennung im Index vor, damit Git sie als Umbenennung erkennt.
 22. **Konfliktmarkierungen:** Vor „Commit“ bzw. „Continue“ warnt Codium, wenn in Konfliktdateien noch Markierungen stehen.
 23. **Git-Konsole** zeigt standardmässig nur vom Nutzer ausgelöste, schreibende und Netzwerk-Befehle; Hintergrundabfragen per Schalter.
-24. **Werkzeugfenster „Find“** unten (Alt + 3) für abgelegte Projektsuchen und Verwendungen.
+24. **Werkzeugfenster „Find“** unten (Alt + 3) für abgelegte Projektsuchen und Verwendungen; sein Symbol steht in der unteren Gruppe der linken Symbolleiste.
 25. **Dateisuche nach Namen** schliesst ignorierte Dateien standardmässig aus, mit Schalter „include ignored“; Dateiliste und Projektsuche schliessen versteckte Dateien ein (ohne `.git`).
 26. **Ctrl + Mausrad** ändert die Schriftgrösse aller Editoren und speichert sie als Einstellung (in IntelliJ wirkt es nur auf den aktuellen Editor).
 27. **„Open README“** öffnet das mitgelieferte README schreibgeschützt in einem Codium-Tab, nicht im Browser.
@@ -888,3 +888,4 @@ Diese Punkte wurden beim Schreiben der Spezifikation oder nach dem Review ergän
 34. **Web-Links in der Vorschau** öffnen im Standardbrowser; dafür bekommt der Port „Shell-Aktionen“ eine Funktion zum Öffnen von Web-Adressen.
 35. **Synchrones Scrollen** nur vom Editor zur Vorschau.
 36. **Ansicht pro Datei** im Projekt-Zustand gemerkt; Vorschau nur für Dateien bis 5 MB.
+37. **Aufteilung der Symbolleisten** (bei der Umsetzung von Ticket 03 geschärft, nach der Skizze aus der Befragung und dem neuen IntelliJ): Es gibt keine eigene Leiste am unteren Rand. Die linke Symbolleiste trägt oben „Project“ und „Commit“ und in ihrer unteren Gruppe „Terminal“, „Git“ und „Find“, die rechte „Database“. Die Bestätigung durch den Nutzer steht in der Prüfliste von Ticket 03.

@@ -43,8 +43,46 @@ Spezifikation: „Oberfläche“, „Einstellungen, Meldungen und Voraussetzunge
 
 - [ ] Das Fenster sieht aus wie das neue IntelliJ „Dark“: Kopfzeile, Symbolleisten, Statusleiste, Abstände.
 - [ ] Die Fensterknöpfe von Windows funktionieren. Das Fenster lässt sich an der Kopfzeile verschieben und per Doppelklick maximieren.
+- [ ] Der Nutzer bestätigt die Aufteilung der Symbolleisten: links oben „Project“ und „Commit“, links unten „Terminal“ und „Git“ (später „Find“), rechts „Database“, keine Leiste am unteren Rand.
+- [ ] Die Fensterknöpfe sitzen bündig rechts in der Kopfzeile. Beim Überfahren von „Maximieren“ erscheinen die Andock-Layouts von Windows 11.
+- [ ] Am oberen Fensterrand (über der Kopfzeile) lässt sich die Fenstergrösse ändern.
+- [ ] Die Trennlinie unter der Kopfzeile läuft unter den Fensterknöpfen durch, nichts Bedienbares liegt unter ihnen.
+- [ ] Auch das Willkommensfenster lässt sich an seiner Kopfzeile verschieben und per Doppelklick maximieren.
+- [ ] Ein Klick auf die leere Kopfzeile schliesst ein offenes Projektmenü. (Unter Windows erreicht ein Klick auf die Zieh-Fläche die Seite womöglich nicht.)
+- [ ] Bei hellem Windows-Design blitzt beim Öffnen eines Fensters nichts Helles auf.
+- [ ] In einem verkleinerten Fenster verschwindet der Code-Bereich nie; nach dem Vergrössern sind die alten Breiten der Werkzeugfenster wieder da.
+- [ ] Die Alt-Kürzel funktionieren auf der Schweizer Tastatur; AltGr + 2 („@“) löst nichts aus.
+- [ ] `npm run dev`: Ctrl + R und Ctrl + Shift + I aus dem Entwicklungsmenü funktionieren trotz verborgener Titelleiste.
+- [ ] Eine Information bleibt stehen, solange die Maus über ihr steht, und verschwindet danach.
 
 ## Hinweise
 
 - Ticket 02 hat im Platzhalter des Projektfensters eine vorläufige Leiste mit „Open Folder“, „Exit“ und den zuletzt geöffneten Projekten (`src/renderer/ProjectPlaceholder.tsx`). Die Playwright-Tests in `test/ui/projectWindows.test.ts` klicken deren Knöpfe und müssen auf das Projektmenü umgestellt werden. Die Logik dahinter (`useProjectActions` in `src/renderer/RecentProjects.tsx`) lässt sich fürs Projektmenü wiederverwenden.
 - Die vorläufigen Hinweise stehen in `src/renderer/Notices.tsx`; Fehlertexte für Hinweise liefert `errorText` in `src/renderer/errors.ts`.
+
+## Review
+
+Unabhängiges Review durch einen zweiten Agenten am 2026-11-21. Kein schwerer Befund. Akzeptanzkriterien, die Wettläufe beim Speichern des Layouts, die Prüfung von `project.setLayout` und die Eingriffe des Testmodus (`__codiumTestHooks`) sind in Ordnung. Eingearbeitet:
+
+- **Offenes Menü nahm nach einem Alt-Kürzel weiter Tasten an** (nachgewiesen): Menü öffnen, Pfeil runter, Alt + 1, Enter führte „Open Folder…“ aus, mit Pfeil hoch wäre es „Exit“ gewesen. Jetzt schliesst sich das Menü, sobald der Fokus es verlässt. Die Kürzel der App schliessen offene Menüs zuerst (`closeOpenMenus` in `src/renderer/popup/Menu.tsx`), und ein geschlossenes Menü nimmt sofort keine Tasten mehr an, auch bevor React es entfernt hat. Ein Oberflächentest spielt genau diesen Ablauf durch, mit Pfeil runter und Pfeil hoch; ohne die Korrektur schlägt er fehl.
+- **Spezifikation an die Symbolleisten angeglichen:** „Symbolleiste“ unter den Begriffen, Abschnitt „Oberfläche“, Präzisierung 24 und eine neue Präzisierung 37 beschreiben die Aufteilung wie im neuen IntelliJ.
+- **Ziehen in einem kleinen Fenster überschrieb die Gegenseite** (nachgewiesen): Gespeichert wird jetzt nur die neue Grösse der gezogenen Seite. Die Grenzen rechnen weiter mit den angezeigten Grössen der übrigen Seiten (`beginResize` und `resizeTo` in `toolWindowLayout.ts`, mit Einheitstest).
+- **Zieh-Zeiger blieb hängen,** wenn das Werkzeugfenster während des Ziehens verschwand (nachgewiesen). Bewegung und Loslassen kommen jetzt über das Fenster; Klicks auf Symbole, „Hide“ und die Kürzel beenden ein laufendes Ziehen zuerst. Oberflächentest: Ziehen, mittendrin Alt + 1 zweimal; danach kein Zieh-Zeiger mehr, und weitere Bewegungen ändern nichts.
+- **Fortschritt im Willkommensfenster:** Eine schmale Leiste unten erscheint, solange eine Arbeit läuft (Ticket 10, Klonen). Die Anzeige teilt sich `ProgressIndicator.tsx` mit der Statusleiste. Oberflächentest über `__codiumTestHooks`.
+- **Werkzeugfenster bleiben nach dem ersten Öffnen eingehängt** und werden beim Schliessen und Wechseln nur verborgen; Dateibaum und Terminal behalten so ihren Zustand. Oberflächentest: Eine Markierung am Inhalt übersteht Schliessen, Wechseln und Öffnen.
+- **Knöpfe an Meldungen** sind auf Vollständigkeit geprüft (`assertNever` in `App.tsx`).
+
+Bewusst so geblieben:
+
+- **Ziehen in einem Fenster, das für beide Seiten zu klein ist:** Während des Ziehens bleibt die Gegenseite in ihrer angezeigten Breite stehen. Nach dem Loslassen gilt wieder die anteilige Verkleinerung beider Seiten; die gezogene Seite kann dann etwas schmaler erscheinen als gezogen. Dafür bleibt die gespeicherte Breite der Gegenseite unberührt, und im grösseren Fenster sind beide wieder so breit wie gespeichert.
+
+Entscheidungen bei der Umsetzung, die Ticket und Spezifikation nicht vorgeben:
+
+- **Aufteilung der Symbolleisten** wie im neuen IntelliJ und nach der Skizze aus der Befragung, ohne Leiste am unteren Rand (siehe Präzisierung 37); die Bestätigung des Nutzers steht in der Prüfliste.
+- **Eingriffe des Testmodus** (`globalThis.__codiumTestHooks.emit`): Für Meldungen vom Typ Information und für Fortschritt gibt es im Kern noch keine echte Quelle. Die Oberflächentests schicken diese Ereignisse deshalb auf demselben Weg wie der Kern. Die Eingriffe gibt es nur im Testmodus und nur in `main.ts`; der Kern kennt den Testmodus weiterhin nicht.
+- **Knöpfe an Meldungen** sind Aktionen der Oberfläche (Tabelle `NoticeActions` im Vertrag), keine Befehle an den Kern; so kann später auch „Open README“ einen Tab öffnen. Die Startmeldung zu einem fehlenden Projektordner trägt „Remove from List“, wenn der Ordner unter den zuletzt geöffneten Projekten steht.
+- **Kürzel wie in IntelliJ:** Ein verborgenes Werkzeugfenster wird gezeigt und bekommt den Fokus, ein sichtbares ohne Fokus bekommt den Fokus, ein sichtbares mit Fokus wird geschlossen. Ein Klick auf das Symbol schaltet immer um und setzt beim Öffnen den Fokus hinein. Während einer Rückfrage ruhen die Kürzel. Die Belegung steht in `src/renderer/keymap.ts` (Grundlage für Ticket 06).
+- **Rückfrage beim Entfernen:** Das „×“ an einem zuletzt geöffneten Projekt im Willkommensfenster fragt „Remove Recent Project“, wie IntelliJ. „Remove from List“ an einer Meldung entfernt ohne Rückfrage.
+- **Standard-Layout:** links „Project“ offen (280 px), unten „Terminal“ (260 px) und rechts „Database“ (320 px) zu. Grössen werden in Pixeln gespeichert.
+- **Mindestgrössen:** Werkzeugfenster links und rechts 150 px, unten 100 px; der Code-Bereich bleibt mindestens 240 × 120 px. In einem zu kleinen Fenster schrumpfen links und rechts anteilig, die gespeicherten Grössen bleiben.
+- **Willkommensfenster** mit eigener Kopfzeile (Titel, Fensterknöpfe von Windows), Fensterfarbe immer `#1e1f22`, `nativeTheme.themeSource = 'dark'`.

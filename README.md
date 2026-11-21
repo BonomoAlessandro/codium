@@ -63,7 +63,8 @@ src/
                        Trennlinien, Code-Bereich, Statusleiste; Regeln ohne DOM in toolWindowLayout.ts
     popup/             Aufklappmenü und Rückfragen (useAsk)
     Notices.tsx        Meldungen unten rechts (Regeln in noticeRules.ts)
-    progress.ts        Fortschritt laufender Arbeiten für die Statusleiste
+    progress.ts        Fortschritt laufender Arbeiten (Regeln); ProgressIndicator.tsx zeigt ihn in der
+                       Statusleiste und im Willkommensfenster
     keymap.ts          Tastenkürzel der App (Grundlage der zentralen Tastenbelegung)
     icons.tsx          Symbole
     errors.ts          Fehlertexte für Meldungen (bekannte Codes, sonst ein allgemeiner Text)
