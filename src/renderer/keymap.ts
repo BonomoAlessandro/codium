@@ -127,9 +127,15 @@ export interface KeyLike {
  * (AltGr+2) nie mit Alt-Kürzeln.
  */
 export function shortcutOf(event: KeyLike): string | null {
-  const key = keyName(event);
-  if (key === null) return null;
-  const parts = [event.ctrlKey && 'Ctrl', event.altKey && 'Alt', event.shiftKey && 'Shift', event.metaKey && 'Meta', key];
+  const { key } = event;
+  // AltGr (Ctrl + Alt) mit einem Zeichen, das kein lateinischer Buchstabe ist (etwa „ś“ auf polnischer Tastatur):
+  // Das ist Text, kein Kürzel (Review von Ticket 06).
+  if (event.ctrlKey && event.altKey && key !== undefined && key.length === 1 && !/^[a-z]$/i.test(key) && key !== '/') return null;
+  const name = keyName(event);
+  if (name === null) return null;
+  // „/“ zählt als Zeichen, auch wenn es Shift braucht (Schweizer und deutsche Tastatur: Shift + 7).
+  const shift = event.shiftKey && !(name === '/' && key === '/');
+  const parts = [event.ctrlKey && 'Ctrl', event.altKey && 'Alt', shift && 'Shift', event.metaKey && 'Meta', name];
   return parts.filter((part): part is string => typeof part === 'string').join('+');
 }
 
@@ -159,10 +165,10 @@ const MODIFIER_CODES = /^(Control|Alt|Shift|Meta|OS)(Left|Right)?$/;
 function keyName(event: KeyLike): string | null {
   const { code, key } = event;
   if (code === '' || MODIFIER_CODES.test(code)) return null;
+  if (key === '/' || code === 'NumpadDivide') return '/';
   const digit = /^Digit(\d)$/.exec(code);
   if (digit) return digit[1];
   if (key !== undefined && /^[a-z]$/i.test(key)) return key.toUpperCase();
-  if (key === '/' || code === 'NumpadDivide') return '/';
   const letter = /^Key([A-Z])$/.exec(code);
   if (letter) return letter[1];
   return code;

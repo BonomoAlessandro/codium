@@ -64,8 +64,13 @@ describe('Tastenkürzel', () => {
     // „/“ als Zeichen oder auf dem Ziffernblock.
     expect(commandForKey(press('Slash', { ctrlKey: true, key: '/' }))).toBe('editor.toggleComment');
     expect(commandForKey(press('NumpadDivide', { ctrlKey: true, key: '/' }))).toBe('editor.toggleComment');
+    // Schweizer und deutsche Tastatur: „/“ ist Shift + 7; Ctrl + Shift + 7 kommentiert aus (Review von Ticket 06).
+    expect(commandForKey(press('Digit7', { ctrlKey: true, shiftKey: true, key: '/' }))).toBe('editor.toggleComment');
     // Ohne bekanntes Zeichen (etwa ein kyrillisches Layout) zählt die Lage.
     expect(commandForKey(press('KeyD', { ctrlKey: true, key: 'в' }))).toBe('editor.duplicateLine');
+    // AltGr + S ergibt auf polnischer Tastatur „ś“: Text, nicht Ctrl + Alt + S.
+    expect(shortcutOf(press('KeyS', { ctrlKey: true, altKey: true, key: 'ś' }))).toBeNull();
+    expect(commandForKey(press('KeyS', { ctrlKey: true, altKey: true, key: 's' }))).toBe('settings.open');
   });
 
   it('reagiert nicht auf andere Modifikatoren, AltGr (Ctrl + Alt) oder den Ziffernblock', () => {

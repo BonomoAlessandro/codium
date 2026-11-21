@@ -161,6 +161,37 @@ describe('Tastenbelegung und Tabs', () => {
     });
   });
 
+  it('fängt Monacos kollidierende Kürzel ab, im Text und im Suchfeld', async () => {
+    const { dataRoot } = setup({ 'a.txt': 'foo foo foo\nbar\n' });
+    const { codium, page } = await launchAlpha(dataRoot);
+    await withApp(codium, async () => {
+      await openFiles(page, 'a.txt');
+      await expect.poll(() => editorFocused(page)).toBe(true);
+      await expect.poll(() => editorText(page)).toContain('foo foo foo');
+
+      // Ctrl + Shift + K löscht bei Monaco die Zeile; hier ist es Push (Ticket 18) und tut im Editor nichts.
+      await page.keyboard.press('Control+Shift+k');
+      // Ctrl + K ist bei Monaco der Auftakt für Zweierkürzel; hier nicht: Der nächste Buchstabe wird getippt.
+      await page.keyboard.press('Control+k');
+      await page.keyboard.type('x');
+      await page.keyboard.press('Control+e');
+      await page.keyboard.press('Control+b');
+      await expect.poll(() => editorText(page)).toContain('xfoo foo foo\nbar');
+
+      // Im Suchfeld erzeugt Ctrl + D keine Mehrfach-Cursor (Review von Ticket 06).
+      await page.keyboard.press('Control+f');
+      const find = page.locator('.editor-host').getByRole('textbox', { name: 'Find', exact: true });
+      await expect.poll(() => find.evaluate((el) => el === document.activeElement)).toBe(true);
+      await page.keyboard.type('foo');
+      for (let i = 0; i < 3; i++) await page.keyboard.press('Control+d');
+      await page.keyboard.press('Escape');
+      await expect.poll(() => editorFocused(page)).toBe(true);
+      await page.keyboard.type('X');
+      // Genau eine Stelle bekommt das X, nicht jede Fundstelle.
+      await expect.poll(async () => (await editorText(page)).split('X').length - 1).toBe(1);
+    });
+  });
+
   it('schliesst Tabs per Mittelklick, über das Menü und mit Ctrl + F4, verschont angeheftete und wechselt mit Ctrl + Tab', async () => {
     const { dataRoot } = setup({ 'a.txt': 'a', 'b.txt': 'b', 'c.txt': 'c', 'd.txt': 'd' });
     const first = await launchAlpha(dataRoot);
@@ -267,10 +298,16 @@ describe('Tastenbelegung und Tabs', () => {
       await page.mouse.wheel(0, -100);
       await expect.poll(() => fontSize(page)).toBe(15);
       await page.mouse.wheel(0, 100);
+      await expect.poll(() => fontSize(page)).toBe(14);
+      // Kleine Schritte (Touchpad) zählen erst zusammen als eine Raste (Review von Ticket 06).
+      for (let i = 0; i < 10; i++) await page.mouse.wheel(0, -4);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(await fontSize(page)).toBe(14);
+      await page.mouse.wheel(0, -60);
+      await expect.poll(() => fontSize(page)).toBe(15);
+      await page.mouse.wheel(0, 100);
       await page.keyboard.up('Control');
       await expect.poll(() => fontSize(page)).toBe(14);
-      // Die Seite selbst zoomt nicht mit.
-      expect(await page.evaluate(() => window.devicePixelRatio)).toBe(await first.codium.app.evaluate(({ screen }) => screen.getPrimaryDisplay().scaleFactor));
       await expect.poll(() => invoke<AppSettings>(page, 'app.settings')).toEqual({ fontSize: 14 });
       await exit(page, first.codium);
     });

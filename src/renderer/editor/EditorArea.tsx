@@ -94,6 +94,9 @@ interface ModelEntry {
   listener: monaco.IDisposable;
 }
 
+/** So viele Pixel `deltaY` sind eine Raste des Mausrads (Chromium unter Windows: 100). */
+const WHEEL_NOTCH_PIXELS = 100;
+
 /** So lange nach der letzten Bewegung wird der Cursor gesichert. */
 const CURSOR_SAVE_DELAY_MS = 300;
 
@@ -403,10 +406,15 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       const editor = editorRef.current;
       if (command.startsWith('editor.')) {
         if (!editor) return false;
-        const focused = WIDGET_COMMANDS.has(command) ? editor.hasWidgetFocus() : editor.hasTextFocus();
-        if (!focused) return false;
-        editor.trigger('keyboard', EDITOR_ACTIONS[command as keyof typeof EDITOR_ACTIONS], null);
-        return true;
+        if (WIDGET_COMMANDS.has(command) ? editor.hasWidgetFocus() : editor.hasTextFocus()) {
+          editor.trigger('keyboard', EDITOR_ACTIONS[command as keyof typeof EDITOR_ACTIONS], null);
+          return true;
+        }
+        // In Monacos Eingaben (etwa dem Suchfeld) gehören Rückgängig und Wiederholen der Eingabe; alle anderen Kürzel
+        // werden dort geschluckt, damit Monacos eigene Belegung (etwa Ctrl + D, Mehrfach-Cursor) nicht wirkt
+        // (Review von Ticket 06).
+        if (command === 'editor.undo' || command === 'editor.redo') return false;
+        return editor.hasWidgetFocus();
       }
       switch (command) {
         case 'tab.close':
@@ -510,12 +518,21 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   useEffect(() => {
     const body = bodyRef.current;
     if (!body) return;
+    // Kleine Schritte (Touchpad, Zoomgeste) werden gesammelt; eine Stufe gibt es erst ab einer Mausraste
+    // (Review von Ticket 06).
+    let collected = 0;
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey || e.deltaY === 0) return;
       // Vor Monaco: Er würde sonst scrollen, und die Seite würde zoomen.
       e.preventDefault();
       e.stopPropagation();
-      const next = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, fontSizeRef.current + (e.deltaY < 0 ? 1 : -1)));
+      const notch = e.deltaMode === WheelEvent.DOM_DELTA_PIXEL ? WHEEL_NOTCH_PIXELS : e.deltaMode === WheelEvent.DOM_DELTA_LINE ? 3 : 1;
+      if (Math.sign(collected) !== Math.sign(e.deltaY)) collected = 0;
+      collected += e.deltaY;
+      if (Math.abs(collected) < notch) return;
+      const steps = Math.trunc(collected / notch);
+      collected -= steps * notch;
+      const next = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, fontSizeRef.current - steps));
       if (next === fontSizeRef.current) return;
       fontSizeRef.current = next;
       api.request('app.updateSettings', { fontSize: next }).catch((err: unknown) => console.error('Schriftgrösse nicht gespeichert:', err));
