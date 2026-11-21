@@ -93,7 +93,8 @@ export function renderMarkdown(text: string): RenderedMarkdown {
 
 /** Entfernt Ereignis-Attribute (`on…=`) aus rohem HTML; das Bereinigen danach bleibt DOMPurify. */
 export function stripEventHandlers(html: string): string {
-  return html.replace(/[\s/]on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, ' ');
+  // Nur innerhalb von Tags; Text dazwischen bleibt, wie er ist (Review von Ticket 23).
+  return html.replace(/<[a-z][^>]*>/gi, (tag) => tag.replace(/[\s/]on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, ' '));
 }
 
 /** Was ein Link in der Vorschau ist: Web-Adresse (öffnet den Browser), Anker, relativer Link oder etwas anderes. */
@@ -151,4 +152,13 @@ export function blockForLine(startLines: readonly number[], line: number): numbe
 /** Ob eine Datei eine Markdown-Datei ist (Vorschau mit „Editor“, „Split“, „Preview“). */
 export function isMarkdownFile(filePath: string): boolean {
   return /\.(md|markdown)$/i.test(filePath);
+}
+
+/**
+ * Mermaid-Quelle ohne HTML in Beschriftungen: `<` vor einem Tag wird zu Mermaids Zeichencode `#lt;` und erscheint als
+ * Text. Mermaid setzt Beschriftungen zum Messen sonst ungereinigt ins Dokument (Review von Ticket 23). Pfeile wie
+ * `<-->` bleiben.
+ */
+export function mermaidSource(source: string): string {
+  return source.replace(/<(?=[A-Za-z/!?])/g, '#lt;');
 }

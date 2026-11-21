@@ -403,7 +403,10 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
         // solche Tabs aus.
         setContent(key, { kind: 'text', encoding: content.encoding, lineEnding: content.lineEnding, large: content.large });
         // Markdown: die gemerkte Ansicht („Split“ ohne gemerkte); ab 5 MB nur der Editor (Ticket 23).
-        if (isMarkdownFile(current) && !content.large) {
+        // Mitgelieferte Dokumente (README) gehören zu keinem Projekt: Ihre Ansicht gilt nur, solange der Tab offen ist.
+        if (isMarkdownFile(current) && !content.large && isDocumentTab(current)) {
+          setMarkdownView(key, 'split', false);
+        } else if (isMarkdownFile(current) && !content.large) {
           void api.request('project.markdownView', { path: current }).then(
             (view) => setMarkdownView(key, view ?? 'split', false),
             () => setMarkdownView(key, 'split', false),
@@ -470,7 +473,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     (key: string, view: MarkdownView, persist: boolean) => {
       setMarkdownViews((current) => new Map(current).set(key, view));
       const tabPathValue = tabsRef.current.find((t) => pathKey(t.path) === key)?.path;
-      if (persist && tabPathValue) {
+      if (persist && tabPathValue && !isDocumentTab(tabPathValue)) {
         void api.request('project.setMarkdownView', { path: tabPathValue, view }).catch(() => {});
       }
     },
@@ -1048,7 +1051,8 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       // Die Ansicht einer Markdown-Datei wandert mit (solange es eine bleibt).
       setMarkdownViews((current) => {
         const view = current.get(oldKey);
-        if (view === undefined) return current;
+        // In „.md“ umbenannt: jetzt mit Vorschau (Review von Ticket 23).
+        if (view === undefined) return isMarkdownFile(newPath) ? new Map(current).set(newKey, 'split') : current;
         const next = new Map(current);
         next.delete(oldKey);
         if (isMarkdownFile(newPath)) next.set(newKey, view);
@@ -1239,6 +1243,11 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   const showEditor = activeTab?.content?.kind === 'text';
   const activeKey = activeTab ? pathKey(activeTab.path) : null;
   const activeView = activeKey !== null && showEditor ? markdownViews.get(activeKey) : undefined;
+  // Beim Tabwechsel gilt die oberste Zeile des neuen Editors, nicht die des vorigen (Review von Ticket 23).
+  useEffect(() => {
+    reportTopLine();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeKey]);
   const activeModel = activeKey !== null && activeView !== undefined && activeView !== 'editor' ? models.current.get(activeKey)?.model : undefined;
 
   const tabLabel = (tab: Tab) => labels.get(pathKey(tab.path)) ?? { name: tab.path };

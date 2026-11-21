@@ -2,7 +2,7 @@
 // Links und die Zuordnung einer Editorzeile zu einem Block.
 
 import { describe, expect, it } from 'vitest';
-import { blockForLine, classifyLink, isMarkdownFile, renderMarkdown, resolveImagePath } from '../../src/renderer/markdown/markdown';
+import { blockForLine, classifyLink, isMarkdownFile, mermaidSource, renderMarkdown, resolveImagePath, stripEventHandlers } from '../../src/renderer/markdown/markdown';
 
 const ROOT = 'C:\\work\\Alpha';
 
@@ -84,5 +84,17 @@ describe('Links und Zeilen', () => {
     expect(blockForLine([], 5)).toBe(-1);
     expect(isMarkdownFile('README.MD')).toBe(true);
     expect(isMarkdownFile('notes.txt')).toBe(false);
+  });
+});
+
+describe('Funde aus dem Review', () => {
+  it('lässt Text zwischen Tags beim Entfernen der Ereignis-Attribute stehen', () => {
+    expect(stripEventHandlers('<div>\nThe service is online = true, see only=3\n</div>')).toBe('<div>\nThe service is online = true, see only=3\n</div>');
+    expect(stripEventHandlers('<p class="a" onclick="x()">only=3</p>')).toBe('<p class="a" >only=3</p>');
+  });
+
+  it('macht HTML in Mermaid-Beschriftungen zu Text, Pfeile bleiben', () => {
+    expect(mermaidSource('A["<img src=x onerror=y>"] <--> B</br>')).toBe('A["#lt;img src=x onerror=y>"] <--> B#lt;/br>');
+    expect(mermaidSource('A --> B\nB <-- C')).toBe('A --> B\nB <-- C');
   });
 });

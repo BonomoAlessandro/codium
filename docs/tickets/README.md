@@ -87,7 +87,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 | 20 | [Datenbank: Verbindungen und Baum](20-datenbank-verbindungen.md) | AFK | 03 | 6 | offen |
 | 21 | [Datenbank: Tabelleninhalt und Bearbeiten](21-datenbank-tabellen.md) | AFK | 05, 20 | 6 | offen |
 | 22 | [README und Abnahme auf einem frischen Rechner](22-abschluss.md) | HITL | alle | – | offen |
-| 23 | [Markdown-Vorschau](23-markdown-vorschau.md) | AFK | 05 | 1 | offen |
+| 23 | [Markdown-Vorschau](23-markdown-vorschau.md) | AFK | 05 | 1 | erledigt |
 
 ```mermaid
 flowchart LR

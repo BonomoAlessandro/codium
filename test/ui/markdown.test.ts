@@ -2,7 +2,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Locator, Page } from 'playwright-core';
 import { describe, expect, it } from 'vitest';
 import type { TestEvent } from '../../src/main/testMode';
@@ -94,7 +94,26 @@ describe('Markdown-Vorschau', () => {
   }
 
   it('zeigt Überschrift, Tabelle, Aufgabenliste, Bild und Mermaid; Skripte laufen nicht; Web-Links gehen an den Browser', async () => {
-    const { alpha, dataRoot } = setup({ 'docs/guide.md': DOC, 'docs/img/shot.png': PNG_1X1, 'plain.md': '# Plain\n' });
+    // Wege, über die eine fremde Datei Dateien von ausserhalb laden oder das Fenster überdecken wollte (Review von
+    // Ticket 23): CSS-url(), ein SVG-Bild, Bilder und Ereignis-Attribute in Mermaid-Beschriftungen, position: fixed.
+    const root = tempDir();
+    const secret = path.join(root, 'secret.png');
+    fs.writeFileSync(secret, PNG_1X1);
+    const secretUrl = pathToFileURL(secret).href;
+    const fromRenderer = path.relative(path.join(PROJECT_ROOT, 'dist', 'renderer'), secret).replaceAll('\\', '/');
+    const attacks = [
+      `<div style="background-image:url('${secretUrl}')">styled</div>`,
+      '<div style="position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:99999">FAKE</div>',
+      `<svg width="10" height="10"><image href="${secretUrl}" width="10" height="10"/></svg>`,
+      '',
+      '```mermaid',
+      'graph LR',
+      `  A["<img src='${fromRenderer}'>"] --> B`,
+      `  C["<img src='nope.png' onerror='window.__m = 1'>"] --> D`,
+      '```',
+      '',
+    ].join('\n');
+    const { alpha, dataRoot } = setup({ 'docs/guide.md': `${DOC}\n${attacks}`, 'docs/img/shot.png': PNG_1X1, 'plain.md': '# Plain\n' });
     fs.writeFileSync(path.join(alpha, '..', 'secret.png'), PNG_1X1);
     const { codium, page } = await launchAlpha(dataRoot);
     await withApp(codium, async () => {
@@ -119,13 +138,19 @@ describe('Markdown-Vorschau', () => {
       await expect.poll(() => doc.locator('.md-image-alt').allInnerTexts()).toEqual(['Outside', 'x']);
 
       // Mermaid als SVG; das fehlerhafte Diagramm zeigt seine Meldung, der Rest bleibt.
-      await expect.poll(() => doc.locator('.md-mermaid svg').count(), { timeout: 15_000 }).toBe(1);
+      await expect.poll(() => doc.locator('.md-mermaid > svg').count(), { timeout: 15_000 }).toBe(2);
+      expect(await doc.locator('.md-mermaid svg image, .md-mermaid svg img, .md-mermaid svg foreignObject').count()).toBe(0);
       await expect.poll(() => doc.locator('.md-mermaid-error').count()).toBe(1);
       expect(await doc.getByText('After the diagrams.').count()).toBe(1);
 
       // Skripte und Ereignis-Attribute laufen nicht.
       expect(await page.evaluate(() => (window as unknown as { __pwned?: boolean; __pwned2?: boolean }).__pwned ?? (window as unknown as { __pwned2?: boolean }).__pwned2 ?? false)).toBe(false);
       expect(await doc.locator('script').count()).toBe(0);
+      expect(await page.evaluate(() => (window as unknown as { __m?: number }).__m)).toBeUndefined();
+      // Nichts aus der Vorschau überdeckt das Fenster; Mermaid lässt keine Hilfsknoten im Dokument zurück.
+      expect(await page.evaluate(() => document.elementFromPoint(5, 5)?.closest('.markdown-preview') ?? null)).toBeNull();
+      expect(await doc.getByText('FAKE').isVisible()).toBe(true);
+      expect(await page.evaluate(() => [...document.body.children].map((el) => el.id).filter((id) => id.includes('mermaid')))).toEqual([]);
 
       // Ein Web-Link landet in der Aufzeichnung (statt den Browser zu öffnen).
       await doc.getByRole('link', { name: 'Website' }).click();
@@ -138,6 +163,11 @@ describe('Markdown-Vorschau', () => {
       const requests = await webRequests(codium);
       expect(requests.some((url) => url.endsWith('/mermaid.js'))).toBe(true);
       expect(requests.filter((url) => !url.toLowerCase().startsWith(`${own}/`) && !url.startsWith('data:'))).toEqual([]);
+      // Jeder Zugriff auf eigene Dateien trifft eine Datei, die es gibt (kein „nope.png“, kein Pfad von draussen).
+      for (const url of requests.filter((u) => u.startsWith('file:'))) {
+        expect(fs.existsSync(fileURLToPath(url)), url).toBe(true);
+      }
+      expect(requests.filter((url) => /secret|nope/.test(url))).toEqual([]);
       const violations = (await codium.recorded()).filter(
         (e) => e.kind === 'console-message' && /Content Security Policy|Refused to/i.test((e.detail as { message: string }).message),
       );

@@ -9,6 +9,7 @@ import { dataFolder } from './dataFolder';
 import { DEV_MENU } from './devMenu';
 import { ElectronFolderPicker, ElectronSecrets, ElectronShellActions } from './electron/otherPorts';
 import { ElectronWindowPort } from './electron/windowPort';
+import { isAllowedPageRequest } from './pageRequests';
 import { ripgrepPath } from './ripgrepPath';
 import { NodeSystem } from './system/nodeSystem';
 import { readTestMode, TEST_HOOKS_GLOBAL, TEST_RECORDER_GLOBAL, TestRecorder, type TestHooks } from './testMode';
@@ -59,14 +60,15 @@ async function startCore(): Promise<void> {
   nativeTheme.themeSource = 'dark';
   // Im Dev-Modus ein Menü mit DevTools und Neu laden; die installierte App hat keines.
   Menu.setApplicationMenu(app.isPackaged ? null : Menu.buildFromTemplate(DEV_MENU));
-  // Im Testmodus wird jeder Zugriff der Seiten aufgezeichnet (Seite, Skripte, Stile, Schriften, Worker, Bilder), damit
-  // Tests prüfen können, dass nichts aus dem Netz kommt.
-  if (testMode.hidden) {
-    session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
-      recorder.record('web-request', { url: details.url, resourceType: details.resourceType });
-      callback({});
-    });
-  }
+  // Die Seiten laden nur die eigenen Dateien der Oberfläche und data:-Adressen, nie etwas aus dem Netz oder sonst vom
+  // Rechner (pageRequests.ts). Im Testmodus wird jeder Zugriff aufgezeichnet, auch ein abgewiesener, damit Tests das
+  // prüfen können.
+  const rendererDir = path.join(__dirname, '..', 'renderer');
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    const allowed = isAllowedPageRequest(details.url, rendererDir);
+    if (testMode.hidden) recorder.record('web-request', { url: details.url, resourceType: details.resourceType, ...(allowed ? {} : { blocked: true }) });
+    callback(allowed ? {} : { cancel: true });
+  });
 
   const events: EventSink = {
     send(windowId, name, payload) {

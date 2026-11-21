@@ -1587,6 +1587,8 @@ kbd {
   line-height: 1.6;
   background: var(--bg);
   user-select: text;
+  /* Hält auch position: fixed aus dem Inhalt in der Vorschau (Review von Ticket 23). */
+  contain: paint;
 }
 
 .markdown-preview h1,
