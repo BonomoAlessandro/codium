@@ -128,6 +128,96 @@ describe('Speichern im Kern', () => {
     await expect.poll(() => changes(test, windowId).some((c) => c.path === at('a.txt') && c.kind === 'changed')).toBe(true);
   });
 
+  it('schreibt mit erwartetem Stand nur, wenn die Datei ihn noch hat (Review von Ticket 07)', async () => {
+    const { test, windowId, at } = await openAlpha({ 'a.txt': 'original\n' });
+    const read = await call(test, windowId, 'files.read', { path: at('a.txt') });
+    if (read.kind !== 'text') throw new Error('kein Text');
+    const first = await call(test, windowId, 'files.write', {
+      path: at('a.txt'),
+      text: 'mine\n',
+      encoding: 'utf-8',
+      lineEnding: 'LF',
+      expectedStamp: read.stamp,
+    });
+    // Der gelieferte Stand ist der, den ein neues Lesen zeigt.
+    expect(await call(test, windowId, 'files.read', { path: at('a.txt') })).toMatchObject({ stamp: first.stamp });
+
+    // Von aussen geändert: Mit dem alten Stand wird nichts geschrieben.
+    fs.writeFileSync(at('a.txt'), 'foreign\n');
+    await expect(
+      call(test, windowId, 'files.write', { path: at('a.txt'), text: 'mine again\n', encoding: 'utf-8', lineEnding: 'LF', expectedStamp: first.stamp }),
+    ).rejects.toMatchObject({ code: ErrorCode.fileChanged });
+    expect(fs.readFileSync(at('a.txt'), 'utf8')).toBe('foreign\n');
+    // Ohne erwarteten Stand („Keep Mine“) wird geschrieben.
+    await call(test, windowId, 'files.write', { path: at('a.txt'), text: 'mine again\n', encoding: 'utf-8', lineEnding: 'LF' });
+    expect(fs.readFileSync(at('a.txt'), 'utf8')).toBe('mine again\n');
+  });
+
+  it('behält das Zeilenende unveränderter Zeilen, auch gemischt und mit einzelnem CR (Review von Ticket 07)', async () => {
+    const { test, windowId, at } = await openAlpha({ 'mixed.txt': 'a\r\nb\nc\n', 'cr.txt': 'a\rb\n', 'crlf.txt': 'x\r\ny\r\n' });
+    const write = (name: string, text: string, lineEnding: 'LF' | 'CRLF') =>
+      call(test, windowId, 'files.write', { path: at(name), text, encoding: 'utf-8', lineEnding });
+
+    // Unverändert zurückgeschrieben (der Editor liefert ein einheitliches Zeilenende): Die Bytes bleiben.
+    await write('mixed.txt', 'a\nb\nc\n', 'LF');
+    expect(fs.readFileSync(at('mixed.txt'), 'utf8')).toBe('a\r\nb\nc\n');
+    await write('cr.txt', 'a\nb\n', 'LF');
+    expect(fs.readFileSync(at('cr.txt'), 'utf8')).toBe('a\rb\n');
+    // Eine Zeile geändert, eine eingefügt: Nur diese bekommen das überwiegende Zeilenende.
+    await write('mixed.txt', 'Xa\nb\nnew\nc\n', 'LF');
+    expect(fs.readFileSync(at('mixed.txt'), 'utf8')).toBe('Xa\r\nb\nnew\nc\n');
+    await write('crlf.txt', 'x\ninserted\ny\n', 'CRLF');
+    expect(fs.readFileSync(at('crlf.txt'), 'utf8')).toBe('x\r\ninserted\r\ny\r\n');
+  });
+
+  it('lässt vor dem Beenden und vor dem Schliessen eines Fensters die Tabs speichern (Review von Ticket 07)', async () => {
+    const root = tempDir();
+    const project = path.join(root, 'Alpha');
+    fs.mkdirSync(project);
+    const test = createTestCore(path.join(root, 'data'), { flushTimeoutMs: 5000 });
+    await test.core.start();
+    await call(test, test.ports.windows.windowTitled(WELCOME), 'app.openProject', { path: project });
+    const windowId = test.ports.windows.windowTitled(title('Alpha'));
+    const requests = () =>
+      test.events
+        .forWindow(windowId)
+        .filter((e) => e.name === 'editor.flushRequest')
+        .map((e) => (e.payload as { requestId: number }).requestId);
+
+    // „Exit“: Erst nach der Antwort des Fensters endet Codium.
+    const exiting = call(test, windowId, 'app.exit');
+    await expect.poll(() => requests().length).toBe(1);
+    await sleep(50);
+    expect(test.ports.windows.quitRequests).toBe(0);
+    await call(test, windowId, 'editor.flushed', { requestId: requests()[0] });
+    await exiting;
+    expect(test.ports.windows.quitRequests).toBe(1);
+  });
+
+  it('schliesst ein Fenster erst nach dem Speichern, auch ohne Antwort höchstens nach dem Zeitlimit', async () => {
+    const root = tempDir();
+    const alpha = path.join(root, 'Alpha');
+    const beta = path.join(root, 'Beta');
+    fs.mkdirSync(alpha);
+    fs.mkdirSync(beta);
+    const test = createTestCore(path.join(root, 'data'), { flushTimeoutMs: 300 });
+    await test.core.start();
+    await call(test, test.ports.windows.windowTitled(WELCOME), 'app.openProject', { path: alpha });
+    const alphaWindow = test.ports.windows.windowTitled(title('Alpha'));
+    await call(test, alphaWindow, 'app.openProject', { path: beta });
+    const betaWindow = test.ports.windows.windowTitled(title('Beta'));
+
+    const started = Date.now();
+    const closing = test.ports.windows.requestClose(betaWindow);
+    await expect.poll(() => test.events.forWindow(betaWindow).some((e) => e.name === 'editor.flushRequest')).toBe(true);
+    expect(test.ports.windows.isOpen(betaWindow)).toBe(true);
+    // Keine Antwort (etwa eine hängende Seite): Nach dem Zeitlimit schliesst es trotzdem.
+    await closing;
+    expect(Date.now() - started).toBeGreaterThanOrEqual(250);
+    expect(test.ports.windows.isOpen(betaWindow)).toBe(false);
+    expect(test.ports.windows.isOpen(alphaWindow)).toBe(true);
+  });
+
   it('lehnt Ordner, fehlende Dateien, Pfade ausserhalb und .git ab', async () => {
     const { test, windowId, at } = await openAlpha({ 'src/a.txt': 'a', '.git/HEAD': 'ref: refs/heads/main\n' });
     const write = (file: string) => call(test, windowId, 'files.write', { path: file, text: 'x', encoding: 'utf-8', lineEnding: 'LF' });

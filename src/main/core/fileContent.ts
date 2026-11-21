@@ -5,6 +5,7 @@
 // UTF-8, sonst Windows-1252. Bilder erkennt Codium vorher an der Endung; SVG ist Text. Geschrieben wird in derselben
 // Kodierung, mit demselben BOM und Zeilenende (`encodeText`).
 
+import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 import { LARGE_FILE_BYTES, type FileContent, type LineEnding, type TextEncoding } from '../../shared/types';
 
@@ -41,7 +42,55 @@ export function decodeFileContent(fileName: string, data: Buffer): FileContent {
     lineEnding: lineEndingOf(decoded.text),
     size,
     large: size >= LARGE_FILE_BYTES,
+    stamp: stampOf(data),
   };
+}
+
+/** Der Stand einer Datei: ein Hash ihrer Bytes (unabhängig von Zeitstempeln, die Werkzeuge auch zurücksetzen). */
+export function stampOf(data: Buffer): string {
+  return createHash('sha1').update(data).digest('hex');
+}
+
+/**
+ * Setzt die Zeilenenden eines neuen Textes so, dass gleich gebliebene Zeilen am Anfang und am Ende ihr bisheriges
+ * Zeilenende behalten (auch einzelne CR und gemischte Dateien); dazwischen, bei neuen und geänderten Zeilen, gilt
+ * `lineEnding`. Der neue Text kommt aus dem Editor mit beliebigen Umbrüchen.
+ */
+export function withPreservedLineEndings(oldText: string, newText: string, lineEnding: LineEnding): string {
+  const old = splitLines(oldText);
+  const lines = newText.split(/\r\n|\r|\n/);
+  const fallback = lineEnding === 'CRLF' ? '\r\n' : '\n';
+  let prefix = 0;
+  while (prefix < lines.length && prefix < old.lines.length && lines[prefix] === old.lines[prefix]) prefix++;
+  let suffix = 0;
+  while (
+    suffix < lines.length - prefix &&
+    suffix < old.lines.length - prefix &&
+    lines[lines.length - 1 - suffix] === old.lines[old.lines.length - 1 - suffix]
+  ) suffix++;
+  const shift = old.lines.length - lines.length;
+  let result = lines[0];
+  const oldMiddle = old.lines.length - suffix - prefix;
+  for (let j = 0; j < lines.length - 1; j++) {
+    // Der Umbruch nach Zeile j: im gleichen Anfang und vor einer Zeile des gleichen Endes der alte; im geänderten
+    // Bereich der Reihe nach die der alten Zeilen dort; darüber hinaus (eingefügte Zeilen) `lineEnding`.
+    let separator = fallback;
+    if (j < prefix && j < old.separators.length) separator = old.separators[j];
+    else if (j + 1 >= lines.length - suffix && j + shift >= 0 && j + shift < old.separators.length) separator = old.separators[j + shift];
+    else if (j - prefix < oldMiddle && j < old.separators.length) separator = old.separators[j];
+    result += separator + lines[j + 1];
+  }
+  return result;
+}
+
+function splitLines(text: string): { lines: string[]; separators: string[] } {
+  const parts = text.split(/(\r\n|\r|\n)/);
+  return { lines: parts.filter((_, i) => i % 2 === 0), separators: parts.filter((_, i) => i % 2 === 1) };
+}
+
+/** Die Bytes eines Textes in einer Kodierung (mit BOM), ohne die Zeilenumbrüche anzufassen. */
+export function encodeExact(text: string, encoding: TextEncoding): Buffer {
+  return encodeText(text, encoding, null);
 }
 
 /** Text und Kodierung einer Datei; `null` für eine Binärdatei. Ein BOM gehört nicht zum Text. */
@@ -68,8 +117,8 @@ export function decodeText(data: Buffer): { text: string; encoding: TextEncoding
  * Zeilenende der Datei. Sonst wird nichts verändert. Ein Zeichen, das Windows-1252 nicht kennt, ergibt
  * `UnencodableError`.
  */
-export function encodeText(text: string, encoding: TextEncoding, lineEnding: LineEnding): Buffer {
-  const normalized = text.replace(/\r\n|\r|\n/g, lineEnding === 'CRLF' ? '\r\n' : '\n');
+export function encodeText(text: string, encoding: TextEncoding, lineEnding: LineEnding | null): Buffer {
+  const normalized = lineEnding === null ? text : text.replace(/\r\n|\r|\n/g, lineEnding === 'CRLF' ? '\r\n' : '\n');
   switch (encoding) {
     case 'utf-8':
       return Buffer.from(normalized, 'utf8');

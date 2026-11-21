@@ -25,7 +25,16 @@ import {
   type LineEnding,
   type TextEncoding,
 } from '../../shared/types';
-import { countLineEndings, decodeFileContent, encodeText, UnencodableError } from './fileContent';
+import {
+  countLineEndings,
+  decodeFileContent,
+  decodeText,
+  encodeExact,
+  encodeText,
+  stampOf,
+  UnencodableError,
+  withPreservedLineEndings,
+} from './fileContent';
 import { KnownDirs, OwnChanges, keyOf } from './fileTracking';
 import { FileWatcher } from './fileWatcher';
 import { IoLimiter } from './ioLimiter';
@@ -219,19 +228,32 @@ export class FileService {
    * verändert. Die Datei muss es geben. Die Überwachung meldet den eigenen Schreibvorgang nicht als Änderung von aussen;
    * eine fremde Änderung kurz danach schon.
    */
-  write(params: CommandParams<'files.write'>): Promise<void> {
+  write(params: CommandParams<'files.write'>): Promise<{ stamp: string }> {
     return this.track(async () => {
       const file = await this.guard.existing(field(params, 'path'));
       await this.guard.assertOutsideGit(file, 'follow');
       const text = field(params, 'text');
-      const encoding = field(params, 'encoding');
+      const encoding = field(params, 'encoding') as TextEncoding;
       const lineEnding = field(params, 'lineEnding');
+      const expectedStamp = field(params, 'expectedStamp');
       if (typeof text !== 'string') throw invalidParams('A text is expected.');
-      if (!TEXT_ENCODINGS.includes(encoding as TextEncoding)) throw invalidParams('An encoding is expected.');
+      if (!TEXT_ENCODINGS.includes(encoding)) throw invalidParams('An encoding is expected.');
       if (lineEnding !== 'LF' && lineEnding !== 'CRLF') throw invalidParams('A line ending is expected.');
+      if (expectedStamp !== undefined && typeof expectedStamp !== 'string') throw invalidParams('A stamp is expected.');
+      const stats = await this.fileOp(() => fs.promises.stat(file), file, 'save');
+      if (stats.isDirectory()) throw new CommandError(`Not a file: ${file}`, ErrorCode.notAFile, { path: file });
+      // Der bisherige Inhalt: für die Prüfung des Stands und für die Zeilenenden unveränderter Zeilen.
+      const current = stats.size < MAX_OPEN_FILE_BYTES ? await this.fileOp(() => fs.promises.readFile(file), file, 'save') : null;
+      if (expectedStamp !== undefined && (current === null || stampOf(current) !== expectedStamp)) {
+        throw new CommandError(`“${path.basename(file)}” changed on disk.`, ErrorCode.fileChanged, { path: file });
+      }
+      const previous = current === null ? null : decodeText(current);
       let bytes: Buffer;
       try {
-        bytes = encodeText(text, encoding as TextEncoding, lineEnding);
+        bytes =
+          previous !== null && previous.encoding === encoding
+            ? encodeExact(withPreservedLineEndings(previous.text, text, lineEnding), encoding)
+            : encodeText(text, encoding, lineEnding);
       } catch (err) {
         if (err instanceof UnencodableError) {
           throw new CommandError(err.message, ErrorCode.cannotEncode, { path: file, character: err.character });
@@ -239,8 +261,8 @@ export class FileService {
         throw err;
       }
       if (bytes.length >= MAX_OPEN_FILE_BYTES) throw invalidParams('The text is too large to save.');
-      const stats = await this.fileOp(() => fs.promises.stat(file), file, 'save');
-      if (stats.isDirectory()) throw new CommandError(`Not a file: ${file}`, ErrorCode.notAFile, { path: file });
+      // Bekannte Grenze: Zwischen der Prüfung des Stands und dem Schreiben vergeht wenig Zeit; was ein anderes Programm
+      // genau dann schreibt, geht verloren. Die Oberfläche erfährt es nicht.
       const own = this.own.expect(file, true, false);
       try {
         await this.fileOp(() => fs.promises.writeFile(file, bytes), file, 'save');
@@ -249,6 +271,7 @@ export class FileService {
         throw err;
       }
       own.settle(await this.stamp(file));
+      return { stamp: stampOf(bytes) };
     });
   }
 

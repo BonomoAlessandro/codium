@@ -31,6 +31,7 @@ import { errorText } from '../errors';
 import { ChevronDownIcon, CloseIcon, FileIcon, PinIcon } from '../icons';
 import { shortcutLabel, type KeyCommand, type ToolWindowCommand } from '../keymap';
 import type { Notify } from '../Notices';
+import { useAsk } from '../popup/Dialogs';
 import { Menu, type MenuAnchor, type MenuEntry } from '../popup/Menu';
 import { isSameOrInside, movedPath, pathKey, relativeLabel } from '../project/filePaths';
 import { EDITOR_ACTIONS } from './editorActions';
@@ -102,6 +103,11 @@ interface ModelEntry {
   target: EditorTarget | null;
   /** Der Text auf der Festplatte, wie er zuletzt gelesen oder geschrieben wurde (mit dem Zeilenende des Modells). */
   diskText: string;
+  /**
+   * Stand der Datei beim letzten Lesen oder Schreiben. Gespeichert wird nur, wenn die Datei noch diesen Stand hat;
+   * sonst gilt sie als von aussen geändert (Review von Ticket 07).
+   */
+  diskStamp: string;
   /** Zeitgeber des automatischen Speicherns nach der letzten Eingabe. */
   saveTimer: number | null;
   /** Das laufende Speichern; das nächste schliesst sich an, damit nie eine ältere Fassung eine neuere überschreibt. */
@@ -221,6 +227,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
         initialCursor: null,
         target: null,
         diskText: model.getValue(),
+        diskStamp: '',
         saveTimer: null,
         saving: Promise.resolve(),
         ...extra,
@@ -272,16 +279,25 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     const tab = tabsRef.current.find((t) => pathKey(t.path) === key);
     if (!tab || tab.content?.kind !== 'text' || conflictsRef.current.has(key)) return entry.saving;
     if (!force && version === entry.savedVersion) return entry.saving;
-    const request = {
-      path: tab.path,
-      text: entry.model.getValue(),
-      encoding: tab.content.encoding,
-      lineEnding: tab.content.lineEnding,
-    };
+    const text = entry.model.getValue();
+    const { encoding, lineEnding } = tab.content;
     const run = entry.saving.then(async () => {
+      let stamp: string;
       try {
-        await api.request('files.write', request);
+        // Der erwartete Stand gilt erst jetzt, nach dem vorherigen Speichern; „Keep Mine“ schreibt ohne Prüfung.
+        ({ stamp } = await api.request('files.write', {
+          path: tab.path,
+          text,
+          encoding,
+          lineEnding,
+          ...(force ? {} : { expectedStamp: entry.diskStamp }),
+        }));
       } catch (err) {
+        if (err instanceof CodiumError && err.code === ErrorCode.fileChanged && models.current.get(key) === entry) {
+          // Von aussen geändert, bevor die Meldung der Überwachung da war: Hinweis statt Überschreiben.
+          setConflict(key, true);
+          return;
+        }
         // Wurde die Datei inzwischen in Codium umbenannt, speichert der Tab unter dem neuen Namen; sonst bleibt die
         // Markierung „ungespeichert“ (bzw. der Tab ist zu), und die Meldung sagt warum.
         const renamedMeanwhile = models.current.get(key) !== entry && err instanceof CodiumError && err.code === ErrorCode.fileNotFound;
@@ -291,7 +307,8 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       // Gilt nur, solange das Modell noch dasselbe ist (nicht geschlossen, nicht umbenannt).
       if (models.current.get(key) !== entry) return;
       entry.savedVersion = version;
-      entry.diskText = request.text;
+      entry.diskText = text;
+      entry.diskStamp = stamp;
       updateDirty(key);
     });
     entry.saving = run;
@@ -358,7 +375,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
         monaco.editor.getModel(uri)?.dispose();
         const model = monaco.editor.createModel(content.text, languageOf(current), uri);
         model.setEOL(content.lineEnding === 'CRLF' ? monaco.editor.EndOfLineSequence.CRLF : monaco.editor.EndOfLineSequence.LF);
-        addModel(key, model, model.getAlternativeVersionId(), { initialCursor: cursor });
+        addModel(key, model, model.getAlternativeVersionId(), { initialCursor: cursor, diskStamp: content.stamp });
         // Der Kern merkt sich `large` (ab 5 MB): Sprach-Dienst (Ticket 12) und Änderungsbalken (Ticket 17) bleiben für
         // solche Tabs aus.
         setContent(key, { kind: 'text', encoding: content.encoding, lineEnding: content.lineEnding, large: content.large });
@@ -462,7 +479,44 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   );
   const closeRef = useRef(closeTabs);
   closeRef.current = closeTabs;
-  const close = useCallback((filePath: string) => closeTabs([filePath]), [closeTabs]);
+  /**
+   * Schliessen durch den Nutzer (Kreuz, Mittelklick, Ctrl + F4, Menü): Tabs mit Eingaben werden erst gespeichert.
+   * Lässt sich einer nicht speichern (etwa ein Zeichen, das die Kodierung nicht kennt, oder „File changed on disk“),
+   * fragt Codium, bevor die Eingaben verloren gehen (Review von Ticket 07).
+   */
+  const closeByUser = useCallback(
+    async (paths: readonly string[]) => {
+      const keys = paths.map(pathKey);
+      const unsavedNow = () => keys.filter((key) => {
+        const entry = models.current.get(key);
+        return entry !== undefined && entry.model.getAlternativeVersionId() !== entry.savedVersion;
+      });
+      await Promise.all(unsavedNow().map((key) => saveNowRef.current(key)));
+      const unsaved = new Set(unsavedNow());
+      if (unsaved.size > 0) {
+        const names = tabsRef.current.filter((t) => unsaved.has(pathKey(t.path))).map((t) => relativeLabel(project.path, t.path));
+        const choice = await askRef.current({
+          title: 'Close',
+          message: 'These files have changes that could not be saved. Close them anyway and discard the changes?',
+          items: names,
+          buttons: [
+            { id: 'discard', label: 'Discard and Close' },
+            { id: 'cancel', label: 'Cancel', primary: true },
+          ],
+        });
+        if (choice !== 'discard') {
+          closeTabs(paths.filter((p) => !unsaved.has(pathKey(p))));
+          return;
+        }
+      }
+      closeTabs(paths);
+    },
+    [closeTabs, project.path],
+  );
+  const ask = useAsk();
+  const askRef = useRef(ask);
+  askRef.current = ask;
+  const close = useCallback((filePath: string) => void closeByUser([filePath]), [closeByUser]);
 
   // ---------- Ctrl + Tab: zuletzt benutzte Tabs ----------
 
@@ -578,7 +632,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       kind: 'item',
       label,
       disabled: closing(action).length === 0,
-      run: () => closeTabs(closing(action)),
+      run: () => void closeByUser(closing(action)),
     });
     return [
       { kind: 'item', label: 'Close', shortcut: shortcutLabel('tab.close'), run: () => close(filePath) },
@@ -884,7 +938,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       model.setEOL(entry.model.getEndOfLineSequence());
       disposeModel(oldKey);
       const newKey = pathKey(newPath);
-      addModel(newKey, model, wasDirty ? -1 : model.getAlternativeVersionId(), { viewState, diskText: entry.diskText });
+      addModel(newKey, model, wasDirty ? -1 : model.getAlternativeVersionId(), { viewState, diskText: entry.diskText, diskStamp: entry.diskStamp });
       // Ungespeicherte Eingaben werden unter dem neuen Namen gespeichert, ein offener Konflikt bleibt.
       if (inConflict) setConflict(newKey, true);
       else if (wasDirty) scheduleSave(newKey);
@@ -939,6 +993,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     }
     entry.savedVersion = model.getAlternativeVersionId();
     entry.diskText = model.getValue();
+    entry.diskStamp = content.stamp;
     if (entry.saveTimer !== null) window.clearTimeout(entry.saveTimer);
     entry.saveTimer = null;
     setConflict(key, false);

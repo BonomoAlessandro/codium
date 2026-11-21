@@ -28,6 +28,11 @@ export class ElectronWindowPort implements WindowPort {
   /** Ob ein Fenster maximiert ist; bleibt stehen, solange es minimiert ist (dann meldet Electron „nicht maximiert“). */
   private readonly maximized = new Map<number, boolean>();
   private sessionEnded = false;
+  private closeRequestHandler: ((windowId: number) => Promise<void> | null) | null = null;
+
+  onCloseRequested(handler: (windowId: number) => Promise<void> | null): void {
+    this.closeRequestHandler = handler;
+  }
 
   constructor(private readonly options: ElectronWindowPortOptions) {}
 
@@ -81,7 +86,30 @@ export class ElectronWindowPort implements WindowPort {
     win.on('unmaximize', () => this.maximized.set(id, false));
     // Die Lage wird gelesen, solange das Fenster noch existiert; im Testmodus wird keine Lage gemeldet.
     let lastPlacement: WindowPlacement | null = null;
-    win.on('close', () => {
+    // Vor dem Schliessen die Arbeit des Kerns (Tabs speichern); danach schliesst sich das Fenster wirklich.
+    let closeState: 'open' | 'preparing' | 'ready' = 'open';
+    win.on('close', (event) => {
+      const handler = this.closeRequestHandler;
+      if (handler && closeState !== 'ready') {
+        const work = closeState === 'open' ? handler(id) : null;
+        // Ohne Arbeit (etwa während Codium endet) schliesst das Fenster sofort; aufgehalten würde das Beenden abbrechen.
+        if (closeState === 'open' && work === null) {
+          closeState = 'ready';
+          lastPlacement = this.placement(id);
+          return;
+        }
+        event.preventDefault();
+        if (work !== null) {
+          closeState = 'preparing';
+          void work
+            .catch(() => {})
+            .finally(() => {
+              closeState = 'ready';
+              if (!win.isDestroyed()) win.close();
+            });
+        }
+        return;
+      }
       lastPlacement = this.placement(id);
     });
     win.on('closed', () => {

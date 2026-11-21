@@ -91,6 +91,16 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
   const editorRef = useRef<EditorAreaHandle>(null);
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [status, setStatus] = useState<EditorStatus | null>(null);
+  // Schliesst sich das Fenster oder endet Codium, speichert der Code-Bereich zuerst alle Tabs; der Kern wartet darauf.
+  useEffect(
+    () =>
+      api.on('editor.flushRequest', ({ requestId }) => {
+        const done = () => void api.request('editor.flushed', { requestId }).catch(() => {});
+        (editorRef.current?.saveAll() ?? Promise.resolve()).then(done, done);
+      }),
+    [api],
+  );
+
   /** „Datei öffnen“ aus dem Dateibaum (Doppelklick, Enter, neue Datei): ein Tab mit dem Fokus im Editor. */
   const openFile = useCallback((path: string) => editorRef.current?.open(path, { focus: true }), []);
   const areaRef = useRef<HTMLDivElement>(null);

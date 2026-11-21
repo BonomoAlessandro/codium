@@ -197,6 +197,71 @@ describe('Speichern', () => {
     });
   });
 
+  it('überschreibt eine fremde Änderung nicht, auch wenn sofort gespeichert wird (Review von Ticket 07)', async () => {
+    const { dataRoot, at } = setup({ 'a.txt': 'original\n' });
+    const { codium, page } = await launchAlpha(dataRoot);
+    await withApp(codium, async () => {
+      await open(page, 'a.txt');
+      await page.keyboard.type('mine ');
+      // Fremd geändert und sofort Ctrl + S, bevor die Überwachung es melden kann: Hinweis statt Überschreiben.
+      fs.writeFileSync(at('a.txt'), 'foreign\n');
+      await page.keyboard.press('Control+s');
+      await page.getByRole('alert').filter({ hasText: 'File changed on disk' }).waitFor();
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      expect(read(at('a.txt'))).toBe('foreign\n');
+    });
+  });
+
+  it('speichert Eingaben der letzten Sekunde vor „Exit“ und beim Schliessen des Fensters (Review von Ticket 07)', async () => {
+    const { dataRoot, at } = setup({ 'a.txt': 'original\n', 'b.txt': 'original\n' });
+    const first = await launchAlpha(dataRoot);
+    await withApp(first.codium, async () => {
+      await open(first.page, 'a.txt');
+      await first.page.keyboard.type('typed ');
+      await first.page.getByRole('button', { name: 'Alpha', exact: true }).click();
+      await first.page.getByRole('menuitem', { name: 'Exit' }).click();
+      await first.codium.exited();
+    });
+    expect(read(at('a.txt'))).toBe('typed original\n');
+
+    const second = await launchAlpha(dataRoot);
+    await withApp(second.codium, async () => {
+      await open(second.page, 'b.txt');
+      await second.page.keyboard.type('closed ');
+      // Das Fenster schliessen wie mit dem Kreuz; es ist das letzte, Codium endet danach.
+      await second.codium.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+      await second.codium.exited();
+    });
+    expect(read(at('b.txt'))).toBe('closed original\n');
+  });
+
+  it('fragt beim Schliessen eines Tabs, dessen Eingaben sich nicht speichern lassen (Review von Ticket 07)', async () => {
+    const { dataRoot, at } = setup({});
+    fs.writeFileSync(at('ansi.txt'), Buffer.from([0x41, 0xe4, 0x0a]));
+    const { codium, page } = await launchAlpha(dataRoot);
+    await withApp(codium, async () => {
+      await open(page, 'ansi.txt');
+      expect(await page.getByLabel('Encoding', { exact: true }).innerText()).toBe('windows-1252');
+      // „→“ gibt es in Windows-1252 nicht: Das Speichern scheitert mit einer Meldung.
+      await page.keyboard.type('wichtig → ');
+      await page.locator('.notice[role="alert"]').filter({ hasText: 'cannot be saved in windows-1252' }).first().waitFor({ timeout: 5000 });
+
+      // Schliessen fragt; „Cancel“ lässt den Tab mit den Eingaben offen.
+      await page.getByRole('button', { name: 'Close ansi.txt' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Close' });
+      await dialog.waitFor();
+      await dialog.getByRole('button', { name: 'Cancel' }).click();
+      expect(await tabLabels(page)).toEqual(['ansi.txt']);
+      expect(await editorText(page)).toContain('wichtig →');
+
+      // „Discard and Close“ verwirft sie bewusst; auf der Festplatte steht weiter der alte Inhalt.
+      await page.getByRole('button', { name: 'Close ansi.txt' }).click();
+      await page.getByRole('dialog', { name: 'Close' }).getByRole('button', { name: 'Discard and Close' }).click();
+      await expect.poll(() => tabLabels(page)).toEqual([]);
+      expect([...fs.readFileSync(at('ansi.txt'))]).toEqual([0x41, 0xe4, 0x0a]);
+    });
+  });
+
   it('folgt dem Umbenennen im Baum und speichert unter dem neuen Namen', async () => {
     const { dataRoot, at } = setup({ 'Old.java': 'class Old {}\n' });
     const { codium, page } = await launchAlpha(dataRoot);

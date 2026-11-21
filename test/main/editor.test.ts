@@ -90,6 +90,7 @@ describe('Editor im Kern', () => {
         lineEnding: 'LF',
         size: 16,
         large: false,
+        stamp: expect.any(String),
       });
       expect(await read('crlf.txt')).toMatchObject({ kind: 'text', lineEnding: 'CRLF' });
       expect(await read('none.txt')).toMatchObject({ kind: 'text', lineEnding: 'LF' });
@@ -117,6 +118,7 @@ describe('Editor im Kern', () => {
         lineEnding: 'CRLF',
         size: le.length,
         large: false,
+        stamp: expect.any(String),
       });
       expect(await call(test, windowId, 'files.read', { path: at('be.java') })).toMatchObject({
         kind: 'text',

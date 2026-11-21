@@ -69,6 +69,11 @@ export interface WindowPort {
   onReady(listener: (windowId: number) => void): void;
   /** Meldet einmal, wenn Windows die Sitzung beendet (Abmelden, Herunterfahren). */
   onSessionEnd(listener: () => void): void;
+  /**
+   * Der Nutzer schliesst ein Fenster (Kreuz, Alt + F4) oder die App endet: Das Fenster schliesst sich erst, wenn die
+   * zurückgegebene Arbeit fertig ist (etwa das Speichern seiner Tabs). Höchstens ein Handler.
+   */
+  onCloseRequested(handler: (windowId: number) => Promise<void> | null): void;
 }
 
 /** Der Ordnerdialog von Windows (im Testmodus über `CODIUM_TEST_PICK_DIR`). */

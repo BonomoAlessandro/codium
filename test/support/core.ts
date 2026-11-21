@@ -25,6 +25,8 @@ export interface TestCoreOptions {
   folderQueryTimeoutMs?: number;
   /** Höchstdauer einer Aufräumarbeit beim Abbau (Standard der Tests: 200 ms). */
   cleanupTimeoutMs?: number;
+  /** Zeitlimit fürs Speichern der Tabs vor dem Schliessen und Beenden (Standard der Tests: 0, also nicht fragen). */
+  flushTimeoutMs?: number;
   /** Ab dieser Dauer zeigt eine Dateioperation Fortschritt (Standard des Kerns: 1 s). */
   fileProgressDelayMs?: number;
 }
@@ -42,6 +44,7 @@ export function createTestCore(dataDir: string, options: TestCoreOptions = {}): 
     saveDebounceMs: 5,
     cleanupTimeoutMs: options.cleanupTimeoutMs ?? 200,
     fileProgressDelayMs: options.fileProgressDelayMs,
+    flushTimeoutMs: options.flushTimeoutMs ?? 0,
     folderQueryTimeoutMs: options.folderQueryTimeoutMs,
     log: (message) => logs.push(message),
   });

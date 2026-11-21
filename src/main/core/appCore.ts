@@ -58,6 +58,9 @@ import {
 import { StateFile } from './stateFile';
 import { cascadeFrom, placeWindow } from './windowPlacement';
 
+/** So lange wartet der Kern höchstens, bis ein Fenster vor dem Schliessen oder Beenden seine Tabs gespeichert hat. */
+export const DEFAULT_FLUSH_TIMEOUT_MS = 3000;
+
 /** Titel des Willkommensfensters. */
 export const WELCOME_TITLE = 'Welcome to Codium';
 
@@ -78,6 +81,11 @@ export interface AppCoreOptions {
   cleanupTimeoutMs?: number;
   /** Zeitlimit einer Abfrage auf einem Projektordner; danach gilt sein Laufwerk eine Weile als nicht erreichbar. */
   folderQueryTimeoutMs?: number;
+  /**
+   * Zeitlimit für das Speichern der Tabs eines Fensters vor dem Schliessen oder Beenden (Standard 3 s); 0 heisst:
+   * nicht fragen (für Tests ohne Oberfläche).
+   */
+  flushTimeoutMs?: number;
   /** Wartezeiten der Dateiüberwachung (siehe fileWatcher.ts). */
   watchDebounceMs?: number;
   watchMaxDelayMs?: number;
@@ -129,7 +137,8 @@ export class AppCore {
     this.ports.windows.onReady((windowId) => this.events.markReady(windowId));
     this.ports.windows.onFocused((windowId) => this.markUsed(windowId));
     this.ports.windows.onClosed((windowId, lastPlacement) => this.windowClosed(windowId, lastPlacement));
-    this.ports.windows.onSessionEnd(() => this.quit());
+    this.ports.windows.onSessionEnd(() => void this.quit());
+    this.ports.windows.onCloseRequested((windowId) => this.closeRequested(windowId));
     this.registerCommands();
   }
 
@@ -312,10 +321,60 @@ export class AppCore {
    * gelten als „beim Beenden offen“. Der Abbau beginnt sofort und schreibt den Zustand noch im selben Aufruf, denn
    * beim Abmelden wartet Windows nicht lange. Danach wird die App beendet.
    */
-  quit(): void {
-    if (this.quitting) return;
-    this.shutdown().catch((err: unknown) => this.log(`Beenden des Kerns fehlgeschlagen: ${(err as Error).message}`));
-    this.ports.windows.quit();
+  quit(): Promise<void> {
+    if (this.quitting) return Promise.resolve();
+    // Ab hier öffnet sich nichts mehr, und was offen ist, gilt als „beim Beenden offen“.
+    this.quitting = true;
+    const finish = () => {
+      this.shutdown().catch((err: unknown) => this.log(`Beenden des Kerns fehlgeschlagen: ${(err as Error).message}`));
+      this.ports.windows.quit();
+    };
+    // Erst speichern die Projektfenster ihre Tabs (höchstens bis zum Zeitlimit), dann endet der Kern.
+    const windows = [...this.projects.keys()];
+    if (windows.length === 0 || this.flushTimeoutMs === 0) {
+      finish();
+      return Promise.resolve();
+    }
+    return this.flushWindows(windows).then(finish);
+  }
+
+  /** Zeitlimit für das Speichern der Tabs eines Fensters vor dem Schliessen oder Beenden; 0 heisst: nicht warten. */
+  private get flushTimeoutMs(): number {
+    return this.options.flushTimeoutMs ?? DEFAULT_FLUSH_TIMEOUT_MS;
+  }
+
+  private flushCounter = 0;
+  private readonly flushWaiters = new Map<number, () => void>();
+
+  /**
+   * Bittet Projektfenster, ihre Tabs zu speichern (`editor.flushRequest`), und wartet auf ihre Antworten, je höchstens
+   * bis zum Zeitlimit. Fenster ohne Projekt werden übergangen.
+   */
+  private flushWindows(windowIds: number[]): Promise<void> {
+    return Promise.all(
+      windowIds
+        .filter((id) => this.projects.has(id) && this.ports.windows.isOpen(id))
+        .map(
+          (windowId) =>
+            new Promise<void>((resolve) => {
+              const requestId = ++this.flushCounter;
+              const done = () => {
+                clearTimeout(timer);
+                this.flushWaiters.delete(requestId);
+                resolve();
+              };
+              const timer = setTimeout(done, this.flushTimeoutMs);
+              this.flushWaiters.set(requestId, done);
+              this.emitToWindow(windowId, 'editor.flushRequest', { requestId });
+            }),
+        ),
+    ).then(() => {});
+  }
+
+  /** Schliesst der Nutzer ein Projektfenster, speichert es vorher seine Tabs; sonst schliesst es sofort. */
+  private closeRequested(windowId: number): Promise<void> | null {
+    if (this.quitting || this.flushTimeoutMs === 0 || !this.projects.has(windowId)) return null;
+    return this.flushWindows([windowId]);
   }
 
   /**
@@ -383,6 +442,10 @@ export class AppCore {
     registerFileCommands((name, handler) => this.registerProjectCommand(name, handler));
     registerEditorCommands((name, handler) => this.registerProjectCommand(name, handler));
     this.router.register('app.settings', () => appSettings(this.appState.settings));
+    this.router.register('editor.flushed', (_ctx, params) => {
+      const requestId = (params as { requestId?: unknown } | undefined)?.requestId;
+      if (typeof requestId === 'number') this.flushWaiters.get(requestId)?.();
+    });
     this.router.register('app.updateSettings', (_ctx, params) => this.updateSettings(params));
   }
 

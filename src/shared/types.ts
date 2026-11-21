@@ -173,6 +173,8 @@ export type FileContent =
       size: number;
       /** Ab `LARGE_FILE_BYTES`: ohne Sprachfunktionen und ohne Änderungsbalken. */
       large: boolean;
+      /** Stand der gelesenen Bytes, für `files.write` mit `expectedStamp`. */
+      stamp: string;
     }
   | { kind: 'image'; /** Das Bild als data-URL. */ dataUrl: string; size: number }
   | { kind: 'binary'; size: number }
@@ -239,6 +241,8 @@ export const ErrorCode = {
   notAFile: 'NOT_A_FILE',
   /** Ein Zeichen lässt sich in der Kodierung der Datei nicht speichern; `data.character` ist das Zeichen. */
   cannotEncode: 'CANNOT_ENCODE',
+  /** Die Datei hat sich seit dem erwarteten Stand geändert (etwa von aussen); `data.path` ist der Pfad. */
+  fileChanged: 'FILE_CHANGED',
 } as const;
 
 export type ErrorCodeValue = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -290,6 +294,8 @@ export interface Commands {
   'project.setExpandedFolders': { params: { paths: string[] }; result: void };
   /** Die Einstellungen; ohne gespeicherte die Standardwerte. */
   'app.settings': { params: void; result: AppSettings };
+  /** Antwort auf `editor.flushRequest`: Alle Tabs des Fensters sind gespeichert (oder liessen sich nicht speichern). */
+  'editor.flushed': { params: { requestId: number }; result: void };
   /**
    * Ändert Einstellungen (nur die angegebenen Felder) und liefert alle. Die Änderung geht als `app.settingsChanged`
    * an alle Fenster. Ungültige Werte (etwa eine Schriftgrösse ausserhalb von 6 bis 72) lehnt der Kern mit
@@ -355,11 +361,19 @@ export interface Commands {
    */
   'files.read': { params: { path: string }; result: FileContent };
   /**
-   * Speichert den Text einer Datei in der angegebenen Kodierung (mit ihrem BOM) und mit dem angegebenen Zeilenende für
-   * alle Umbrüche; sonst wird nichts verändert. Die Datei muss es geben. Lässt sich ein Zeichen in der Kodierung nicht
-   * schreiben: `CANNOT_ENCODE`. Der eigene Schreibvorgang kommt nicht als `files.changed` zurück.
+   * Speichert den Text einer Datei in der angegebenen Kodierung (mit ihrem BOM); sonst wird nichts verändert. Zeilen,
+   * die gleich geblieben sind, behalten ihr Zeilenende (auch in Dateien mit gemischten Zeilenenden); neue und geänderte
+   * Zeilen bekommen `lineEnding`. Die Datei muss es geben.
+   *
+   * Mit `expectedStamp` (aus `files.read` oder dem letzten `files.write`) wird nur geschrieben, wenn die Datei noch
+   * diesen Stand hat; sonst `FILE_CHANGED`, und nichts ist geschrieben. Lässt sich ein Zeichen in der Kodierung nicht
+   * schreiben: `CANNOT_ENCODE`. Der eigene Schreibvorgang kommt nicht als `files.changed` zurück. Liefert den neuen
+   * Stand.
    */
-  'files.write': { params: { path: string; text: string; encoding: TextEncoding; lineEnding: LineEnding }; result: void };
+  'files.write': {
+    params: { path: string; text: string; encoding: TextEncoding; lineEnding: LineEnding; expectedStamp?: string };
+    result: { stamp: string };
+  };
 }
 
 /** Alle Ereignisse: Name → Nutzlast. */
@@ -370,6 +384,11 @@ export interface Events {
   'app.progress': ProgressEvent;
   /** Die Einstellungen haben sich geändert (an alle Fenster); die Nutzlast sind alle Einstellungen. */
   'app.settingsChanged': AppSettings;
+  /**
+   * Das Fenster schliesst sich gleich oder Codium endet: Die Oberfläche speichert alle Tabs und antwortet mit
+   * `editor.flushed` und derselben Kennung. Der Kern wartet darauf höchstens einige Sekunden.
+   */
+  'editor.flushRequest': { requestId: number };
   /** Dateien des Projekts wurden von aussen angelegt, geändert oder gelöscht (gebündelt). */
   'files.changed': FilesChangedEvent;
   /** Codium hat eine Dateioperation ausgeführt. */

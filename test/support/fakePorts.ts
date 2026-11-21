@@ -101,6 +101,21 @@ export class FakeWindowPort implements WindowPort {
     this.sessionEndListeners.push(listener);
   }
 
+  private closeRequestHandler: ((windowId: number) => Promise<void> | null) | null = null;
+
+  onCloseRequested(handler: (windowId: number) => Promise<void> | null): void {
+    this.closeRequestHandler = handler;
+  }
+
+  /**
+   * Der Nutzer will ein Fenster schliessen (Kreuz): Erst die Arbeit des Kerns (etwa das Speichern der Tabs), dann
+   * schliesst es sich wie mit `close`.
+   */
+  async requestClose(windowId: number): Promise<void> {
+    await (this.closeRequestHandler?.(windowId) ?? null);
+    this.close(windowId);
+  }
+
   /** Der Nutzer klickt in ein Fenster. */
   simulateFocus(windowId: number): void {
     for (const listener of this.focusedListeners) listener(windowId);
