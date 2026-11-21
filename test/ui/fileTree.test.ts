@@ -175,6 +175,47 @@ describe('Dateibaum', () => {
       fs.rmSync(path.join(alpha, 'external.txt'));
       await expect.poll(() => item(page, 'external.txt').count()).toBe(0);
       expect(await selectedNames(page)).toEqual(['Main.java']);
+
+      // Verschwindet ein aufgeklappter Ordner von aussen und kommt zurück (etwa bei einem Branch-Wechsel), ist er
+      // wieder aufgeklappt.
+      const src = path.join(alpha, 'src');
+      const saved = path.join(path.dirname(alpha), 'src-saved');
+      fs.renameSync(src, saved);
+      await expect.poll(() => item(page, 'src').count()).toBe(0);
+      fs.renameSync(saved, src);
+      await item(page, 'Main.java').waitFor();
+      expect(await item(page, 'src').getAttribute('aria-expanded')).toBe('true');
+      expect(await item(page, 'main').getAttribute('aria-expanded')).toBe('true');
+    });
+  });
+
+  it('zeigt einen Link nach draussen mit Hinweis, klappt ihn nicht auf und löscht nur den Link', async () => {
+    const { alpha, dataRoot } = setup();
+    const outside = path.join(path.dirname(alpha), 'outside');
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(outside, 'secret.txt'), 'geheim');
+    fs.symlinkSync(outside, path.join(alpha, 'shared'), 'junction');
+    const { codium, page } = await launchAlpha(dataRoot);
+    await withApp(codium, async () => {
+      const link = item(page, 'shared');
+      await link.waitFor();
+      expect(await link.getAttribute('aria-expanded')).toBeNull();
+      expect(await link.getAttribute('title')).toBe('Link to a location outside the project. Codium does not follow it.');
+      // Doppelklick tut nichts: keine Fehlermeldung, nichts geöffnet.
+      await link.dblclick();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(await page.getByRole('alert').count()).toBe(0);
+      expect(await openRequests(page)).toEqual([]);
+
+      const menu = await contextMenu(page, 'shared');
+      expect(await menu.getByRole('menuitem', { name: 'Copy', exact: true }).getAttribute('aria-disabled')).toBe('true');
+      await menu.getByRole('menuitem', { name: 'Delete…', exact: true }).click();
+      const confirm = page.getByRole('dialog', { name: 'Delete' });
+      expect(await confirm.getByText('Only the link is moved to the Recycle Bin, not its target.', { exact: false }).count()).toBe(1);
+      await confirm.getByRole('button', { name: 'Delete', exact: true }).click();
+      await expect.poll(() => item(page, 'shared').count()).toBe(0);
+      expect(fs.existsSync(path.join(alpha, 'shared'))).toBe(false);
+      expect(fs.readFileSync(path.join(outside, 'secret.txt'), 'utf8')).toBe('geheim');
     });
   });
 

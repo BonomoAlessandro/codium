@@ -418,6 +418,13 @@ kbd {
   font-weight: 600;
 }
 
+/* Ein Link, dem Codium nicht folgt: gedämpft, mit Hinweis beim Überfahren. */
+.file-tree-row.blocked .file-tree-name,
+.file-tree-row.blocked .file-tree-icon {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .file-tree-detail {
   flex: 0 1 auto;
   min-width: 0;

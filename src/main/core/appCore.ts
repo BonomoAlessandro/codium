@@ -74,6 +74,8 @@ export interface AppCoreOptions {
   /** Wartezeiten der Dateiüberwachung (siehe fileWatcher.ts). */
   watchDebounceMs?: number;
   watchMaxDelayMs?: number;
+  /** Ab dieser Dauer zeigt eine Dateioperation Fortschritt (siehe fileService.ts). */
+  fileProgressDelayMs?: number;
   log?: (message: string) => void;
 }
 
@@ -613,6 +615,7 @@ export class AppCore {
       initialState: state,
       watchDebounceMs: this.options.watchDebounceMs,
       watchMaxDelayMs: this.options.watchMaxDelayMs,
+      progressDelayMs: this.options.fileProgressDelayMs,
     });
     this.projects.set(windowId, core);
     return core;

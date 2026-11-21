@@ -95,18 +95,62 @@ export class PathGuard {
   /**
    * Prüft wie `lexical`, dazu: Den Pfad gibt es, und sein echter Pfad (Junctions, symbolische Links und Kurznamen
    * aufgelöst) liegt im echten Projektordner. Liefert den normalisierten Pfad.
+   *
+   * Die echten Pfade werden genau verglichen, mit Schreibweise: Beide kommen aus `realpath` und haben die Schreibweise
+   * auf der Festplatte. Ohne Unterscheidung der Gross-/Kleinschreibung wäre der Vergleich unsicher, weil JavaScript
+   * anders faltet als NTFS (das Kelvin-Zeichen U+212A wird zu „k“, „ẞ“ zu „ß“; für NTFS sind es andere Namen).
+   *
+   * Bekannte Grenze: Zwischen der Prüfung und dem Zugriff vergeht Zeit. Wer in diesem Augenblick einen Ordner im
+   * Projekt durch eine Junction nach draussen ersetzt, kann den Zugriff umlenken. Anlegen und Kopieren prüfen ihr
+   * Ergebnis deshalb danach noch einmal (`assertRealInside`).
    */
   async existing(value: unknown): Promise<string> {
     const normalized = this.lexical(value);
-    let real: string;
+    if (!isPathWithin(await this.realPathOf(normalized), await this.realRootPath())) throw outsideProject(normalized);
+    return normalized;
+  }
+
+  /**
+   * Prüft einen Eintrag selbst, ohne einem Link zu folgen: wie `lexical`, dazu liegt der echte Pfad seines
+   * Elternordners im echten Projektordner, und der Eintrag existiert (auch als toter Link). Für Operationen, die nur
+   * den Eintrag betreffen (Löschen, Umbenennen, Pfad kopieren, im Explorer zeigen); so lassen sich auch Links nach
+   * draussen bedienen, ohne durch sie hindurchzugreifen.
+   */
+  async entry(value: unknown): Promise<string> {
+    const normalized = this.lexical(value);
+    if (this.isRoot(normalized)) return this.existing(normalized);
+    const parent = path.dirname(normalized);
+    if (!isPathWithin(await this.realPathOf(parent, normalized), await this.realRootPath())) throw outsideProject(normalized);
     try {
-      real = await this.io(() => fs.promises.realpath(normalized));
+      await this.io(() => fs.promises.lstat(normalized));
     } catch (err) {
       if (isMissingError(err)) throw notFound(normalized);
       throw fileError(err, normalized, 'read');
     }
-    if (!isKeyWithin(lexicalProjectKey(real), lexicalProjectKey(await this.realRootPath()))) throw outsideProject(normalized);
     return normalized;
+  }
+
+  /**
+   * Prüft nach dem Anlegen oder Kopieren, dass das Ergebnis tatsächlich im Projekt liegt (siehe die Grenze bei
+   * `existing`).
+   */
+  async assertRealInside(target: string): Promise<void> {
+    if (!isPathWithin(await this.realPathOf(target), await this.realRootPath())) throw outsideProject(target);
+  }
+
+  /** Ob ein echter Pfad (aus `realpath`) im echten Projektordner liegt. */
+  async isRealInside(real: string): Promise<boolean> {
+    return isPathWithin(real, await this.realRootPath());
+  }
+
+  /** Der echte Pfad; fehlt er, `FILE_NOT_FOUND` für `reported`. */
+  private async realPathOf(target: string, reported = target): Promise<string> {
+    try {
+      return await this.io(() => fs.promises.realpath(target));
+    } catch (err) {
+      if (isMissingError(err)) throw notFound(reported);
+      throw fileError(err, reported, 'read');
+    }
   }
 
   /** Der echte Pfad des Projektordners; einmal gelesen, nach einem Fehler beim nächsten Mal neu. */
@@ -123,6 +167,15 @@ export class PathGuard {
       throw fileError(err, this.root, 'read');
     });
   }
+}
+
+/**
+ * Ob ein echter Pfad derselbe ist wie `root` oder darin liegt, genau verglichen (mit Schreibweise). Nur für Pfade aus
+ * `realpath`, die die Schreibweise auf der Festplatte haben.
+ */
+export function isPathWithin(real: string, root: string): boolean {
+  if (real === root) return true;
+  return real.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
 }
 
 /**

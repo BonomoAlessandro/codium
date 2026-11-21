@@ -5,6 +5,7 @@
 // die Dateiereignisse des Datei-Dienstes.
 
 import type { EventName, Events, Notice, ProjectInfo } from '../../shared/types';
+import { expandedFolderPaths } from './fileCommands';
 import { FileService } from './fileService';
 import type { EventSink, ShellActionsPort } from './ports';
 import { ProgressReporter } from './progress';
@@ -33,6 +34,8 @@ export interface ProjectCoreOptions {
   /** Wartezeiten der Dateiüberwachung, für Tests. */
   watchDebounceMs?: number;
   watchMaxDelayMs?: number;
+  /** Ab dieser Dauer zeigt eine Dateioperation Fortschritt, für Tests. */
+  progressDelayMs?: number;
 }
 
 export class ProjectCore {
@@ -67,8 +70,10 @@ export class ProjectCore {
     this.files = new FileService(this, {
       shell: options.shell,
       log: this.log,
+      expandedFolders: expandedFolderPaths(this.path, this.projectState.expandedFolders),
       watchDebounceMs: options.watchDebounceMs,
       watchMaxDelayMs: options.watchMaxDelayMs,
+      progressDelayMs: options.progressDelayMs,
     });
   }
 
@@ -99,11 +104,12 @@ export class ProjectCore {
   }
 
   /**
-   * Schickt ein Ereignis an das Fenster dieses Projekts und an die Abonnenten im Kern; nach Beginn des Abbaus
-   * nichts mehr.
+   * Schickt ein Ereignis an das Fenster dieses Projekts und an die Abonnenten im Kern. Nach Beginn des Abbaus geht
+   * nichts mehr ans Fenster; die Abonnenten im Kern hören bis zum Ende des Abbaus mit, damit etwa eine Dateioperation,
+   * die währenddessen fertig wird, noch bei ihnen ankommt.
    */
   emit<K extends EventName>(name: K, payload: Events[K]): void {
-    if (this.disposed) return;
+    if (this.disposeFinished) return;
     for (const listener of [...(this.subscribers.get(name) ?? [])]) {
       try {
         (listener as (payload: Events[K]) => void)(payload);
@@ -111,7 +117,7 @@ export class ProjectCore {
         this.log(`Abonnent von ${name} im Projekt ${this.path} fehlgeschlagen: ${(err as Error).message}`);
       }
     }
-    this.events.send(this.windowId, name, payload);
+    if (!this.disposed) this.events.send(this.windowId, name, payload);
   }
 
   /** Abonniert ein Ereignis dieses Projekts im Kern (für andere Dienste); liefert eine Funktion zum Abmelden. */

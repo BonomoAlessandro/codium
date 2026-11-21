@@ -294,6 +294,116 @@ describe('Datei-Dienst', () => {
       expect(operations(test, windowId)[0]).toEqual({ kind: 'copied', from: at('Main.java'), to: at('Main (2).java'), isDirectory: false });
     });
 
+    it('kopiert Ordner mit Junctions, ohne ihnen zu folgen: Die Kopie bekommt eine Junction auf dasselbe Ziel', async () => {
+      const { test, windowId, project, at, root } = await openAlpha({ 'src/a.txt': 'a', 'shared/s.txt': 's', 'src/sub/b.txt': 'b' });
+      const outside = path.join(root, 'outside');
+      fs.mkdirSync(outside);
+      fs.symlinkSync(at('shared'), at('src', 'inner'), 'junction');
+      fs.symlinkSync(outside, at('src', 'external'), 'junction');
+      fs.symlinkSync(path.join(root, 'gone'), at('src', 'dead'), 'junction');
+
+      expect(await call(test, windowId, 'files.copy', { sources: [at('src')], target: project })).toEqual([at('src (2)')]);
+      expect(fs.readdirSync(at('src (2)')).sort()).toEqual(['a.txt', 'dead', 'external', 'inner', 'sub']);
+      expect(fs.readFileSync(at('src (2)', 'sub', 'b.txt'), 'utf8')).toBe('b');
+      for (const [link, target] of [
+        ['inner', at('shared')],
+        ['external', outside],
+      ]) {
+        expect(fs.lstatSync(at('src (2)', link)).isSymbolicLink(), link).toBe(true);
+        expect(fs.realpathSync.native(at('src (2)', link)), link).toBe(target);
+      }
+      expect(fs.readlinkSync(at('src (2)', 'dead'))).toBe(path.join(root, 'gone'));
+      // Die Junctions wurden nicht verfolgt: Draussen und im gemeinsamen Ordner ist nichts dazugekommen.
+      expect(fs.readdirSync(outside)).toEqual([]);
+      expect(fs.readdirSync(at('shared'))).toEqual(['s.txt']);
+    });
+
+    it('kopiert nicht in sich selbst, auch nicht über eine Junction in einen Unterordner der Quelle', async () => {
+      const { test, windowId, at } = await openAlpha({ 'src/sub/b.txt': 'b' });
+      fs.symlinkSync(at('src', 'sub'), at('into-sub'), 'junction');
+
+      await expect(call(test, windowId, 'files.copy', { sources: [at('src')], target: at('into-sub') })).rejects.toMatchObject({
+        code: 'FILE_OPERATION_FAILED',
+        message: 'Cannot copy “src” into itself.',
+      });
+      expect(fs.readdirSync(at('src', 'sub'))).toEqual(['b.txt']);
+    });
+
+    it('räumt eine gescheiterte Kopie weg und meldet sie nicht als eigene Änderung', async () => {
+      const files: Record<string, string> = {};
+      for (let i = 0; i < 20; i++) files[`dir/file-${String(i).padStart(2, '0')}.txt`] = 'x';
+      const { test, windowId, project, at } = await openAlpha(files);
+      await untilWatching(test, windowId, project);
+      // Eine Datei mitten in der Quelle ist gesperrt (ohne Freigabe für andere geöffnet, UV_FS_O_EXLOCK).
+      const locked = await fs.promises.open(at('dir', 'file-10.txt'), fs.constants.O_RDONLY | 0x10000000);
+      try {
+        await expect(call(test, windowId, 'files.copy', { sources: [at('dir')], target: project })).rejects.toMatchObject({
+          code: 'FILE_OPERATION_FAILED',
+          message: 'Could not copy “file-10.txt”: the file is in use.',
+        });
+      } finally {
+        await locked.close();
+      }
+      expect(fs.existsSync(at('dir (2)'))).toBe(false);
+      expect(operations(test, windowId)).toEqual([]);
+      await settle(test, windowId, project);
+      // Was die gescheiterte Kopie kurz angelegt hatte, ist wieder weg; als eigene Änderung gilt nichts mehr.
+      expect(changes(test, windowId).filter((c) => c.path.startsWith(at('dir (2)')) && c.kind !== 'deleted')).toEqual([]);
+
+      // Danach geht dieselbe Kopie unter demselben Namen.
+      expect(await call(test, windowId, 'files.copy', { sources: [at('dir')], target: project })).toEqual([at('dir (2)')]);
+      expect(fs.readdirSync(at('dir (2)'))).toHaveLength(20);
+    });
+
+    it('wählt für gleichzeitige Kopien in denselben Ordner verschiedene Namen', async () => {
+      const files: Record<string, string> = { 'target/': '' };
+      for (let i = 0; i < 30; i++) files[`dir/f${i}.txt`] = 'x'.repeat(5000);
+      const { test, windowId, at } = await openAlpha(files);
+      const params = { sources: [at('dir')], target: at('target') };
+
+      const results = await Promise.all([call(test, windowId, 'files.copy', params), call(test, windowId, 'files.copy', params)]);
+      expect(results.flat().sort()).toEqual([at('target', 'dir'), at('target', 'dir (2)')]);
+      for (const copy of results.flat()) expect(fs.readdirSync(copy)).toHaveLength(30);
+    });
+
+    it('überschreibt beim Umbenennen keine andere Datei, auch wenn nur JavaScript die Namen gleich schreibt', async () => {
+      const { test, windowId, at, project } = await openAlpha({ 'k.txt': 'A', 'K.txt': 'B wichtig' });
+
+      await expect(call(test, windowId, 'files.rename', { path: at('k.txt'), newName: 'K.txt' })).rejects.toMatchObject({
+        code: 'FILE_EXISTS',
+      });
+      expect(fs.readFileSync(at('K.txt'), 'utf8')).toBe('B wichtig');
+      expect(fs.readFileSync(at('k.txt'), 'utf8')).toBe('A');
+      // Nur die Schreibweise wechseln geht weiterhin.
+      expect(await call(test, windowId, 'files.rename', { path: at('k.txt'), newName: 'K.txt' })).toBe(at('K.txt'));
+      expect(fs.readdirSync(project).sort()).toEqual(['K.txt', 'K.txt'].sort());
+    });
+
+    it('ändert nichts im Ordner .git', async () => {
+      const { test, windowId, project, at } = await openAlpha({ '.git/HEAD': 'ref', '.Git/config': '', 'a.txt': '', 'sub/.git/x': '' });
+      const attempts: Array<[CommandName, unknown, string]> = [
+        ['files.createFile', { parent: at('.git'), name: 'x.txt' }, 'INVALID_PARAMS'],
+        ['files.createFile', { parent: project, name: '.git/x.txt' }, 'INVALID_FILE_NAME'],
+        ['files.createDirectory', { parent: project, name: 'sub/.GIT' }, 'INVALID_FILE_NAME'],
+        ['files.rename', { path: at('.git', 'HEAD'), newName: 'HEAD2' }, 'INVALID_PARAMS'],
+        ['files.rename', { path: at('.git'), newName: 'nogit' }, 'INVALID_PARAMS'],
+        ['files.rename', { path: at('a.txt'), newName: '.git' }, 'INVALID_FILE_NAME'],
+        ['files.copy', { sources: [at('a.txt')], target: at('.git') }, 'INVALID_PARAMS'],
+        ['files.copy', { sources: [at('a.txt')], target: project, newName: '.git' }, 'INVALID_FILE_NAME'],
+        ['files.copy', { sources: [at('a.txt')], target: at('sub', '.git') }, 'INVALID_PARAMS'],
+        ['files.delete', { paths: [at('.git')] }, 'INVALID_PARAMS'],
+        ['files.delete', { paths: [at('a.txt'), at('.Git', 'config')] }, 'INVALID_PARAMS'],
+      ];
+      for (const [name, params, code] of attempts) {
+        const response = await test.core.router.dispatch({ windowId }, name, params);
+        expect(response, `${name} ${JSON.stringify(params)}`).toMatchObject({ ok: false, error: { code } });
+      }
+      expect(fs.readdirSync(at('.git')).sort()).toEqual(['HEAD', 'config']);
+      expect(fs.existsSync(at('a.txt'))).toBe(true);
+      expect(test.ports.shell.trashed).toEqual([]);
+      expect(operations(test, windowId)).toEqual([]);
+    });
+
     it('lässt eine laufende Kopie beim Abbau des Projekt-Kerns noch fertig werden', async () => {
       const files: Record<string, string> = {};
       for (let i = 0; i < 300; i++) files[`big/file-${i}.txt`] = 'x'.repeat(1000);
@@ -306,6 +416,38 @@ describe('Datei-Dienst', () => {
       // Schon wenn der Abbau fertig ist, ist die Kopie vollständig.
       expect(fs.existsSync(at('big (2)')) && fs.readdirSync(at('big (2)')).length).toBe(300);
       expect(await copying).toEqual([at('big (2)')]);
+    });
+
+    it('meldet eine Operation, die während des Abbaus fertig wird, noch den Diensten im Kern, aber nicht dem Fenster', async () => {
+      const files: Record<string, string> = {};
+      for (let i = 0; i < 100; i++) files[`big/file-${i}.txt`] = 'x'.repeat(1000);
+      const { test, windowId, project, at } = await openAlpha(files, { cleanupTimeoutMs: 30_000 });
+      const seen: string[] = [];
+      test.core.projectCoreForWindow(windowId)!.subscribe('files.operation', (op) => seen.push(op.kind));
+
+      const copying = call(test, windowId, 'files.copy', { sources: [at('big')], target: project });
+      await test.core.closeProjectCore(windowId);
+
+      expect(seen).toEqual(['copied']);
+      expect(operations(test, windowId)).toEqual([]);
+      await copying;
+    });
+
+    it('zeigt bei langen Operationen Fortschritt in der Statusleiste, bei kurzen nicht', async () => {
+      const progressOf = (test: TestCore, windowId: number) =>
+        test.events.forWindow(windowId).filter((e) => e.name === 'app.progress').map((e) => e.payload as { kind: string; title?: string });
+      // Mit der Standardschwelle (1 s) bleibt eine kurze Operation ohne Fortschritt.
+      const quick = await openAlpha({ 'a.txt': '' });
+      await call(quick.test, quick.windowId, 'files.delete', { paths: [quick.at('a.txt')] });
+      expect(progressOf(quick.test, quick.windowId)).toEqual([]);
+
+      // Mit Schwelle 0 gilt jede Operation als lang.
+      const slow = await openAlpha({ 'a.txt': '', 'b.txt': '', 'dir/x.txt': '' }, { fileProgressDelayMs: 0 });
+      await call(slow.test, slow.windowId, 'files.delete', { paths: [slow.at('a.txt'), slow.at('b.txt')] });
+      await call(slow.test, slow.windowId, 'files.copy', { sources: [slow.at('dir')], target: slow.project });
+      const events = progressOf(slow.test, slow.windowId);
+      expect(events.filter((e) => e.kind === 'begin').map((e) => e.title)).toEqual(['Deleting 2 items…', 'Copying “dir”…']);
+      expect(events.filter((e) => e.kind === 'end')).toHaveLength(2);
     });
 
     it('kopiert Pfade in die Zwischenablage und zeigt im Explorer, beides über den Port', async () => {
@@ -342,21 +484,26 @@ describe('Datei-Dienst', () => {
       };
       const inside = at('inside.txt');
       const dir = at('dir');
-      const attempts = (p: string): Array<[CommandName, unknown]> => [
+      // Befehle, die durch einen Pfad hindurchgreifen (hinein, darunter, seinen Inhalt).
+      const through = (p: string): Array<[CommandName, unknown]> => [
         ['files.list', { path: p }],
         ['files.createFile', { parent: p, name: 'neu.txt' }],
         ['files.createDirectory', { parent: p, name: 'neu' }],
-        ['files.rename', { path: p, newName: 'umbenannt' }],
-        ['files.delete', { paths: [inside, p] }],
         ['files.copy', { sources: [p], target: dir }],
         ['files.copy', { sources: [inside], target: p }],
         ['files.suggestCopyName', { source: p, target: dir }],
         ['files.suggestCopyName', { source: inside, target: p }],
+      ];
+      // Befehle auf dem Eintrag selbst; den Link im Projekt dürfen sie bedienen (eigener Test unten).
+      const onEntry = (p: string): Array<[CommandName, unknown]> => [
+        ['files.rename', { path: p, newName: 'umbenannt' }],
+        ['files.delete', { paths: [inside, p] }],
         ['files.copyPaths', { paths: [inside, p] }],
         ['files.showInExplorer', { path: p }],
       ];
       for (const [label, candidate] of Object.entries(candidates)) {
-        for (const [name, params] of attempts(candidate)) {
+        const commands = label === 'junction' ? through(candidate) : [...through(candidate), ...onEntry(candidate)];
+        for (const [name, params] of commands) {
           const response = await test.core.router.dispatch({ windowId }, name, params);
           expect(response, `${name} mit ${label}`).toMatchObject({ ok: false, error: { code: 'PATH_OUTSIDE_PROJECT' } });
         }
@@ -390,6 +537,61 @@ describe('Datei-Dienst', () => {
       expect(test.ports.shell.clipboard).toBe('');
       expect(test.ports.shell.shownInExplorer).toEqual([]);
       expect(operations(test, windowId)).toEqual([]);
+    });
+
+    it('vergleicht echte Pfade genau: ein Nachbarordner, den nur JavaScript gleich schreibt, liegt draussen', async () => {
+      // Das Kelvin-Zeichen (U+212A) und „ẞ“ (U+1E9E) faltet JavaScript zu „k“ bzw. „ß“, NTFS nicht.
+      for (const [name, twin] of [
+        ['kodium', 'Kodium'],
+        ['straße', 'straẞe'],
+      ]) {
+        const root = tempDir();
+        const project = path.join(root, name);
+        const neighbour = path.join(root, twin);
+        fs.mkdirSync(project);
+        fs.mkdirSync(neighbour);
+        fs.writeFileSync(path.join(neighbour, 'secret.txt'), 'geheim');
+        const test = createTestCore(path.join(root, 'data'));
+        await test.core.start();
+        await call(test, test.ports.windows.windowTitled(WELCOME), 'app.openProject', { path: project });
+        const windowId = test.ports.windows.windowTitled(title(name));
+
+        await expect(call(test, windowId, 'files.list', { path: neighbour }), name).rejects.toMatchObject({ code: 'PATH_OUTSIDE_PROJECT' });
+        await expect(call(test, windowId, 'files.createFile', { parent: neighbour, name: 'planted.txt' })).rejects.toMatchObject({
+          code: 'PATH_OUTSIDE_PROJECT',
+        });
+        await expect(call(test, windowId, 'files.delete', { paths: [path.join(neighbour, 'secret.txt')] })).rejects.toMatchObject({
+          code: 'PATH_OUTSIDE_PROJECT',
+        });
+        expect(fs.readdirSync(neighbour)).toEqual(['secret.txt']);
+        // Im Projekt selbst geht alles.
+        expect(await call(test, windowId, 'files.list', { path: project })).toEqual([]);
+      }
+    });
+
+    it('bedient einen Link nach draussen als Eintrag, ohne durch ihn hindurchzugreifen', async () => {
+      const { test, windowId, project, at, outside } = await withOutside();
+      fs.symlinkSync(path.join(outside, 'gone'), at('dead'), 'junction');
+
+      // Der Baum sieht die Links, markiert, und klappt sie nicht auf.
+      const listed = await call(test, windowId, 'files.list', { path: project });
+      expect(listed.find((e) => e.name === 'link')).toEqual({ name: 'link', path: at('link'), isDirectory: true, blockedLink: 'outside' });
+      expect(listed.find((e) => e.name === 'dead')).toEqual({ name: 'dead', path: at('dead'), isDirectory: false, blockedLink: 'missing' });
+      expect(listed.find((e) => e.name === 'dir')).toEqual({ name: 'dir', path: at('dir'), isDirectory: true });
+
+      await call(test, windowId, 'files.copyPaths', { paths: [at('link')] });
+      expect(test.ports.shell.clipboard).toBe(at('link'));
+      await call(test, windowId, 'files.showInExplorer', { path: at('link') });
+      expect(test.ports.shell.shownInExplorer).toEqual([at('link')]);
+      expect(await call(test, windowId, 'files.rename', { path: at('link'), newName: 'shared' })).toBe(at('shared'));
+      expect(fs.lstatSync(at('shared')).isSymbolicLink()).toBe(true);
+      await call(test, windowId, 'files.delete', { paths: [at('shared'), at('dead')] });
+
+      // Der Papierkorb hat nur die Links genommen; das Ziel draussen ist unberührt.
+      expect(test.ports.shell.trashed.map((t) => t.path)).toEqual([at('shared'), at('dead')]);
+      expect(fs.readdirSync(outside)).toEqual(['secret.txt']);
+      expect(fs.readFileSync(path.join(outside, 'secret.txt'), 'utf8')).toBe('geheim');
+      expect(operations(test, windowId).map((o) => o.kind)).toEqual(['renamed', 'deleted', 'deleted']);
     });
 
     it('lehnt relative und kaputte Pfade mit INVALID_PARAMS ab', async () => {
@@ -427,7 +629,8 @@ describe('Datei-Dienst', () => {
 
     it('meldet Löschen und sofortiges Neuanlegen als Änderung, nicht als Löschen', async () => {
       const { test, windowId, project, at } = await openAlpha({ 'a.txt': 'alt', 'listed/b.txt': 'alt' });
-      // Einmal in einem schon gelesenen Ordner, einmal in einem ungelesenen.
+      // Einmal in einem aufgeklappten, gelesenen Ordner, einmal in einem ungelesenen.
+      await call(test, windowId, 'project.setExpandedFolders', { paths: [project, at('listed')] });
       await call(test, windowId, 'files.list', { path: at('listed') });
       await untilWatching(test, windowId, project);
 
@@ -523,6 +726,25 @@ describe('Datei-Dienst', () => {
       const created = new Set(changes(test, windowId).filter((c) => c.kind === 'created').map((c) => c.path));
       for (const name of names) expect(created.has(at(name)), name).toBe(true);
       expect(changes(test, windowId)).toContainEqual({ path: at('old.txt'), kind: 'deleted' });
+      // Im übergelaufenen Puffer kann auch ein Ereignis aus .git gewesen sein.
+      expect(gitEvents(test, windowId)).toBeGreaterThanOrEqual(1);
+    });
+
+    it('meldet bei sehr vielen Pfaden alles in einem aufgeklappten Ordner, auch über ein Bündel hinaus', async () => {
+      const { test, windowId, project, at } = await openAlpha({ 'busy/': '' });
+      await call(test, windowId, 'project.setExpandedFolders', { paths: [project, at('busy')] });
+      await call(test, windowId, 'files.list', { path: at('busy') });
+      await untilWatching(test, windowId, project);
+
+      // Viele Dateien in Etappen, mit kurzen Pausen: mehr Pfade, als ein Bündel einzeln prüft.
+      for (let batch = 0; batch < 6; batch++) {
+        for (let i = 0; i < 500; i++) fs.writeFileSync(at('busy', `f-${batch}-${i}.txt`), '');
+        await sleep(20);
+      }
+      await expect.poll(() => changedEvents(test, windowId).some((e) => e.rescanned), { timeout: 10_000 }).toBe(true);
+      await settle(test, windowId, project);
+      const created = new Set(changes(test, windowId).filter((c) => c.kind === 'created').map((c) => c.path));
+      expect([...created].filter((p) => p.startsWith(`${at('busy')}\\`)).length).toBe(3000);
     });
 
     it('lässt einen gelöschten Projektordner los und überwacht ihn wieder, sobald er zurück ist', async () => {

@@ -1,8 +1,9 @@
 // Was der Datei-Dienst über den Projektordner weiss, um Dateiereignisse richtig zu deuten. Lädt nie Electron.
 //
-// - KnownDirs: der Inhalt der Ordner, die schon gelesen wurden (der Dateibaum liest nur aufgeklappte). Daraus folgt,
-//   ob es einen Pfad vor einem Ereignis gab (angelegt oder geändert?), und nach einem Ereignis ohne Dateinamen lassen
-//   sich genau diese Ordner neu einlesen und vergleichen.
+// - KnownDirs: der zuletzt gelesene Inhalt der aufgeklappten Ordner. Daraus folgt, ob es einen Pfad vor einem
+//   Ereignis gab (angelegt oder geändert?), und nach verpassten Ereignissen lassen sich genau diese Ordner neu
+//   einlesen und vergleichen. Zugeklappte Ordner vergisst der Dienst, damit ein Schwall von Ereignissen nicht alles
+//   je Gelesene neu einliest.
 // - OwnChanges: was Codium selbst gerade verändert. Die Überwachung sieht auch eigene Dateioperationen; die meldet
 //   aber schon `files.operation`, als Änderung von aussen sollen sie nicht noch einmal erscheinen.
 
@@ -57,6 +58,11 @@ export class KnownDirs {
     if ((!exists || !isDirectory) && (wasDirectory || this.dirs.has(keyOf(target)))) this.forget(target);
   }
 
+  /** Behält nur die Ordner mit diesen Schlüsseln (siehe `keyOf`), etwa die aufgeklappten. */
+  retain(keys: ReadonlySet<string>): void {
+    for (const key of [...this.dirs.keys()]) if (!keys.has(key)) this.dirs.delete(key);
+  }
+
   /** Vergisst einen Ordner und alle gemerkten Ordner darunter. */
   forget(target: string): void {
     const key = keyOf(target);
@@ -88,8 +94,13 @@ interface Expectation {
 
 /** Eine angemeldete eigene Änderung. */
 export interface OwnChange {
-  /** Die Operation ist fertig (oder gescheitert); ab jetzt läuft die Frist. Mit Stand der Datei, falls bekannt. */
+  /** Die Operation ist fertig; ab jetzt läuft die Frist. Mit Stand der Datei, falls bekannt. */
   settle(stat?: fs.Stats | null): void;
+  /**
+   * Die Operation ist gescheitert: Die Anmeldung gilt nicht mehr. Was sie hinterlassen hat, meldet die Überwachung wie
+   * eine Änderung von aussen.
+   */
+  discard(): void;
 }
 
 /** So lange nach einer eigenen Operation gelten passende Ereignisse noch als eigene. */
@@ -112,6 +123,9 @@ export class OwnChanges {
       settle: (stat) => {
         if (stat && stat.isFile()) expectation.stamp = { mtimeMs: stat.mtimeMs, size: stat.size };
         expectation.until = this.now() + this.windowMs;
+      },
+      discard: () => {
+        this.expectations = this.expectations.filter((e) => e !== expectation);
       },
     };
   }

@@ -105,8 +105,14 @@ export type ToolWindowLayout = Record<ToolWindowSide, ToolWindowSideLayout>;
 export interface FileEntry {
   name: string;
   path: string;
-  /** Ein Ordner (auch ein symbolischer Link oder eine Junction auf einen Ordner). */
+  /** Ein Ordner (auch ein symbolischer Link oder eine Junction auf einen Ordner im Projekt). */
   isDirectory: boolean;
+  /**
+   * Ein symbolischer Link oder eine Junction, der Codium nicht folgt: Das Ziel liegt ausserhalb des Projekts
+   * (`outside`) oder fehlt (`missing`). Der Eintrag selbst lässt sich umbenennen, löschen (der Papierkorb nimmt nur den
+   * Link), sein Pfad kopieren und im Explorer zeigen; aufklappen, öffnen und kopieren nicht.
+   */
+  blockedLink?: 'outside' | 'missing';
 }
 
 /**
@@ -124,8 +130,10 @@ export interface FilesChangedEvent {
   changes: FileChange[];
   /**
    * Die Überwachung hat womöglich Ereignisse verpasst (ein Ereignis ohne Dateinamen, etwa bei übergelaufenem
-   * Puffer, oder sehr viele auf einmal). Die schon gelesenen Ordner sind neu eingelesen und ihre Unterschiede in
-   * `changes` gemeldet; was darüber hinaus wichtig ist (etwa offene Dateien), prüft der Empfänger selbst.
+   * Puffer, oder sehr viele auf einmal). Die aufgeklappten Ordner sind neu eingelesen und ihre Unterschiede
+   * (angelegt, gelöscht) in `changes` gemeldet. Geänderte Inhalte werden dabei nicht einzeln gemeldet, ebenso wenig
+   * Änderungen in zugeklappten Ordnern: Was darüber hinaus wichtig ist (etwa offene Dateien in Ticket 07, die
+   * Dateiliste in Ticket 08), prüft der Empfänger selbst. Zugleich kommt `git.dataChanged`.
    */
   rescanned?: true;
 }
@@ -223,8 +231,10 @@ export interface Commands {
 
   // Datei-Dienst. Jeder Befehl prüft, dass seine Pfade absolut sind (sonst `INVALID_PARAMS`), dass es sie gibt
   // (sonst `FILE_NOT_FOUND`) und dass sie auch nach dem Auflösen von `..`, Junctions und symbolischen Links im
-  // Projekt liegen (sonst `PATH_OUTSIDE_PROJECT`). Den Projektordner selbst kann man weder umbenennen, löschen
-  // noch kopieren (`INVALID_PARAMS`).
+  // Projekt liegen (sonst `PATH_OUTSIDE_PROJECT`). Befehle, die nur den Eintrag selbst betreffen (Umbenennen,
+  // Löschen, Pfad kopieren, im Explorer zeigen), folgen einem Link nicht; dort muss der Elternordner im Projekt
+  // liegen. Den Projektordner selbst kann man weder umbenennen, löschen noch kopieren, und im Ordner `.git` ändert
+  // kein Befehl etwas (beides `INVALID_PARAMS`).
 
   /** Inhalt eines Ordners: Ordner vor Dateien, alphabetisch ohne Unterscheidung der Gross-/Kleinschreibung, ohne `.git`. */
   'files.list': { params: { path: string }; result: FileEntry[] };

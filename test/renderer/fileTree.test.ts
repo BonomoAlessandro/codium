@@ -5,6 +5,7 @@ import { copyName, fileNameProblem, splitExtension, splitNewName } from '../../s
 import type { FileEntry } from '../../src/shared/types';
 import { baseName, isSameOrInside, joinPath, movedPath, parentPath, pathKey, relativeLabel } from '../../src/renderer/project/filePaths';
 import {
+  followPaths,
   moveSubtree,
   parentRow,
   rangeKeys,
@@ -56,6 +57,35 @@ describe('Sichtbare Zeilen des Dateibaums', () => {
     listings.delete(pathKey(`${ROOT}\\src`));
     const rows = visibleRows(ROOT, 'Alpha', listings, expanded(ROOT, `${ROOT}\\src`));
     expect(rows.find((r) => r.name === 'src')).toMatchObject({ expanded: true, loading: true });
+  });
+
+  it('zeigt einen gerade nicht lesbaren Ordner zugeklappt, ohne ihn aus den aufgeklappten zu nehmen', () => {
+    const { listings, expanded } = sample();
+    const rows = visibleRows(ROOT, 'Alpha', listings, expanded(ROOT, `${ROOT}\\src`), new Set([pathKey(`${ROOT}\\src`)]));
+    expect(rows.find((r) => r.name === 'src')).toMatchObject({ expanded: false, loading: false, isDirectory: true });
+    expect(rows.map((r) => r.name)).toEqual(['Alpha', 'src', 'README.md']);
+  });
+
+  it('klappt Links nach draussen und tote Links nicht auf', () => {
+    const listings = new Map<string, Listing>([
+      [
+        pathKey(ROOT),
+        {
+          path: ROOT,
+          entries: [
+            { ...dir('shared'), blockedLink: 'outside' },
+            { name: 'dead', path: `${ROOT}\\dead`, isDirectory: false, blockedLink: 'missing' },
+          ],
+        },
+      ],
+    ]);
+    const rows = visibleRows(ROOT, 'Alpha', listings, new Map([[pathKey(ROOT), ROOT], [pathKey(`${ROOT}\\shared`), `${ROOT}\\shared`]]));
+    expect(rows.slice(1)).toEqual([
+      expect.objectContaining({ name: 'shared', isDirectory: false, expanded: false, loading: false, blockedLink: 'outside' }),
+      expect.objectContaining({ name: 'dead', isDirectory: false, blockedLink: 'missing' }),
+    ]);
+    expect(treeKey('Enter', false, rows, 1, 10)).toEqual({ type: 'open', index: 1 });
+    expect(treeKey('ArrowRight', false, rows, 1, 10)).toBeNull();
   });
 });
 
@@ -120,6 +150,14 @@ describe('Auswahl und aufgeklappte Ordner bei Löschen und Umbenennen', () => {
       [pathKey(`${ROOT}\\src2`), 3],
     ]);
     expect([...withoutSubtree(map, `${ROOT}\\SRC`).keys()]).toEqual([pathKey(`${ROOT}\\src2`)]);
+    // Den Projektordner behält er, wenn verlangt.
+    expect([...withoutSubtree(new Map([[pathKey(ROOT), 0], ...map]), ROOT, pathKey(ROOT)).keys()]).toEqual([pathKey(ROOT)]);
+  });
+
+  it('führt kopierte Pfade bei Umbenennen und Löschen nach', () => {
+    const copied = [`${ROOT}\\src\\a.ts`, `${ROOT}\\README.md`, `${ROOT}\\src2\\b.ts`];
+    expect(followPaths(copied, { from: `${ROOT}\\src`, to: `${ROOT}\\lib` })).toEqual([`${ROOT}\\lib\\a.ts`, `${ROOT}\\README.md`, `${ROOT}\\src2\\b.ts`]);
+    expect(followPaths(copied, { deleted: `${ROOT}\\SRC` })).toEqual([`${ROOT}\\README.md`, `${ROOT}\\src2\\b.ts`]);
   });
 
   it('lässt beim Umbenennen eines Ordners alles darunter mitwandern', () => {
@@ -170,6 +208,7 @@ describe('Dateinamen unter Windows', () => {
     expect(splitNewName('')).toEqual({ problem: 'Enter a name.' });
     expect(splitNewName('a//b')).toEqual({ problem: 'A name cannot be empty.' });
     expect(splitNewName('a/../b')).toMatchObject({ problem: expect.stringContaining('not a valid name') });
+    expect(splitNewName('sub/.GIT/x')).toEqual({ problem: 'Codium does not change the Git folder (.git).' });
   });
 
   it('trennt die Endung ab, ausser bei Ordnern und Punktdateien', () => {

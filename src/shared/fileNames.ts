@@ -9,6 +9,14 @@ const RESERVED = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(\.[^.]*)?$/i;
 /** Längster Name eines einzelnen Eintrags. */
 export const MAX_FILE_NAME_LENGTH = 255;
 
+/** Meldung, wenn ein Befehl im Ordner `.git` etwas ändern würde; das bleibt Git vorbehalten. */
+export const GIT_FOLDER_PROBLEM = 'Codium does not change the Git folder (.git).';
+
+/** Ob ein Name der Ordner `.git` ist (ohne Unterscheidung der Gross-/Kleinschreibung). */
+export function isGitFolderName(name: string): boolean {
+  return name.toLowerCase() === '.git';
+}
+
 /** Warum ein einzelner Name (ohne Ordner) nicht geht, oder `null`, wenn er erlaubt ist. */
 export function fileNameProblem(name: string): string | null {
   if (name.length === 0) return 'A name cannot be empty.';
@@ -30,6 +38,7 @@ export function splitNewName(input: string): { segments: string[] } | { problem:
   for (const segment of segments) {
     const problem = fileNameProblem(segment);
     if (problem) return { problem };
+    if (isGitFolderName(segment)) return { problem: GIT_FOLDER_PROBLEM };
   }
   return { segments };
 }

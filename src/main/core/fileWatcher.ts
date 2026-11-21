@@ -3,11 +3,12 @@
 // - Rekursiv mit `fs.watch` (unter Windows über ReadDirectoryChangesW, ohne Threadpool). Rohe Ereignisse werden
 //   kurz gesammelt; nach einer Ruhezeit (spätestens nach einer Höchstwartezeit) wird geprüft, was wirklich existiert,
 //   und das Ergebnis gebündelt gemeldet.
-// - Angelegt oder geändert? Ist der Ordner eines Pfads schon gelesen, sagt das der gemerkte Inhalt. Sonst zählt die
-//   Überwachung die Ereignisse „rename“: Jedes heisst unter Windows „angelegt“ oder „entfernt“, eine gerade Zahl
-//   lässt den Pfad also, wie er vorher war. So ist „gelöscht und neu angelegt“ eine Änderung, kein Löschen.
-// - Ein Ereignis ohne Dateinamen (übergelaufener Puffer) oder sehr viele Ereignisse auf einmal: Die schon gelesenen
-//   Ordner werden neu eingelesen und verglichen, und die Meldung trägt `rescanned`.
+// - Angelegt oder geändert? Ist der Ordner eines Pfads gemerkt (aufgeklappt und gelesen), sagt das sein Inhalt. Sonst
+//   zählt die Überwachung die Ereignisse „rename“: Jedes heisst unter Windows „angelegt“ oder „entfernt“, eine gerade
+//   Zahl lässt den Pfad also, wie er vorher war. So ist „gelöscht und neu angelegt“ eine Änderung, kein Löschen.
+// - Ein Ereignis ohne Dateinamen (übergelaufener Puffer): Alle gemerkten Ordner werden neu eingelesen und verglichen.
+//   Sehr viele Pfade auf einmal: nur die gemerkten unter ihren Elternordnern. Die Meldung trägt dann `rescanned`, und
+//   weil auch in `.git` etwas verpasst sein kann, kommt zusätzlich „Git-Daten geändert“.
 // - Ereignisse in `.git` (auf jeder Ebene) melden keine Dateiänderung. HEAD, Index und Refs im `.git` des Projekts
 //   melden stattdessen „Git-Daten geändert“.
 // - Eigene Dateioperationen meldet der Datei-Dienst selbst; die Überwachung lässt sie weg (siehe OwnChanges).
@@ -28,7 +29,10 @@ import { isMissingError, type RunIo } from './pathGuard';
 export const WATCH_DEBOUNCE_MS = 75;
 /** Spätestens so lange nach dem ersten rohen Ereignis wird gemeldet, auch wenn weiter Ereignisse kommen. */
 export const WATCH_MAX_DELAY_MS = 500;
-/** Mehr verschiedene Pfade in einem Bündel lohnen keine Einzelprüfung; dann wird neu eingelesen. */
+/**
+ * Mehr verschiedene Pfade in einem Bündel lohnen keine Einzelprüfung; dann werden nur noch ihre Elternordner gesammelt
+ * und, soweit gemerkt, neu eingelesen. Kommen auch zu viele Elternordner zusammen, werden alle gemerkten neu eingelesen.
+ */
 export const WATCH_MAX_PATHS = 2000;
 /** Pausen vor einem neuen Start nach einem Abbruch. */
 const RESTART_DELAYS_MS = [1000, 2000, 5000, 10_000, 30_000];
@@ -76,9 +80,12 @@ export class FileWatcher {
   private watcher: fs.FSWatcher | null = null;
   private stopped = false;
   private readonly pending = new Map<string, Pending>();
-  /** Neu einlesen beim nächsten Bündel; dabei werden weitere einzelne Pfade nicht mehr gesammelt. */
+  /** Alle gemerkten Ordner beim nächsten Bündel neu einlesen. */
   private rescanRequested = false;
-  private tooMany = false;
+  /**
+   * Zu viele Pfade: Statt einzelner Pfade werden ihre Elternordner gesammelt (Schlüssel → Pfad); `null`, solange nicht.
+   */
+  private tooManyParents: Map<string, string> | null = null;
   private gitChanged = false;
   private timer: NodeJS.Timeout | null = null;
   private firstEventAt: number | null = null;
@@ -209,8 +216,10 @@ export class FileWatcher {
       }
       return;
     }
-    if (!this.tooMany) {
-      const full = path.join(this.options.root, filename);
+    const full = path.join(this.options.root, filename);
+    if (this.tooManyParents) {
+      this.addParent(full);
+    } else {
       const key = keyOf(full);
       let entry = this.pending.get(key);
       if (!entry) {
@@ -219,12 +228,25 @@ export class FileWatcher {
       }
       if (eventType === 'rename') entry.renames++;
       if (this.pending.size > WATCH_MAX_PATHS) {
-        this.tooMany = true;
-        this.rescanRequested = true;
+        // Ab hier nur noch die Elternordner sammeln.
+        this.tooManyParents = new Map();
+        for (const p of this.pending.values()) this.addParent(p.path);
         this.pending.clear();
       }
     }
     this.schedule();
+  }
+
+  /** Merkt den Elternordner eines Pfads zum Neueinlesen vor; bei zu vielen werden alle gemerkten neu eingelesen. */
+  private addParent(target: string): void {
+    const parents = this.tooManyParents;
+    if (!parents || this.rescanRequested) return;
+    const parent = path.dirname(target);
+    parents.set(keyOf(parent), parent);
+    if (parents.size > WATCH_MAX_PATHS) {
+      this.rescanRequested = true;
+      parents.clear();
+    }
   }
 
   /** Plant das Melden: nach der Ruhezeit, spätestens nach der Höchstwartezeit seit dem ersten Ereignis. */
@@ -243,17 +265,19 @@ export class FileWatcher {
     if (this.stopped) return;
     const batch = [...this.pending.values()];
     this.pending.clear();
-    const rescan = this.rescanRequested;
-    const git = this.gitChanged;
+    // Alle gemerkten Ordner (`null`) oder nur die unter diesen Elternordnern neu einlesen; ohne Anlass gar keine.
+    const rescanOnly = this.rescanRequested ? null : this.tooManyParents;
+    const rescan = this.rescanRequested || this.tooManyParents !== null;
+    const git = this.gitChanged || rescan;
     this.rescanRequested = false;
-    this.tooMany = false;
+    this.tooManyParents = null;
     this.gitChanged = false;
     this.flushing = true;
     try {
       const resolved = new Map<string, Resolved>();
       for (const r of await Promise.all(batch.map((p) => this.resolve(p)))) if (r) resolved.set(keyOf(r.change.path), r);
       if (rescan) {
-        for (const change of await this.rescanKnownDirs()) {
+        for (const change of await this.rescanKnownDirs(rescanOnly)) {
           if (!resolved.has(keyOf(change.path))) resolved.set(keyOf(change.path), { change, stat: null });
         }
       }
@@ -263,12 +287,13 @@ export class FileWatcher {
         .map((r) => r.change)
         .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
       if (changes.length > 0 || rescan) this.options.onChanges({ changes, ...(rescan ? { rescanned: true as const } : {}) });
+      // Nach einem Neueinlesen auch: Im übergelaufenen Puffer kann ein Ereignis aus `.git` gewesen sein.
       if (git) this.options.onGitData();
     } catch (err) {
       this.options.log(`Dateiereignisse in ${this.options.root} nicht ausgewertet: ${(err as Error).message}`);
     } finally {
       this.flushing = false;
-      if (!this.stopped && (this.pending.size > 0 || this.rescanRequested || this.gitChanged)) this.schedule();
+      if (!this.stopped && (this.pending.size > 0 || this.rescanRequested || this.tooManyParents || this.gitChanged)) this.schedule();
     }
   }
 
@@ -297,9 +322,12 @@ export class FileWatcher {
     return { change: { path: p.path, kind: 'changed' }, stat };
   }
 
-  /** Liest die schon gelesenen Ordner neu ein und meldet, was dazugekommen oder verschwunden ist. */
-  private async rescanKnownDirs(): Promise<FileChange[]> {
-    const dirs = this.options.known.all();
+  /**
+   * Liest die gemerkten Ordner neu ein (mit `only` nur die mit diesen Schlüsseln) und meldet, was dazugekommen oder
+   * verschwunden ist.
+   */
+  private async rescanKnownDirs(only: ReadonlyMap<string, string> | null): Promise<FileChange[]> {
+    const dirs = this.options.known.all().filter((dir) => !only || only.has(keyOf(dir.path)));
     const results = await Promise.all(
       dirs.map(async (dir): Promise<FileChange[]> => {
         let current: fs.Dirent[];

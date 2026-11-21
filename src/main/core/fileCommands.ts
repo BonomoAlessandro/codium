@@ -32,9 +32,13 @@ export function registerFileCommands(register: RegisterProjectCommand): void {
  * Projektordner aufgeklappt.
  */
 function expandedFolders(project: ProjectCore): string[] {
-  const saved = project.state.expandedFolders;
-  if (saved === undefined) return [project.path];
-  return saved.map((relative) => (relative === '' ? project.path : path.join(project.path, ...relative.split('/'))));
+  return expandedFolderPaths(project.path, project.state.expandedFolders);
+}
+
+/** Die gespeicherten aufgeklappten Ordner (relativ, siehe `ProjectState.expandedFolders`) als absolute Pfade. */
+export function expandedFolderPaths(projectPath: string, saved: readonly string[] | undefined): string[] {
+  if (saved === undefined) return [projectPath];
+  return saved.map((relative) => (relative === '' ? projectPath : path.join(projectPath, ...relative.split('/'))));
 }
 
 /**
@@ -47,13 +51,17 @@ function setExpandedFolders(project: ProjectCore, params: unknown): void {
     throw new CommandError(`A list of at most ${MAX_EXPANDED_FOLDERS} paths is expected.`, ErrorCode.invalidParams);
   }
   const relative = new Map<string, string>();
+  const absolutes: string[] = [];
   for (const value of paths) {
     const absolute = project.files.lexicalPath(value);
     const rel = path.relative(project.path, absolute).split(path.sep).join('/');
     const key = process.platform === 'win32' ? rel.toLowerCase() : rel;
-    if (!relative.has(key)) relative.set(key, rel);
+    if (relative.has(key)) continue;
+    relative.set(key, rel);
+    absolutes.push(absolute);
   }
   project.updateState((state) => {
     state.expandedFolders = [...relative.values()];
   });
+  project.files.setExpandedFolders(absolutes);
 }

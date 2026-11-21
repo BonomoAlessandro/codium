@@ -93,6 +93,14 @@ export const FileIcon = () => (
   </Icon>
 );
 
+/** Ein Link, dem Codium nicht folgt (nach draussen oder tot): Kettenglied. */
+export const LinkIcon = () => (
+  <Icon>
+    <path d="M6.6 9.4l2.8-2.8" />
+    <path d="M7.2 4.8l1.3-1.3a2.6 2.6 0 0 1 3.7 3.7l-1.3 1.3M8.8 11.2l-1.3 1.3a2.6 2.6 0 0 1-3.7-3.7l1.3-1.3" />
+  </Icon>
+);
+
 /** „Select Opened File“: Fadenkreuz wie in IntelliJ. */
 export const LocateIcon = () => (
   <Icon>

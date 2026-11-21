@@ -1,12 +1,16 @@
 // Werkzeugfenster „Project“: der Dateibaum des Projekts wie in IntelliJ. Die Regeln ohne DOM stehen in fileTree.ts.
 //
-// - Ordner werden erst beim Aufklappen gelesen; bei Dateiereignissen liest der Baum nur die betroffenen, schon
-//   gelesenen Ordner neu. Aufgeklappte Ordner und Auswahl hängen an Pfaden und überstehen das Neueinlesen.
+// - Ordner werden erst beim Aufklappen gelesen und beim Zuklappen vergessen; bei Dateiereignissen liest der Baum nur
+//   die betroffenen, aufgeklappten Ordner neu. Aufgeklappte Ordner und Auswahl hängen an Pfaden und überstehen das
+//   Neueinlesen.
 // - Gezeichnet werden nur die sichtbaren Zeilen (feste Zeilenhöhe), damit auch ein aufgeklapptes node_modules
 //   flüssig bleibt.
 // - Einfachklick wählt aus (Ctrl und Shift wie üblich für mehrere), Doppelklick oder Enter klappt Ordner auf und zu
 //   und öffnet Dateien. Tasten wie in IntelliJ, dazu F2 zum Umbenennen wie unter Windows.
-// - Die aufgeklappten Ordner speichert der Kern im Projekt-Zustand.
+// - Die aufgeklappten Ordner speichert der Kern im Projekt-Zustand, aber nur, wenn der Nutzer sie ändert: Verschwindet
+//   ein Ordner von aussen (etwa bei einem Branch-Wechsel), bleibt er gemerkt und ist wieder aufgeklappt, sobald er
+//   zurück ist.
+// - Links nach ausserhalb des Projekts und tote Links zeigt der Baum mit Hinweis, klappt sie aber nicht auf.
 
 import {
   useCallback,
@@ -17,7 +21,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
-import { fileNameProblem, splitExtension, splitNewName } from '../../shared/fileNames';
+import { fileNameProblem, GIT_FOLDER_PROBLEM, isGitFolderName, splitExtension, splitNewName } from '../../shared/fileNames';
 import {
   CodiumError,
   ErrorCode,
@@ -28,12 +32,13 @@ import {
   type ProjectInfo,
 } from '../../shared/types';
 import { errorText } from '../errors';
-import { ChevronRightIcon, CollapseAllIcon, FileIcon, FolderIcon, LocateIcon } from '../icons';
+import { ChevronRightIcon, CollapseAllIcon, FileIcon, FolderIcon, LinkIcon, LocateIcon } from '../icons';
 import type { Notify } from '../Notices';
 import { useAsk, useAskText } from '../popup/Dialogs';
 import { Menu, type MenuEntry } from '../popup/Menu';
 import { baseName, isSameOrInside, parentPath, pathKey, relativeLabel } from './filePaths';
 import {
+  followPaths,
   moveSubtree,
   movedKey,
   parentRow,
@@ -55,6 +60,14 @@ const OVERSCAN = 12;
 const SHORTCUTS = { copy: 'Ctrl+C', copyPath: 'Ctrl+Shift+C', paste: 'Ctrl+V', rename: 'Shift+F6', delete: 'Delete' };
 /** Hinweis beim Umbenennen einer Java-Datei: In Codium ist das kein Refactoring. */
 export const JAVA_RENAME_HINT = 'Only the file is renamed. References to the class in other files are not updated.';
+/** Hinweise an Links, denen Codium nicht folgt. */
+export const BLOCKED_LINK_HINTS = {
+  outside: 'Link to a location outside the project. Codium does not follow it.',
+  missing: 'Broken link: its target does not exist.',
+} as const;
+
+/** Warum ein aufgeklappter Ordner gerade nicht lesbar ist: verschwunden oder ein anderer Fehler. */
+type Unavailable = 'missing' | 'failed';
 
 interface ProjectViewProps {
   api: CodiumApi;
@@ -82,6 +95,8 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
   const [listings, setListingsState] = useState<ReadonlyMap<string, Listing>>(() => new Map());
   /** Aufgeklappte Ordner: Schlüssel → Pfad; `null`, bis der Kern sie geliefert hat. */
   const [expanded, setExpandedState] = useState<ReadonlyMap<string, string> | null>(null);
+  /** Aufgeklappte Ordner, die sich gerade nicht lesen lassen; sie erscheinen zugeklappt. */
+  const [unavailable, setUnavailableState] = useState<ReadonlyMap<string, Unavailable>>(() => new Map());
   const [selection, setSelectionState] = useState<ReadonlySet<string>>(() => new Set());
   const [lead, setLeadState] = useState<string | null>(null);
   const [hasClipboard, setHasClipboard] = useState(false);
@@ -91,9 +106,11 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
   // Die Refs halten immer den neuesten Stand, auch bevor React neu gezeichnet hat; Ereignisse des Kerns lesen daraus.
   const listingsRef = useRef(listings);
   const expandedRef = useRef(expanded);
+  const unavailableRef = useRef(unavailable);
   const selectionRef = useRef(selection);
   const leadRef = useRef(lead);
   const anchorRef = useRef<string | null>(null);
+  /** Kopierte Pfade für „Paste“; sie folgen Umbenennungen und verschwinden beim Löschen. */
   const clipboard = useRef<string[]>([]);
   const generations = useRef(new Map<string, number>());
   const inFlight = useRef(new Set<string>());
@@ -106,9 +123,10 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
   const treeRef = useRef<HTMLDivElement>(null);
   const savedScrollTop = useRef(0);
 
+  const unavailableKeys = useMemo(() => new Set(unavailable.keys()), [unavailable]);
   const rows = useMemo(
-    () => (expanded ? visibleRows(root, project.name, listings, expanded) : []),
-    [root, project.name, listings, expanded],
+    () => (expanded ? visibleRows(root, project.name, listings, expanded, unavailableKeys) : []),
+    [root, project.name, listings, expanded, unavailableKeys],
   );
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
@@ -121,6 +139,16 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
     listingsRef.current = next;
     setListingsState(next);
   }, []);
+
+  const updateUnavailable = useCallback(
+    (update: (current: ReadonlyMap<string, Unavailable>) => ReadonlyMap<string, Unavailable>) => {
+      const next = update(unavailableRef.current);
+      if (next === unavailableRef.current) return;
+      unavailableRef.current = next;
+      setUnavailableState(next);
+    },
+    [],
+  );
 
   const setSelection = useCallback((keys: ReadonlySet<string>, newLead: string | null) => {
     selectionRef.current = keys;
@@ -138,7 +166,10 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
     [setSelection],
   );
 
-  /** Ändert die aufgeklappten Ordner und speichert sie noch im selben Ereignis im Kern. */
+  /**
+   * Ändert die aufgeklappten Ordner und speichert sie noch im selben Ereignis im Kern. Nur Aktionen des Nutzers
+   * ändern sie; was von aussen verschwindet, bleibt gemerkt.
+   */
   const setExpanded = useCallback(
     (update: (current: ReadonlyMap<string, string>) => ReadonlyMap<string, string>) => {
       const current = expandedRef.current;
@@ -174,6 +205,20 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
 
   // ---------- Lesen der Ordner ----------
 
+  /** Vergisst gelesene Inhalte unter `target` (samt `target`); ein Lesen, das noch unterwegs ist, zählt nicht mehr. */
+  const dropListings = useCallback(
+    (target: string) => {
+      for (const key of generations.current.keys()) {
+        if (!isSameOrInside(key, target)) continue;
+        generations.current.set(key, (generations.current.get(key) ?? 0) + 1);
+        inFlight.current.delete(key);
+        dirtyWhileLoading.current.delete(key);
+      }
+      updateListings((prev) => (hasKeyWithin(prev, target) ? withoutSubtree(prev, target) : prev));
+    },
+    [updateListings],
+  );
+
   /** Liest einen Ordner (neu). Eine ältere Antwort für denselben Ordner zählt nicht mehr, wenn eine neuere unterwegs ist. */
   const load = useCallback(
     (dir: string) => {
@@ -187,6 +232,11 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
           if (!isLatest()) return;
           inFlight.current.delete(key);
           updateListings((prev) => new Map(prev).set(key, { path: dir, entries }));
+          // Was hier als verschwunden galt und jetzt wieder da ist (oder nicht), entscheidet der frische Inhalt.
+          updateUnavailable((prev) => {
+            const next = new Map([...prev].filter(([k, why]) => !(why === 'missing' && (k === key || pathKey(parentPath(k)) === key))));
+            return next.size === prev.size ? prev : next;
+          });
           // Kam während des Lesens ein neuer Anlass, gleich noch einmal; so ist je Ordner höchstens ein Lesen unterwegs.
           if (dirtyWhileLoading.current.delete(key)) load(dir);
         },
@@ -194,14 +244,16 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
           if (!isLatest()) return;
           inFlight.current.delete(key);
           dirtyWhileLoading.current.delete(key);
-          // Der Ordner ist weg oder lässt sich nicht lesen (etwa eine Junction nach ausserhalb des Projekts): zuklappen.
-          updateListings((prev) => (hasKeyWithin(prev, dir) ? withoutSubtree(prev, dir) : prev));
-          setExpanded((current) => (hasKeyWithin(current, dir) ? withoutSubtree(current, dir) : current));
-          if (!(err instanceof CodiumError && err.code === ErrorCode.fileNotFound)) notify({ level: 'error', text: errorText(err) });
+          dropListings(dir);
+          // Verschwunden (oder gerade nicht lesbar): Der Ordner bleibt unter den aufgeklappten und erscheint zugeklappt.
+          const missing = err instanceof CodiumError && err.code === ErrorCode.fileNotFound;
+          updateUnavailable((prev) => new Map(prev).set(key, missing ? 'missing' : 'failed'));
+          if (missing) scheduleReloadRef.current(parentPath(dir));
+          else notify({ level: 'error', text: errorText(err) });
         },
       );
     },
-    [api, notify, setExpanded, updateListings],
+    [api, notify, dropListings, updateListings, updateUnavailable],
   );
 
   // Aufgeklappte, sichtbare Ordner ohne Inhalt lesen.
@@ -210,8 +262,8 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
   }, [rows, load]);
 
   /**
-   * Liest einen schon gelesenen Ordner kurz darauf neu; mehrere Anlässe kurz nacheinander ergeben ein Lesen. Wird er
-   * gerade zum ersten Mal gelesen, folgt ein zweites Lesen, denn das erste kann die Änderung verpasst haben.
+   * Liest einen gelesenen Ordner kurz darauf neu; mehrere Anlässe kurz nacheinander ergeben ein Lesen. Wird er gerade
+   * zum ersten Mal gelesen, folgt ein zweites Lesen, denn das erste kann die Änderung verpasst haben.
    */
   const scheduleReload = useCallback(
     (dir: string) => {
@@ -236,6 +288,8 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
     },
     [load],
   );
+  const scheduleReloadRef = useRef(scheduleReload);
+  scheduleReloadRef.current = scheduleReload;
 
   useEffect(
     () => () => {
@@ -244,18 +298,30 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
     [],
   );
 
-  /** Vergisst einen gelöschten Pfad mit allem darunter: Inhalt, aufgeklappte Ordner, Auswahl. */
-  const forget = useCallback(
+  /** Ein Pfad ist (wieder) da: Galt er als verschwunden, darf er neu gelesen werden. */
+  const markPresent = useCallback(
     (target: string) => {
-      // Ein Lesen, das noch unterwegs ist, zählt nicht mehr; sonst käme der gelöschte Inhalt zurück.
-      for (const key of generations.current.keys()) {
-        if (!isSameOrInside(key, target)) continue;
-        generations.current.set(key, (generations.current.get(key) ?? 0) + 1);
-        inFlight.current.delete(key);
-        dirtyWhileLoading.current.delete(key);
-      }
-      updateListings((prev) => (hasKeyWithin(prev, target) ? withoutSubtree(prev, target) : prev));
-      setExpanded((current) => (hasKeyWithin(current, target) ? withoutSubtree(current, target) : current));
+      const key = pathKey(target);
+      updateUnavailable((prev) => {
+        if (prev.get(key) !== 'missing') return prev;
+        const next = new Map(prev);
+        next.delete(key);
+        return next;
+      });
+    },
+    [updateUnavailable],
+  );
+
+  /**
+   * Ein Pfad ist gelöscht: Inhalt, Auswahl und Zwischenablage vergessen ihn samt allem darunter. Die aufgeklappten
+   * Ordner nur bei einer Löschung durch den Nutzer (`byUser`), nie den Projektordner selbst.
+   */
+  const forget = useCallback(
+    (target: string, byUser: boolean) => {
+      dropListings(target);
+      if (byUser) setExpanded((current) => (hasKeyWithin(current, target) ? withoutSubtree(current, target, rootKey) : current));
+      clipboard.current = followPaths(clipboard.current, { deleted: target });
+      setHasClipboard(clipboard.current.length > 0);
       const selected = [...selectionRef.current];
       if (selected.some((k) => isSameOrInside(k, target)) || (leadRef.current && isSameOrInside(leadRef.current, target))) {
         const remaining = new Set(selected.filter((k) => !isSameOrInside(k, target)));
@@ -263,10 +329,10 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
         setSelection(remaining.size > 0 || newLead === null ? remaining : new Set([newLead]), newLead);
       }
     },
-    [setExpanded, setSelection, updateListings],
+    [dropListings, setExpanded, setSelection, rootKey],
   );
 
-  /** Nach dem Umbenennen: Inhalt, aufgeklappte Ordner und Auswahl wandern mit. */
+  /** Nach dem Umbenennen: Inhalt, aufgeklappte Ordner, Auswahl und Zwischenablage wandern mit. */
   const relocate = useCallback(
     (from: string, to: string) => {
       for (const key of generations.current.keys()) {
@@ -284,6 +350,7 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
           : prev,
       );
       setExpanded((current) => (hasKeyWithin(current, from) ? moveSubtree(current, from, to, (p, move) => move(p)) : current));
+      clipboard.current = followPaths(clipboard.current, { from, to });
       const fromKey = pathKey(from);
       const move = (key: string) => (isSameOrInside(key, from) ? movedKey(key, fromKey, to) : key);
       if ([...selectionRef.current].some((k) => isSameOrInside(k, from)) || (leadRef.current && isSameOrInside(leadRef.current, from))) {
@@ -303,10 +370,12 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
   handlers.current = {
     changed: (event) => {
       for (const change of event.changes) {
-        if (change.kind === 'deleted') forget(change.path);
-        // Ein Ordner, der gelöscht und neu angelegt wurde, hat womöglich anderen Inhalt.
+        if (change.kind === 'deleted') forget(change.path, false);
+        else markPresent(change.path);
+        // Ein Ordner, der gelöscht und neu angelegt wurde, hat womöglich anderen Inhalt; eine Datei kann zum Ordner
+        // geworden sein oder umgekehrt, das zeigt der Elternordner.
         if (change.kind === 'changed') scheduleReload(change.path);
-        else scheduleReload(parentPath(change.path));
+        scheduleReload(parentPath(change.path));
       }
       if (event.rescanned) for (const listing of listingsRef.current.values()) scheduleReload(listing.path);
     },
@@ -318,7 +387,8 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
         return;
       }
       const target = op.kind === 'copied' ? op.to : op.path;
-      if (op.kind === 'deleted') forget(op.path);
+      if (op.kind === 'deleted') forget(op.path, true);
+      else markPresent(target);
       scheduleReload(parentPath(target));
     },
   };
@@ -373,7 +443,16 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
 
   // ---------- Aktionen ----------
 
-  const expand = (row: TreeRow) => setExpanded((current) => new Map(current).set(row.key, row.path));
+  const expand = (row: TreeRow) => {
+    // Ein Ordner, der sich nicht lesen liess, wird beim Aufklappen neu versucht.
+    updateUnavailable((prev) => {
+      if (!prev.has(row.key)) return prev;
+      const next = new Map(prev);
+      next.delete(row.key);
+      return next;
+    });
+    setExpanded((current) => (current.has(row.key) ? current : new Map(current).set(row.key, row.path)));
+  };
 
   const collapse = (row: TreeRow) => {
     setExpanded((current) => {
@@ -382,6 +461,8 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
       next.delete(row.key);
       return next;
     });
+    // Zugeklappt wird der Inhalt vergessen; beim nächsten Aufklappen wird er frisch gelesen.
+    dropListings(row.path);
     // Ausgewählte Einträge darin verschwinden; die Auswahl geht auf den Ordner.
     const hidden = (key: string) => key !== row.key && isSameOrInside(key, row.path);
     if ([...selectionRef.current].some(hidden) || (leadRef.current !== null && hidden(leadRef.current))) {
@@ -393,7 +474,6 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
   const toggle = (row: TreeRow) => (row.expanded ? collapse(row) : expand(row));
 
   const collapseAll = () => {
-    setExpanded((current) => (current.size === 1 && current.has(rootKey) ? current : new Map([[rootKey, root]])));
     // Was jetzt verborgen ist, gibt die Auswahl an den obersten Ordner darüber ab.
     const current = rowsRef.current;
     const leadAt = current.findIndex((r) => r.key === leadRef.current);
@@ -404,13 +484,15 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
     } else if ([...selectionRef.current].some((k) => (current.find((r) => r.key === k)?.depth ?? 0) > 1)) {
       selectOnly(leadAt >= 0 ? current[leadAt].path : root);
     }
+    setExpanded((expandedNow) => (expandedNow.size === 1 && expandedNow.has(rootKey) ? expandedNow : new Map([[rootKey, root]])));
+    for (const listing of [...listingsRef.current.values()]) if (pathKey(listing.path) !== rootKey) dropListings(listing.path);
   };
 
   /** Die ausgewählten Zeilen in der Reihenfolge des Baums. */
   const selectedRows = rows.filter((r) => selection.has(r.key));
   const leadRow = leadIndex >= 0 ? rows[leadIndex] : null;
 
-  /** Ziel für „New“ und „Paste“: der aktuelle Ordner bzw. der Ordner der aktuellen Datei. */
+  /** Ziel für „New“ und „Paste“: der aktuelle Ordner bzw. der Ordner der aktuellen Datei (oder des Links). */
   const targetDir = (): string => {
     if (!leadRow) return root;
     return leadRow.isDirectory ? leadRow.path : parentPath(leadRow.path);
@@ -429,7 +511,7 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
         if ('problem' in split) return split.problem;
         const first = pathKey(split.segments[0]);
         const clash = siblings.find((e) => pathKey(e.name) === first);
-        if (clash && (split.segments.length === 1 || !clash.isDirectory)) return `“${clash.name}” already exists.`;
+        if (clash && (split.segments.length === 1 || !clash.isDirectory || clash.blockedLink)) return `“${clash.name}” already exists.`;
         return null;
       },
       submit: async (value) => {
@@ -456,23 +538,26 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
     if (!directory) onOpenFile(path);
   };
 
+  /** Wie der Eintrag in Dialogen heisst. */
+  const kindOf = (row: TreeRow): string => (row.blockedLink ? 'link' : row.isDirectory ? 'directory' : 'file');
+
   const rename = async () => {
     const row = selectedRows.length === 1 ? selectedRows[0] : null;
     if (!row || row.isRoot) return;
     const siblings = siblingsOf(parentPath(row.path));
-    const { base } = splitExtension(row.name, row.isDirectory);
-    const isJava = !row.isDirectory && /\.java$/i.test(row.name);
+    const { base } = splitExtension(row.name, row.isDirectory || !!row.blockedLink);
+    const isJava = !row.isDirectory && !row.blockedLink && /\.java$/i.test(row.name);
     await askText({
       title: 'Rename',
-      message: `Rename ${row.isDirectory ? 'directory' : 'file'} “${row.name}” to:`,
+      message: `Rename ${kindOf(row)} “${row.name}” to:`,
       value: row.name,
       selection: [0, base.length],
       hint: isJava ? JAVA_RENAME_HINT : undefined,
       okLabel: 'Rename',
       validate: (value) => {
-        const problem = fileNameProblem(value);
+        const problem = fileNameProblem(value) ?? (isGitFolderName(value) ? GIT_FOLDER_PROBLEM : null);
         if (problem) return problem;
-        const clash = pathKey(value) !== row.key.slice(row.key.lastIndexOf('\\') + 1) && siblings.some((e) => pathKey(e.name) === pathKey(value));
+        const clash = pathKey(value) !== pathKey(row.name) && siblings.some((e) => pathKey(e.name) === pathKey(value));
         return clash ? `“${value}” already exists.` : null;
       },
       submit: async (value) => {
@@ -492,12 +577,16 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
     const targets = selectedRows.filter((r) => !r.isRoot);
     if (targets.length === 0) return;
     const single = targets.length === 1 ? targets[0] : null;
-    const message = single
-      ? `Delete ${single.isDirectory ? 'directory' : 'file'} “${single.name}”${single.isDirectory ? ' with all its contents' : ''}?`
-      : `Delete ${targets.length} items?`;
+    let message: string;
+    if (!single) message = `Delete ${targets.length} items? They are moved to the Recycle Bin.`;
+    else if (single.blockedLink) message = `Delete link “${single.name}”? Only the link is moved to the Recycle Bin, not its target.`;
+    else {
+      const contents = single.isDirectory ? ' with all its contents' : '';
+      message = `Delete ${kindOf(single)} “${single.name}”${contents}? It is moved to the Recycle Bin.`;
+    }
     const choice = await ask({
       title: 'Delete',
-      message: `${message} ${single ? 'It is' : 'They are'} moved to the Recycle Bin.`,
+      message,
       items: targets.map((r) => relativeLabel(root, r.path)),
       buttons: [
         { id: 'delete', label: 'Delete', primary: true },
@@ -514,10 +603,12 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
     }
   };
 
+  /** Kopieren geht nicht für den Projektordner und nicht für Links, denen Codium nicht folgt. */
+  const canCopy = selectedRows.length > 0 && !selectedRows.some((r) => r.isRoot || r.blockedLink);
+
   const copySelected = () => {
-    const paths = selectedRows.filter((r) => !r.isRoot).map((r) => r.path);
-    if (paths.length === 0) return;
-    clipboard.current = paths;
+    if (!canCopy) return;
+    clipboard.current = selectedRows.map((r) => r.path);
     setHasClipboard(true);
   };
 
@@ -543,7 +634,7 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
             value: suggestion,
             selection: [0, splitExtension(suggestion, isDirectory).base.length],
             okLabel: 'Copy',
-            validate: fileNameProblem,
+            validate: (value) => fileNameProblem(value) ?? (isGitFolderName(value) ? GIT_FOLDER_PROBLEM : null),
             submit: async (value) => {
               try {
                 copies = await api.request('files.copy', { sources, target, newName: value });
@@ -574,8 +665,9 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
     api.request('files.showInExplorer', { path: leadRow.path }).catch((err: unknown) => notify({ level: 'error', text: errorText(err) }));
   };
 
+  /** „Datei öffnen“; nicht für Ordner und nicht für Links, denen Codium nicht folgt. */
   const open = (row: TreeRow) => {
-    if (!row.isDirectory) onOpenFile(row.path);
+    if (!row.isDirectory && !row.blockedLink) onOpenFile(row.path);
   };
 
   // ---------- Bedienung ----------
@@ -662,7 +754,7 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
         ],
       },
       { kind: 'separator' },
-      { kind: 'item', label: 'Copy', shortcut: SHORTCUTS.copy, disabled: selectedRows.length === 0 || hasRoot, run: copySelected },
+      { kind: 'item', label: 'Copy', shortcut: SHORTCUTS.copy, disabled: !canCopy, run: copySelected },
       { kind: 'item', label: 'Copy Path', shortcut: SHORTCUTS.copyPath, disabled: selectedRows.length === 0, run: copyPath },
       { kind: 'item', label: 'Paste', shortcut: SHORTCUTS.paste, disabled: !hasClipboard, run: () => void paste() },
       { kind: 'separator' },
@@ -702,74 +794,71 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
         </button>
       </ToolWindowHeader>
       <div className="tool-window-body file-tree-body">
-      <div
-        ref={treeRef}
-        className="file-tree"
-        role="tree"
-        aria-label="Project Files"
-        aria-multiselectable="true"
-        aria-activedescendant={leadIndex >= 0 ? rowId(leadIndex) : undefined}
-        tabIndex={0}
-        data-autofocus=""
-        onKeyDown={onKeyDown}
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          if (el.clientHeight > 0) savedScrollTop.current = el.scrollTop;
-          setViewport({ top: el.scrollTop, height: el.clientHeight });
-        }}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setMenu({ x: e.clientX, y: e.clientY, viaKeyboard: false });
-        }}
-      >
-        <div className="file-tree-content" style={{ height: rows.length * TREE_ROW_HEIGHT }}>
-          {drawn.map(({ row, index }) => (
-            <div
-              key={row.key}
-              id={rowId(index)}
-              role="treeitem"
-              aria-label={row.name}
-              aria-level={row.depth + 1}
-              aria-expanded={row.isDirectory ? row.expanded : undefined}
-              aria-selected={selection.has(row.key)}
-              className={[
-                'file-tree-row',
-                selection.has(row.key) && 'selected',
-                index === leadIndex && 'lead',
-              ]
-                .filter(Boolean)
-                .join(' ')}
-              style={{ top: index * TREE_ROW_HEIGHT, paddingLeft: 6 + row.depth * 18 }}
-              title={row.isRoot ? row.path : undefined}
-              onMouseDown={(e) => onRowMouseDown(e, row, index)}
-              onDoubleClick={(e) => {
-                if (e.ctrlKey || e.shiftKey) return;
-                if (row.isDirectory) toggle(row);
-                else open(row);
-              }}
-            >
-              <span
-                className={row.expanded ? 'file-tree-arrow expanded' : 'file-tree-arrow'}
-                onMouseDown={(e) => {
-                  if (e.button !== 0 || !row.isDirectory) return;
-                  // Der Pfeil klappt nur auf und zu, die Auswahl bleibt.
-                  e.stopPropagation();
-                  toggle(row);
+        <div
+          ref={treeRef}
+          className="file-tree"
+          role="tree"
+          aria-label="Project Files"
+          aria-multiselectable="true"
+          aria-activedescendant={leadIndex >= 0 ? rowId(leadIndex) : undefined}
+          tabIndex={0}
+          data-autofocus=""
+          onKeyDown={onKeyDown}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            if (el.clientHeight > 0) savedScrollTop.current = el.scrollTop;
+            setViewport({ top: el.scrollTop, height: el.clientHeight });
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setMenu({ x: e.clientX, y: e.clientY, viaKeyboard: false });
+          }}
+        >
+          <div className="file-tree-content" style={{ height: rows.length * TREE_ROW_HEIGHT }}>
+            {drawn.map(({ row, index }) => (
+              <div
+                key={row.key}
+                id={rowId(index)}
+                role="treeitem"
+                aria-label={row.name}
+                aria-level={row.depth + 1}
+                aria-expanded={row.isDirectory ? row.expanded : undefined}
+                aria-selected={selection.has(row.key)}
+                aria-description={row.blockedLink ? BLOCKED_LINK_HINTS[row.blockedLink] : undefined}
+                className={['file-tree-row', selection.has(row.key) && 'selected', index === leadIndex && 'lead', row.blockedLink && 'blocked']
+                  .filter(Boolean)
+                  .join(' ')}
+                style={{ top: index * TREE_ROW_HEIGHT, paddingLeft: 6 + row.depth * 18 }}
+                title={row.isRoot ? row.path : row.blockedLink ? BLOCKED_LINK_HINTS[row.blockedLink] : undefined}
+                onMouseDown={(e) => onRowMouseDown(e, row, index)}
+                onDoubleClick={(e) => {
+                  if (e.ctrlKey || e.shiftKey) return;
+                  if (row.isDirectory) toggle(row);
+                  else open(row);
                 }}
-                onDoubleClick={(e) => e.stopPropagation()}
               >
-                {row.isDirectory && <ChevronRightIcon />}
-              </span>
-              <span className={row.isDirectory ? 'file-tree-icon folder' : 'file-tree-icon'}>
-                {row.isDirectory ? <FolderIcon /> : <FileIcon />}
-              </span>
-              <span className={row.isRoot ? 'file-tree-name root' : 'file-tree-name'}>{row.name}</span>
-              {row.isRoot && <span className="file-tree-detail">{row.path}</span>}
-              {row.loading && <span className="file-tree-detail">loading…</span>}
-            </div>
-          ))}
+                <span
+                  className={row.expanded ? 'file-tree-arrow expanded' : 'file-tree-arrow'}
+                  onMouseDown={(e) => {
+                    if (e.button !== 0 || !row.isDirectory) return;
+                    // Der Pfeil klappt nur auf und zu, die Auswahl bleibt.
+                    e.stopPropagation();
+                    toggle(row);
+                  }}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                >
+                  {row.isDirectory && <ChevronRightIcon />}
+                </span>
+                <span className={row.isDirectory ? 'file-tree-icon folder' : 'file-tree-icon'}>
+                  {row.blockedLink ? <LinkIcon /> : row.isDirectory ? <FolderIcon /> : <FileIcon />}
+                </span>
+                <span className={row.isRoot ? 'file-tree-name root' : 'file-tree-name'}>{row.name}</span>
+                {row.isRoot && <span className="file-tree-detail">{row.path}</span>}
+                {row.loading && <span className="file-tree-detail">loading…</span>}
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
       </div>
       {menu && (
         <Menu

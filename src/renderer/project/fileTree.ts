@@ -16,33 +16,49 @@ export interface TreeRow {
   key: string;
   name: string;
   depth: number;
+  /** Ein Ordner, der sich aufklappen lässt (ein Link nach draussen oder ein toter Link nicht). */
   isDirectory: boolean;
   isRoot: boolean;
   expanded: boolean;
   /** Aufgeklappt, aber der Inhalt ist noch nicht gelesen. */
   loading: boolean;
+  /** Ein Link, dem Codium nicht folgt (siehe `FileEntry.blockedLink`). */
+  blockedLink?: 'outside' | 'missing';
 }
 
 /**
  * Die sichtbaren Zeilen: der Projektordner, darunter der Inhalt jedes aufgeklappten Ordners, dessen Inhalt schon
  * gelesen ist. Ein aufgeklappter Ordner, dessen Eltern zugeklappt sind, bleibt aufgeklappt, ist aber nicht sichtbar
- * (wie in IntelliJ: Er zeigt sich wieder, sobald die Eltern aufgehen).
+ * (wie in IntelliJ: Er zeigt sich wieder, sobald die Eltern aufgehen). Ordner in `unavailable` (gerade nicht lesbar)
+ * erscheinen zugeklappt, bleiben aber unter den aufgeklappten.
  */
 export function visibleRows(
   root: string,
   rootName: string,
   listings: ReadonlyMap<string, Listing>,
   expanded: ReadonlyMap<string, string>,
+  unavailable: ReadonlySet<string> = new Set(),
 ): TreeRow[] {
   const rows: TreeRow[] = [];
-  const visit = (path: string, name: string, isDirectory: boolean, depth: number) => {
-    const key = pathKey(path);
-    const isExpanded = isDirectory && expanded.has(key);
+  const visit = (entry: Pick<FileEntry, 'path' | 'name' | 'isDirectory' | 'blockedLink'>, depth: number) => {
+    const key = pathKey(entry.path);
+    const isDirectory = entry.isDirectory && !entry.blockedLink;
+    const isExpanded = isDirectory && expanded.has(key) && !unavailable.has(key);
     const listing = isExpanded ? listings.get(key) : undefined;
-    rows.push({ path, key, name, depth, isDirectory, isRoot: depth === 0, expanded: isExpanded, loading: isExpanded && !listing });
-    if (listing) for (const entry of listing.entries) visit(entry.path, entry.name, entry.isDirectory, depth + 1);
+    rows.push({
+      path: entry.path,
+      key,
+      name: entry.name,
+      depth,
+      isDirectory,
+      isRoot: depth === 0,
+      expanded: isExpanded,
+      loading: isExpanded && !listing,
+      ...(entry.blockedLink ? { blockedLink: entry.blockedLink } : {}),
+    });
+    if (listing) for (const child of listing.entries) visit(child, depth + 1);
   };
-  visit(root, rootName, true, 0);
+  visit({ path: root, name: rootName, isDirectory: true }, 0);
   return rows;
 }
 
@@ -114,11 +130,17 @@ export function rangeKeys(rows: readonly TreeRow[], from: number, to: number): s
   return rows.slice(Math.max(0, a), b + 1).map((r) => r.key);
 }
 
-/** Ein Pfad-Verzeichnis (Schlüssel → Pfad) ohne `target` und alles darunter. */
-export function withoutSubtree<V>(map: ReadonlyMap<string, V>, target: string): Map<string, V> {
+/** Ein Pfad-Verzeichnis (Schlüssel → Pfad) ohne `target` und alles darunter; `keep` behält einzelne Schlüssel. */
+export function withoutSubtree<V>(map: ReadonlyMap<string, V>, target: string, keep?: string): Map<string, V> {
   const result = new Map<string, V>();
-  for (const [key, value] of map) if (!isSameOrInside(key, target)) result.set(key, value);
+  for (const [key, value] of map) if (key === keep || !isSameOrInside(key, target)) result.set(key, value);
   return result;
+}
+
+/** Eine Liste von Pfaden nach dem Umbenennen von `from` in `to` bzw. ohne den gelöschten `deleted` samt Inhalt. */
+export function followPaths(paths: readonly string[], change: { from: string; to: string } | { deleted: string }): string[] {
+  if ('deleted' in change) return paths.filter((p) => !isSameOrInside(p, change.deleted));
+  return paths.map((p) => (isSameOrInside(p, change.from) ? movedPath(p, change.from, change.to) : p));
 }
 
 /**
