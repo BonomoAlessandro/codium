@@ -14,6 +14,7 @@ import {
   type AppSettings,
   type MarkdownView,
   type CursorState,
+  type ShellId,
   type ToolWindowLayout,
   type ToolWindowSide,
   type ToolWindowSideLayout,
@@ -29,7 +30,7 @@ export const RECENT_PROJECTS_LIMIT = 20;
 /** Einstellungen, die für alle Projekte gelten. Felder kommen mit den Tickets, die sie brauchen. */
 export interface Settings {
   /** Shell fürs Terminal (Ticket 11); vom Testgerüst auf cmd gesetzt. */
-  terminalShell?: string;
+  terminalShell?: ShellId;
   /** Schriftgrösse der Editoren; ohne Angabe `DEFAULT_FONT_SIZE`. */
   fontSize?: number;
   /** JDK für den Java-Sprachserver (Ordner); ohne Angabe „Newest detected“. */
@@ -96,8 +97,13 @@ export const MAX_CURSORS = 500;
 export const MAX_RECENT_FILES = 50;
 
 /** Die Einstellungen für die Oberfläche: gespeicherte Werte, sonst die Standardwerte. */
+/** Ob ein Wert eine der Shells fürs Terminal ist. */
+export function isShellId(value: unknown): value is ShellId {
+  return value === 'pwsh' || value === 'powershell' || value === 'cmd' || value === 'gitbash';
+}
+
 export function appSettings(settings: Settings): AppSettings {
-  return { fontSize: settings.fontSize ?? DEFAULT_FONT_SIZE, jdk: settings.jdk ?? null };
+  return { fontSize: settings.fontSize ?? DEFAULT_FONT_SIZE, jdk: settings.jdk ?? null, terminalShell: isShellId(settings.terminalShell) ? settings.terminalShell : null };
 }
 
 /** Ob eine Schriftgrösse gültig ist: eine ganze Zahl von `MIN_FONT_SIZE` bis `MAX_FONT_SIZE`. */
@@ -194,7 +200,7 @@ export function normalizeAppState(raw: Record<string, unknown>): AppState {
     recentProjects: stringArray(raw.recentProjects).slice(0, RECENT_PROJECTS_LIMIT),
     openProjects: stringArray(raw.openProjects),
     settings: {
-      ...(typeof settings.terminalShell === 'string' ? { terminalShell: settings.terminalShell } : {}),
+      ...(isShellId(settings.terminalShell) ? { terminalShell: settings.terminalShell } : {}),
       ...(isFontSize(settings.fontSize) ? { fontSize: settings.fontSize } : {}),
       ...(isJdkPath(settings.jdk) ? { jdk: settings.jdk } : {}),
     },

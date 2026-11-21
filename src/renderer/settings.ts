@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { DEFAULT_FONT_SIZE, type AppSettings, type CodiumApi } from '../shared/types';
 
-export const DEFAULT_SETTINGS: AppSettings = { fontSize: DEFAULT_FONT_SIZE, jdk: null };
+export const DEFAULT_SETTINGS: AppSettings = { fontSize: DEFAULT_FONT_SIZE, jdk: null, terminalShell: null };
 
 export function useSettings(api: CodiumApi): AppSettings {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);

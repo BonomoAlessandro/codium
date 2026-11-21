@@ -11,7 +11,7 @@ type RegisterProjectCommand = <K extends CommandName>(
   handler: (project: ProjectCore, params: CommandParams<K>, ctx: CallContext) => CommandResult<K> | Promise<CommandResult<K>>,
 ) => void;
 
-/** Meldet die Befehle des Datei-Dienstes an; alle brauchen ein offenes Projekt. */
+/** Meldet die Befehle des Datei-, Such- und Terminal-Dienstes an; alle brauchen ein offenes Projekt. */
 export function registerFileCommands(register: RegisterProjectCommand): void {
   register('files.list', (project, params) => project.files.list(params));
   register('files.createFile', (project, params) => project.files.createFile(params));
@@ -28,6 +28,10 @@ export function registerFileCommands(register: RegisterProjectCommand): void {
   register('files.findByName', (project, params) => project.search.findByName(params));
   register('search.start', (project, params) => project.search.startSearch(params));
   register('search.cancel', (project, params) => project.search.cancelSearch(params));
+  register('terminal.start', (project, params) => project.terminals.start(params));
+  register('terminal.write', (project, params) => project.terminals.write(params));
+  register('terminal.resize', (project, params) => project.terminals.resize(params));
+  register('terminal.close', (project, params) => project.terminals.close(params));
   register('project.expandedFolders', (project) => expandedFolders(project));
   register('project.setExpandedFolders', (project, params) => setExpandedFolders(project, params));
 }

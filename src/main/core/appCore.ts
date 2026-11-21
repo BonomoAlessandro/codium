@@ -30,6 +30,7 @@ import { ProgressReporter } from './progress';
 import { DEFAULT_CLEANUP_TIMEOUT_MS, ProjectCore } from './projectCore';
 import { FolderQueries, type FolderStatus } from './folderQueries';
 import { startClone, type CloneJob } from './clone';
+import { detectShells, shellFor } from './shells';
 import { registerEditorCommands } from './editorCommands';
 import { JDTLS_MIN_JAVA, detectJdks, hasJavaMarkers, jdkForLanguageServer, sameJdkPath } from './jdks';
 import { registerFileCommands } from './fileCommands';
@@ -50,6 +51,7 @@ import {
   defaultLayout,
   isFontSize,
   isJdkPath,
+  isShellId,
   emptyAppState,
   emptyProjectState,
   normalizeAppState,
@@ -490,6 +492,10 @@ export class AppCore {
       if (typeof requestId === 'number') this.flushWaiters.get(requestId)?.();
     });
     this.router.register('app.updateSettings', (_ctx, params) => this.updateSettings(params));
+    this.router.register('app.shells', () => {
+      const shells = detectShells(this.ports.system);
+      return { shells, standard: shellFor(shells, undefined)?.id ?? null };
+    });
   }
 
   /**
@@ -502,7 +508,9 @@ export class AppCore {
     }
     const changes = params as Record<string, unknown>;
     for (const name of Object.keys(changes)) {
-      if (name !== 'fontSize' && name !== 'jdk') throw new CommandError(`Unknown setting: ${name}`, ErrorCode.invalidParams);
+      if (name !== 'fontSize' && name !== 'jdk' && name !== 'terminalShell') {
+        throw new CommandError(`Unknown setting: ${name}`, ErrorCode.invalidParams);
+      }
     }
     if ('jdk' in changes && changes.jdk !== null && !isJdkPath(changes.jdk)) {
       throw new CommandError('The JDK must be a folder (absolute path) or “Newest detected”.', ErrorCode.invalidParams);
@@ -517,6 +525,13 @@ export class AppCore {
       }
       changes.jdk = detected.path;
     }
+    // Wählbar sind nur gefundene Shells; `null` heisst Standard.
+    if ('terminalShell' in changes && changes.terminalShell !== null) {
+      const wanted = changes.terminalShell;
+      if (!detectShells(this.ports.system).some((s) => s.id === wanted)) {
+        throw new CommandError('The terminal shell must be one of the detected shells.', ErrorCode.invalidParams);
+      }
+    }
     if ('fontSize' in changes && !isFontSize(changes.fontSize)) {
       throw new CommandError(
         `The font size must be a whole number from ${MIN_FONT_SIZE} to ${MAX_FONT_SIZE}.`,
@@ -527,6 +542,8 @@ export class AppCore {
       if (isFontSize(changes.fontSize)) state.settings.fontSize = changes.fontSize;
       if (changes.jdk === null) delete state.settings.jdk;
       else if (isJdkPath(changes.jdk)) state.settings.jdk = changes.jdk;
+      if (changes.terminalShell === null) delete state.settings.terminalShell;
+      else if (isShellId(changes.terminalShell)) state.settings.terminalShell = changes.terminalShell;
     });
     const settings = appSettings(this.appState.settings);
     const windows = [...this.projects.keys(), ...(this.welcomeWindowId === null ? [] : [this.welcomeWindowId])];
@@ -812,6 +829,10 @@ export class AppCore {
       watchMaxDelayMs: this.options.watchMaxDelayMs,
       progressDelayMs: this.options.fileProgressDelayMs,
       ripgrepPath: this.options.ripgrepPath,
+      terminal: {
+        shell: () => shellFor(detectShells(this.ports.system), this.appState.settings.terminalShell),
+        env: this.options.processEnv,
+      },
     });
     this.projects.set(windowId, core);
     this.checkPrerequisites(core);

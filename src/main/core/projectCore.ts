@@ -1,5 +1,5 @@
 // Projekt-Kern: alles, was zu einem offenen Projekt in einem Fenster gehört, mit seinen Diensten (ab Ticket 04 der
-// Datei-Dienst; Git, Sprache, Terminal und Datenbank folgen). Lädt nie Electron.
+// Datei-Dienst, ab Ticket 11 der Terminal-Dienst; Git, Sprache und Datenbank folgen). Lädt nie Electron.
 //
 // Ereignisse an das Fenster des Projekts können auch Dienste im Kern abonnieren (`subscribe`), etwa der Git-Dienst
 // die Dateiereignisse des Datei-Dienstes.
@@ -9,6 +9,7 @@ import { followFileOperation } from './editorCommands';
 import { expandedFolderPaths } from './fileCommands';
 import { FileService } from './fileService';
 import { SearchService } from './searchService';
+import { TerminalService, type TerminalServiceOptions } from './terminalService';
 import type { EventSink, ShellActionsPort } from './ports';
 import { ProgressReporter } from './progress';
 import { projectName } from './projectPath';
@@ -40,6 +41,8 @@ export interface ProjectCoreOptions {
   progressDelayMs?: number;
   /** Pfad zu ripgrep (mitgeliefert); für Dateiliste, Suche nach Namen und Projektsuche. */
   ripgrepPath: string;
+  /** Shell und Umgebung für den Terminal-Dienst. */
+  terminal: Omit<TerminalServiceOptions, 'log'>;
 }
 
 export class ProjectCore {
@@ -64,6 +67,8 @@ export class ProjectCore {
   readonly files: FileService;
   /** Such-Dienst: Dateiliste, Suche nach Namen, Projektsuche (über ripgrep). */
   readonly search: SearchService;
+  /** Terminal-Dienst: Shells über node-pty. */
+  readonly terminals: TerminalService;
 
   constructor(options: ProjectCoreOptions) {
     this.path = options.path;
@@ -82,6 +87,7 @@ export class ProjectCore {
       progressDelayMs: options.progressDelayMs,
     });
     this.search = new SearchService(this, options.ripgrepPath, this.log);
+    this.terminals = new TerminalService(this, { ...options.terminal, log: this.log });
     // Tabs und Cursor im Zustand folgen Umbenennungen und Löschungen in Codium.
     this.subscribe('files.operation', (op) => {
       if (op.kind === 'renamed' || op.kind === 'deleted') this.updateState((state) => followFileOperation(this.path, state, op));

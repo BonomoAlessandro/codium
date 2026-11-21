@@ -121,18 +121,18 @@ describe('Einstellungen und Voraussetzungen', () => {
     const { test: first, welcome } = await start({ system: { env: m.env, home: m.home } }, root);
     const alpha = await openProject(first, welcome, project(root, 'Alpha'));
     const beta = await openProject(first, alpha, project(root, 'Beta'));
-    expect(await call(first, alpha, 'app.updateSettings', { fontSize: 15, jdk: m.jdk25old })).toEqual({ fontSize: 15, jdk: m.jdk25old });
+    expect(await call(first, alpha, 'app.updateSettings', { fontSize: 15, jdk: m.jdk25old })).toEqual({ fontSize: 15, jdk: m.jdk25old, terminalShell: null });
     for (const windowId of [alpha, beta]) {
       expect(first.events.forWindow(windowId).filter((e) => e.name === 'app.settingsChanged').map((e) => e.payload)).toEqual([
-        { fontSize: 15, jdk: m.jdk25old },
+        { fontSize: 15, jdk: m.jdk25old, terminalShell: null },
       ]);
     }
     const test = await restart(first, { system: { env: m.env, home: m.home } });
     await test.core.start();
     const windowId = test.ports.windows.windowTitled(title('Alpha'));
-    expect(await call(test, windowId, 'app.settings')).toEqual({ fontSize: 15, jdk: m.jdk25old });
+    expect(await call(test, windowId, 'app.settings')).toEqual({ fontSize: 15, jdk: m.jdk25old, terminalShell: null });
     // Zurück auf „Newest detected“.
-    expect(await call(test, windowId, 'app.updateSettings', { jdk: null })).toEqual({ fontSize: 15, jdk: null });
+    expect(await call(test, windowId, 'app.updateSettings', { jdk: null })).toEqual({ fontSize: 15, jdk: null, terminalShell: null });
     await expect(call(test, windowId, 'app.updateSettings', { jdk: 'jdk-25' })).rejects.toMatchObject({ code: ErrorCode.invalidParams });
   });
 

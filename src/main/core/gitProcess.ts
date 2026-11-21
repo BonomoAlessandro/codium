@@ -4,6 +4,7 @@
 // Lädt nie Electron.
 
 import { spawn } from 'node:child_process';
+import { killProcessTree } from './processTree';
 
 export interface GitRun {
   code: number | null;
@@ -81,31 +82,10 @@ export function startGit(git: string, args: string[], options: GitRunOptions): G
     done,
     kill: async () => {
       if (finished || pid === undefined) return;
-      await killTree(pid);
+      await killProcessTree(pid);
       await done.catch(() => {});
     },
   };
-}
-
-/**
- * Beendet einen Prozess samt Kindern. Unter Windows trifft `child.kill()` nur Git selbst, nicht `git remote-https`
- * oder den Credential Manager; deshalb `taskkill /T`.
- */
-function killTree(pid: number): Promise<void> {
-  return new Promise((resolve) => {
-    if (process.platform !== 'win32') {
-      try {
-        process.kill(pid);
-      } catch {
-        // Schon beendet.
-      }
-      resolve();
-      return;
-    }
-    const killer = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
-    killer.on('error', () => resolve());
-    killer.on('close', () => resolve());
-  });
 }
 
 /**

@@ -145,6 +145,15 @@ export class FileService {
     return this.guard.lexical(value);
   }
 
+  /** Ein vorhandener Ordner im Projekt (eine Datei heisst: ihr Ordner), etwa für „Open in Terminal“. */
+  async existingFolder(value: unknown): Promise<string> {
+    const target = await this.guard.existing(value);
+    const stat = await this.io(() => fs.promises.stat(target)).catch((err: unknown) => {
+      throw fileError(err, target, 'read');
+    });
+    return stat.isDirectory() ? target : path.dirname(target);
+  }
+
   /**
    * Die aufgeklappten Ordner (geprüfte absolute Pfade). Nur deren Inhalt merkt sich der Dienst; so liest die
    * Überwachung nach verpassten Ereignissen nur sie neu ein, nicht auch längst zugeklappte.

@@ -225,6 +225,20 @@ export interface AppSettings {
   fontSize: number;
   /** JDK für den Java-Sprachserver (Ordner); `null` heisst „Newest detected“. */
   jdk: string | null;
+  /** Shell fürs Terminal; `null` heisst Standard (PowerShell 7, sonst Windows PowerShell). */
+  terminalShell: ShellId | null;
+}
+
+/** Eine Shell fürs Terminal (Ticket 11). */
+export type ShellId = 'pwsh' | 'powershell' | 'cmd' | 'gitbash';
+
+/** Eine gefundene Shell. */
+export interface ShellInfo {
+  id: ShellId;
+  /** Name zur Anzeige, etwa „PowerShell 7“. */
+  name: string;
+  /** Pfad zur ausführbaren Datei. */
+  path: string;
 }
 
 /** Ein erkanntes JDK. */
@@ -308,6 +322,8 @@ export const ErrorCode = {
   gitNotFound: 'GIT_NOT_FOUND',
   /** Git ist gescheitert; die Meldung ist die von Git im Wortlaut. */
   gitFailed: 'GIT_FAILED',
+  /** Es gibt keine Shell fürs Terminal. */
+  shellNotFound: 'SHELL_NOT_FOUND',
 } as const;
 
 export type ErrorCodeValue = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -402,6 +418,18 @@ export interface Commands {
   'project.markdownView': { params: { path: string }; result: MarkdownView | null };
   /** Merkt die Ansicht einer Markdown-Datei; sie folgt Umbenennungen in Codium und entfällt beim Löschen. */
   'project.setMarkdownView': { params: { path: string; view: MarkdownView }; result: void };
+  /**
+   * Startet ein Terminal mit der eingestellten Shell im Ordner `cwd` (im Projekt; eine Datei heisst: ihr Ordner; ohne
+   * Angabe der Projektordner). Die Ausgabe kommt als `terminal.data`, das Ende als `terminal.exit`. Ohne Shell:
+   * `SHELL_NOT_FOUND`.
+   */
+  'terminal.start': { params: { cwd?: string; cols: number; rows: number }; result: { terminalId: number; shell: string; cwd: string } };
+  /** Eingaben an die Shell. */
+  'terminal.write': { params: { terminalId: number; data: string }; result: void };
+  /** Neue Grösse in Zeichen. */
+  'terminal.resize': { params: { terminalId: number; cols: number; rows: number }; result: void };
+  /** Beendet die Shell samt den Programmen, die sie gestartet hat. */
+  'terminal.close': { params: { terminalId: number }; result: void };
   /** Die zuletzt geöffneten Dateien des Projekts, neueste zuerst; Dateien, die es nicht mehr gibt, fehlen. */
   'project.recentFiles': { params: void; result: string[] };
   /** Merkt eine Datei als zuletzt geöffnet (höchstens 50 im Projekt-Zustand). */
@@ -414,6 +442,8 @@ export interface Commands {
    * Pfad ist) lehnt der Kern mit `INVALID_PARAMS` ab.
    */
   'app.updateSettings': { params: Partial<AppSettings>; result: AppSettings };
+  /** Die gefundenen Shells fürs Terminal und die, die ein neues Terminal ohne Einstellung nimmt. */
+  'app.shells': { params: void; result: { shells: ShellInfo[]; standard: ShellId | null } };
   /**
    * Die gespeicherten Datei-Tabs des Projekts. Tabs von Dateien, die es nicht mehr gibt (oder die jetzt Ordner sind),
    * entfallen still; war einer davon aktiv, wird sein Nachbar aktiv.
@@ -521,6 +551,10 @@ export interface Events {
    * lösen sonst keine Dateiereignisse aus. Grundlage für den Git-Dienst (Ticket 15).
    */
   'git.dataChanged': Record<string, never>;
+  /** Ausgabe eines Terminals. */
+  'terminal.data': { terminalId: number; data: string };
+  /** Die Shell eines Terminals ist beendet (auch nach `terminal.close`). */
+  'terminal.exit': { terminalId: number; exitCode: number };
 }
 
 export type CommandName = keyof Commands;
