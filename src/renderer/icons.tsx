@@ -128,6 +128,13 @@ export const CloseIcon = () => (
   </Icon>
 );
 
+/** Angehefteter Tab: Stecknadel wie in IntelliJ. */
+export const PinIcon = () => (
+  <Icon size={12}>
+    <path d="M9.5 2.5l4 4M10.5 3.5L7 7l-2.5-.5L3 8l5 5 1.5-1.5L9 9l3.5-3.5M5.5 10.5L2.5 13.5" />
+  </Icon>
+);
+
 export const InfoIcon = () => (
   <Icon>
     <circle cx="8" cy="8" r="6.5" />

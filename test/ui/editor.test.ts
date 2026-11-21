@@ -42,8 +42,17 @@ async function activeTab(page: Page): Promise<string | null> {
 
 /** Der Text, den Monaco gerade zeigt (nur die sichtbaren Zeilen). */
 function editorText(page: Page): Promise<string> {
-  // Monaco zeigt Leerzeichen als geschützte Leerzeichen.
-  return page.locator('.editor-host .view-lines').innerText().then((text) => text.replaceAll(' ', ' '));
+  // Monaco ordnet die Zeilen im DOM nicht immer in Textreihenfolge und zeigt Leerzeichen als geschützte Leerzeichen;
+  // gelesen wird deshalb nach der Lage der Zeilen.
+  return page
+    .locator('.editor-host .view-lines .view-line')
+    .evaluateAll((lines) =>
+      lines
+        .map((line) => ({ top: Number.parseFloat((line as HTMLElement).style.top), text: (line as HTMLElement).innerText }))
+        .sort((a, b) => a.top - b.top)
+        .map((line) => line.text.replaceAll('\u00a0', ' '))
+        .join('\n'),
+    );
 }
 
 function statusPosition(page: Page): Promise<string> {

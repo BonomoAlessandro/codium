@@ -69,6 +69,8 @@ export interface ProjectState {
   tabs?: string[];
   /** Der aktive Tab, einer aus `tabs`. */
   activeTab?: string;
+  /** Wie viele der ersten `tabs` angeheftet sind; ohne Angabe keiner. */
+  pinnedTabs?: number;
   /**
    * Cursor und Scrollstand je Datei, Schlüssel wie bei `tabs` (unter Windows klein geschrieben, damit eine andere
    * Schreibweise derselben Datei keinen zweiten Eintrag anlegt). Die zuletzt geänderten stehen am Ende; es bleiben
@@ -199,6 +201,10 @@ export function normalizeProjectState(projectPath: string, raw: Record<string, u
         .slice(0, MAX_TABS)
     : undefined;
   const activeTab = typeof raw.activeTab === 'string' && tabs?.includes(raw.activeTab) ? raw.activeTab : undefined;
+  const pinnedTabs =
+    tabs && typeof raw.pinnedTabs === 'number' && Number.isInteger(raw.pinnedTabs) && raw.pinnedTabs > 0
+      ? Math.min(raw.pinnedTabs, tabs.length)
+      : undefined;
   const cursors = normalizeCursors(raw.cursors);
   return {
     schemaVersion: 1,
@@ -208,6 +214,7 @@ export function normalizeProjectState(projectPath: string, raw: Record<string, u
     ...(expandedFolders ? { expandedFolders } : {}),
     ...(tabs ? { tabs } : {}),
     ...(activeTab !== undefined ? { activeTab } : {}),
+    ...(pinnedTabs !== undefined ? { pinnedTabs } : {}),
     ...(cursors ? { cursors } : {}),
   };
 }

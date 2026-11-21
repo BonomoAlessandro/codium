@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { languageForFile, PLAIN_TEXT } from '../../src/renderer/editor/languages';
-import { tabLabels, withTab, withoutTab } from '../../src/renderer/editor/tabs';
+import { pinTab, recentOrder, tabLabels, tabsToClose, unpinTab, withTab, withoutTab } from '../../src/renderer/editor/tabs';
 import { semanticRules } from '../../src/renderer/editor/theme';
 
 const ROOT = 'C:\\work\\Alpha';
@@ -58,6 +58,44 @@ describe('Öffnen und Schliessen', () => {
     // Ein anderer Tab schliesst: Der aktive bleibt.
     expect(withoutTab(tabs, at('c'), at('a'))).toEqual({ tabs: [at('b'), at('c')], active: at('c') });
     expect(withoutTab([at('a')], at('a'), at('a'))).toEqual({ tabs: [], active: null });
+  });
+});
+
+describe('Anheften und Sammel-Schliessen', () => {
+  const tab = (name: string, pinned = false) => ({ path: at(name), pinned });
+
+  it('stellt angeheftete Tabs nach links, gelöste an den Anfang der übrigen', () => {
+    const tabs = [tab('p', true), tab('a'), tab('b'), tab('c')];
+    expect(pinTab(tabs, at('c')).map((t) => [t.path, t.pinned])).toEqual([
+      [at('p'), true],
+      [at('c'), true],
+      [at('a'), false],
+      [at('b'), false],
+    ]);
+    expect(unpinTab(pinTab(tabs, at('c')), at('p')).map((t) => [t.path, t.pinned])).toEqual([
+      [at('c'), true],
+      [at('p'), false],
+      [at('a'), false],
+      [at('b'), false],
+    ]);
+  });
+
+  it('verschont angeheftete Tabs bei „Close Other Tabs“, „Close All Tabs“ und „Close Tabs to the Right“', () => {
+    const tabs = [tab('p', true), tab('a'), tab('b'), tab('c')];
+    expect(tabsToClose(tabs, 'others', at('b'))).toEqual([at('a'), at('c')]);
+    expect(tabsToClose(tabs, 'all', at('b'))).toEqual([at('a'), at('b'), at('c')]);
+    expect(tabsToClose(tabs, 'right', at('a'))).toEqual([at('b'), at('c')]);
+    expect(tabsToClose(tabs, 'right', at('c'))).toEqual([]);
+  });
+
+  it('ordnet für Ctrl + Tab die zuletzt benutzten Tabs zuerst', () => {
+    const tabs = [tab('a'), tab('b'), tab('c'), tab('d')];
+    expect(recentOrder(tabs, [at('c').toLowerCase(), at('a').toLowerCase(), at('gone').toLowerCase()])).toEqual([
+      at('c'),
+      at('a'),
+      at('b'),
+      at('d'),
+    ]);
   });
 });
 

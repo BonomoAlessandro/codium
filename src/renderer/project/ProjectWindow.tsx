@@ -22,7 +22,7 @@ import {
   type ToolWindowSide,
 } from '../../shared/types';
 import { TOOL_WINDOW_ICONS } from '../icons';
-import { commandForKey, shortcutLabel } from '../keymap';
+import { commandForKey, shortcutLabel, type KeyCommand, type ToolWindowCommand } from '../keymap';
 import type { Notify } from '../Notices';
 import { isDialogOpen } from '../popup/Dialogs';
 import { closeOpenMenus } from '../popup/Menu';
@@ -178,12 +178,21 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
     [change, moveFocusOutOf, shownLayout, stopDrag],
   );
 
-  // Tastenkürzel der Werkzeugfenster, in der Capture-Phase vor allen anderen Belegungen (später Monaco, Terminal).
-  // Während einer Rückfrage ruhen sie; ein offenes Menü schliessen sie zuerst, sonst nähme es weiter Tasten an.
+  // Die zentrale Tastenbelegung (keymap.ts), in der Capture-Phase vor allen anderen Belegungen (Monaco, später das
+  // Terminal). Während einer Rückfrage ruhen die Kürzel. Werkzeugfenster regelt das Fenster selbst, alles andere der
+  // Code-Bereich; was er nicht nimmt, geht unverändert weiter. Ein offenes Menü schliesst ein Werkzeugfenster-Kürzel
+  // zuerst, sonst nähme es weiter Tasten an.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const command = commandForKey(e);
       if (!command || isDialogOpen()) return;
+      if (!command.startsWith('toolWindow.')) {
+        if (editorRef.current?.handleCommand(command as Exclude<KeyCommand, ToolWindowCommand>, e.repeat)) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat) return;

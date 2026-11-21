@@ -58,6 +58,57 @@ function sameTail(own: readonly string[], other: readonly string[], count: numbe
   return a === b;
 }
 
+/** Was die Regeln über einen Tab wissen müssen. */
+export interface TabItem {
+  path: string;
+  pinned: boolean;
+}
+
+/** Anheften: Der Tab rückt ans Ende der angehefteten, links von allen anderen. */
+export function pinTab<T extends TabItem>(tabs: readonly T[], target: string): T[] {
+  const tab = tabs.find((t) => pathKey(t.path) === pathKey(target));
+  if (!tab || tab.pinned) return [...tabs];
+  const rest = tabs.filter((t) => t !== tab);
+  const pinnedCount = rest.filter((t) => t.pinned).length;
+  return [...rest.slice(0, pinnedCount), { ...tab, pinned: true }, ...rest.slice(pinnedCount)];
+}
+
+/** Lösen: Der Tab rückt an den Anfang der nicht angehefteten. */
+export function unpinTab<T extends TabItem>(tabs: readonly T[], target: string): T[] {
+  const tab = tabs.find((t) => pathKey(t.path) === pathKey(target));
+  if (!tab || !tab.pinned) return [...tabs];
+  const rest = tabs.filter((t) => t !== tab);
+  const pinnedCount = rest.filter((t) => t.pinned).length;
+  return [...rest.slice(0, pinnedCount), { ...tab, pinned: false }, ...rest.slice(pinnedCount)];
+}
+
+/** Was „Close Other Tabs“, „Close All Tabs“ und „Close Tabs to the Right“ schliessen: nie angeheftete Tabs. */
+export function tabsToClose(
+  tabs: readonly TabItem[],
+  action: 'others' | 'all' | 'right',
+  target: string,
+): string[] {
+  const index = tabs.findIndex((t) => pathKey(t.path) === pathKey(target));
+  return tabs
+    .filter((t, i) => {
+      if (t.pinned) return false;
+      if (action === 'others') return i !== index;
+      if (action === 'right') return index >= 0 && i > index;
+      return true;
+    })
+    .map((t) => t.path);
+}
+
+/**
+ * Die Reihenfolge für Ctrl + Tab: die zuletzt benutzten Tabs zuerst (Schlüssel aus `recent`, soweit noch offen),
+ * danach die übrigen in der Reihenfolge der Tableiste.
+ */
+export function recentOrder(tabs: readonly TabItem[], recent: readonly string[]): string[] {
+  const open = tabs.map((t) => t.path);
+  const byRecent = recent.flatMap((key) => open.filter((p) => pathKey(p) === key));
+  return [...byRecent, ...open.filter((p) => !byRecent.includes(p))];
+}
+
 /** Tabs nach dem Öffnen einer Datei: Ist sie schon offen, bleibt alles, sonst kommt sie ans Ende. */
 export function withTab(tabs: readonly string[], target: string): string[] {
   return tabs.some((t) => pathKey(t) === pathKey(target)) ? [...tabs] : [...tabs, target];

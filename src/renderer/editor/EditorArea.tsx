@@ -8,22 +8,30 @@
 // - Eingaben ändern nur das Modell; gespeichert wird mit Ticket 07. Bis dahin zeigt der Tab „ungespeichert“, solange
 //   das Modell nicht dem gelesenen Stand entspricht (auch Rückgängig zählt).
 // - Monaco öffnet andere Dateien (Sprungziele ab Ticket 12) über den eigenen Editor-Opener als Tab.
+// - Ticket 06: Mittelklick und Rechtsklick-Menü an den Tabs, angeheftete Tabs links, eine scrollbare Tableiste mit
+//   Liste aller Tabs, die Kürzel der zentralen Tastenbelegung im Editor (`handleCommand`), Ctrl + Tab durch die
+//   zuletzt benutzten Tabs und Ctrl + Mausrad für die Schriftgrösse aller Editoren.
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
-import type {
-  CodiumApi,
-  CursorState,
-  FileOperation,
-  LineEnding,
-  ProjectInfo,
-  TextEncoding,
+import {
+  MAX_FONT_SIZE,
+  MIN_FONT_SIZE,
+  type CodiumApi,
+  type CursorState,
+  type FileOperation,
+  type LineEnding,
+  type ProjectInfo,
+  type TextEncoding,
 } from '../../shared/types';
 import { errorText } from '../errors';
-import { CloseIcon, FileIcon } from '../icons';
+import { ChevronDownIcon, CloseIcon, FileIcon, PinIcon } from '../icons';
+import { shortcutLabel, type KeyCommand, type ToolWindowCommand } from '../keymap';
 import type { Notify } from '../Notices';
+import { Menu, type MenuAnchor, type MenuEntry } from '../popup/Menu';
 import { isSameOrInside, movedPath, pathKey, relativeLabel } from '../project/filePaths';
+import { EDITOR_ACTIONS } from './editorActions';
 import { EDITOR_FONT_FAMILY, editorFontReady, languageOf, monaco } from './monaco';
-import { tabLabels, withTab, withoutTab } from './tabs';
+import { pinTab, recentOrder, tabLabels, tabsToClose, unpinTab, withTab, withoutTab } from './tabs';
 
 /** Was die Statusleiste vom aktiven Tab zeigt. */
 export interface EditorStatus {
@@ -42,9 +50,17 @@ export interface OpenOptions {
   target?: EditorTarget;
 }
 
+/** Befehle der zentralen Tastenbelegung, die der Code-Bereich ausführt (alle ausser den Werkzeugfenstern). */
+export type AreaCommand = Exclude<KeyCommand, ToolWindowCommand>;
+
 export interface EditorAreaHandle {
   /** Öffnet eine Datei als Tab oder aktiviert ihren Tab. */
   open(path: string, options?: OpenOptions): void;
+  /**
+   * Führt ein Kürzel der zentralen Belegung aus. Liefert, ob es angenommen wurde; dann geht die Taste nicht weiter
+   * (auch nicht an Monaco).
+   */
+  handleCommand(command: AreaCommand, repeat: boolean): boolean;
 }
 
 /** Was ein Tab zeigt; `null`, solange die Datei noch nicht gelesen wurde. */
@@ -58,7 +74,12 @@ type TabContent =
 interface Tab {
   path: string;
   content: TabContent | null;
+  /** Angeheftet: steht links und bleibt bei „Close All Tabs“ und „Close Other Tabs“ offen. */
+  pinned: boolean;
 }
+
+/** Befehle im Editor, die auch mit dem Fokus in Monacos Suchfeld oder Eingabe wirken; die anderen brauchen den Text. */
+const WIDGET_COMMANDS: ReadonlySet<AreaCommand> = new Set(['editor.find', 'editor.replace', 'editor.gotoLine']);
 
 /** Das Modell einer offenen Textdatei mit dem, was der Editor beim Wechseln braucht. */
 interface ModelEntry {
@@ -124,7 +145,11 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   const persistTabs = useCallback(() => {
     if (!restored.current) return;
     api
-      .request('project.setTabs', { tabs: tabsRef.current.map((t) => t.path), active: activeRef.current })
+      .request('project.setTabs', {
+        tabs: tabsRef.current.map((t) => t.path),
+        active: activeRef.current,
+        pinned: tabsRef.current.filter((t) => t.pinned).map((t) => t.path),
+      })
       .catch((err: unknown) => console.error('Tabs nicht gespeichert:', err));
   }, [api]);
 
@@ -283,7 +308,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
         tabsRef.current.map((t) => t.path),
         filePath,
       );
-      if (next.length !== tabsRef.current.length) setTabs([...tabsRef.current, { path: filePath, content: null }]);
+      if (next.length !== tabsRef.current.length) setTabs([...tabsRef.current, { path: filePath, content: null, pinned: false }]);
       activate(filePath, options);
       persistTabs();
     },
@@ -327,7 +352,177 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   closeRef.current = closeTabs;
   const close = useCallback((filePath: string) => closeTabs([filePath]), [closeTabs]);
 
-  useImperativeHandle(ref, () => ({ open }), [open]);
+  // ---------- Ctrl + Tab: zuletzt benutzte Tabs ----------
+
+  /** Schlüssel der Tabs, zuletzt benutzter zuerst. */
+  const recent = useRef<string[]>([]);
+  /** Ein laufendes Ctrl + Tab: die Reihenfolge beim Start und die Stelle darin. Endet mit dem Loslassen von Ctrl. */
+  const switching = useRef<{ order: string[]; index: number } | null>(null);
+
+  useEffect(() => {
+    if (active === null || switching.current) return;
+    const key = pathKey(active);
+    recent.current = [key, ...recent.current.filter((k) => k !== key)];
+  }, [active]);
+
+  /** Ctrl + Tab (weiter in die Vergangenheit) bzw. Ctrl + Shift + Tab (zurück). */
+  const switchRecent = useCallback(
+    (step: 1 | -1) => {
+      switching.current ??= { order: recentOrder(tabsRef.current, recent.current), index: 0 };
+      const { order } = switching.current;
+      if (order.length < 2) return;
+      switching.current.index = (switching.current.index + step + order.length) % order.length;
+      activate(order[switching.current.index], { focus: true });
+    },
+    [activate],
+  );
+
+  // Loslassen von Ctrl beendet den Wechsel; erst dann zählt der gewählte Tab als zuletzt benutzt.
+  useEffect(() => {
+    const finish = () => {
+      if (!switching.current) return;
+      switching.current = null;
+      const current = activeRef.current;
+      if (current !== null) recent.current = [pathKey(current), ...recent.current.filter((k) => k !== pathKey(current))];
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Control') finish();
+    };
+    window.addEventListener('keyup', onKeyUp, true);
+    window.addEventListener('blur', finish);
+    return () => {
+      window.removeEventListener('keyup', onKeyUp, true);
+      window.removeEventListener('blur', finish);
+    };
+  }, []);
+
+  // ---------- Kürzel der zentralen Belegung ----------
+
+  const handleCommand = useCallback(
+    (command: AreaCommand, repeat: boolean): boolean => {
+      const editor = editorRef.current;
+      if (command.startsWith('editor.')) {
+        if (!editor) return false;
+        const focused = WIDGET_COMMANDS.has(command) ? editor.hasWidgetFocus() : editor.hasTextFocus();
+        if (!focused) return false;
+        editor.trigger('keyboard', EDITOR_ACTIONS[command as keyof typeof EDITOR_ACTIONS], null);
+        return true;
+      }
+      switch (command) {
+        case 'tab.close':
+          if (activeRef.current === null) return false;
+          if (!repeat) close(activeRef.current);
+          return true;
+        case 'tab.recent':
+        case 'tab.recentForward':
+          if (tabsRef.current.length === 0) return false;
+          switchRecent(command === 'tab.recent' ? 1 : -1);
+          return true;
+        default:
+          // Kürzel späterer Tickets: im Editor abfangen, damit Monacos eigene Belegung nicht wirkt.
+          return editor?.hasWidgetFocus() ?? false;
+      }
+    },
+    [close, switchRecent],
+  );
+
+  useImperativeHandle(ref, () => ({ open, handleCommand }), [open, handleCommand]);
+
+  // ---------- Anheften, Sammel-Schliessen, Menüs ----------
+
+  const setPinned = useCallback(
+    (filePath: string, pinned: boolean) => {
+      setTabs(pinned ? pinTab(tabsRef.current, filePath) : unpinTab(tabsRef.current, filePath));
+      persistTabs();
+    },
+    [persistTabs, setTabs],
+  );
+
+  /** Rechtsklick-Menü eines Tabs bzw. die Liste aller Tabs. */
+  const [menu, setMenu] = useState<{ kind: 'tab'; path: string; anchor: MenuAnchor } | { kind: 'all'; anchor: MenuAnchor } | null>(
+    null,
+  );
+
+  const tabMenuEntries = (filePath: string): MenuEntry[] => {
+    const tab = tabsRef.current.find((t) => pathKey(t.path) === pathKey(filePath));
+    if (!tab) return [];
+    const closing = (action: 'others' | 'all' | 'right') => tabsToClose(tabsRef.current, action, filePath);
+    const item = (label: string, action: 'others' | 'all' | 'right'): MenuEntry => ({
+      kind: 'item',
+      label,
+      disabled: closing(action).length === 0,
+      run: () => closeTabs(closing(action)),
+    });
+    return [
+      { kind: 'item', label: 'Close', shortcut: shortcutLabel('tab.close'), run: () => close(filePath) },
+      item('Close Other Tabs', 'others'),
+      item('Close All Tabs', 'all'),
+      item('Close Tabs to the Right', 'right'),
+      { kind: 'separator' },
+      tab.pinned
+        ? { kind: 'item', label: 'Unpin Tab', run: () => setPinned(filePath, false) }
+        : { kind: 'item', label: 'Pin Tab', run: () => setPinned(filePath, true) },
+    ];
+  };
+
+  // ---------- Tableiste: Überlauf, Scrollen, aktiven Tab zeigen ----------
+
+  const tabListRef = useRef<HTMLDivElement>(null);
+  const [overflowing, setOverflowing] = useState(false);
+  const hasTabs = tabs.length > 0;
+  useEffect(() => {
+    const list = tabListRef.current;
+    if (!list) {
+      setOverflowing(false);
+      return;
+    }
+    const measure = () => setOverflowing(list.scrollWidth > list.clientWidth + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(list);
+    for (const child of list.children) observer.observe(child);
+    return () => observer.disconnect();
+  }, [tabs]);
+
+  // Der aktive Tab ist immer zu sehen.
+  useEffect(() => {
+    if (active === null) return;
+    const el = tabListRef.current?.querySelector<HTMLElement>(`[data-key="${CSS.escape(pathKey(active))}"]`);
+    el?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [active, tabs]);
+
+  // Das Mausrad scrollt die Tableiste waagrecht (React meldet `wheel` nur passiv, daher direkt am Element).
+  useEffect(() => {
+    const list = tabListRef.current;
+    if (!list) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.deltaY === 0 || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      list.scrollLeft += e.deltaY;
+    };
+    list.addEventListener('wheel', onWheel, { passive: false });
+    return () => list.removeEventListener('wheel', onWheel);
+  }, [hasTabs]);
+
+  // ---------- Ctrl + Mausrad: Schriftgrösse aller Editoren ----------
+
+  const bodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey || e.deltaY === 0) return;
+      // Vor Monaco: Er würde sonst scrollen, und die Seite würde zoomen.
+      e.preventDefault();
+      e.stopPropagation();
+      const next = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, fontSizeRef.current + (e.deltaY < 0 ? 1 : -1)));
+      if (next === fontSizeRef.current) return;
+      fontSizeRef.current = next;
+      api.request('app.updateSettings', { fontSize: next }).catch((err: unknown) => console.error('Schriftgrösse nicht gespeichert:', err));
+    };
+    body.addEventListener('wheel', onWheel, { capture: true, passive: false });
+    return () => body.removeEventListener('wheel', onWheel, { capture: true });
+  }, [api]);
 
   // Den Editor anlegen, sobald die Schrift geladen ist (sonst misst Monaco die Zeichen der Ersatzschrift).
   useEffect(() => {
@@ -500,12 +695,17 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
         if (tabsRef.current.length > 0) {
           // Der Nutzer war schneller und hat schon geöffnet: Die gespeicherten kommen davor dazu.
           const opened = tabsRef.current;
-          const merged = [...saved.tabs.filter((p) => !opened.some((t) => pathKey(t.path) === pathKey(p))).map((p) => ({ path: p, content: null })), ...opened];
+          const pinned = new Set((saved.pinned ?? []).map(pathKey));
+          const savedTabs = saved.tabs
+            .filter((p) => !opened.some((t) => pathKey(t.path) === pathKey(p)))
+            .map((p) => ({ path: p, content: null, pinned: pinned.has(pathKey(p)) }));
+          const merged = [...savedTabs.filter((t) => t.pinned), ...savedTabs.filter((t) => !t.pinned), ...opened];
           setTabs(merged);
           persistTabs();
           return;
         }
-        setTabs(saved.tabs.map((p) => ({ path: p, content: null })));
+        const pinned = new Set((saved.pinned ?? []).map(pathKey));
+        setTabs(saved.tabs.map((p) => ({ path: p, content: null, pinned: pinned.has(pathKey(p)) })));
         if (saved.active !== null) activate(saved.active);
       },
       (err: unknown) => {
@@ -553,7 +753,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     const renamed = tabsRef.current.map((t) => {
       if (!isSameOrInside(t.path, op.from)) return t;
       const moved = movedPath(t.path, op.from, op.to);
-      return interrupted.has(pathKey(t.path)) ? { path: moved, content: null } : { ...t, path: moved };
+      return interrupted.has(pathKey(t.path)) ? { ...t, path: moved, content: null } : { ...t, path: moved };
     });
     setTabs(renamed);
     if (activeRef.current !== null && isSameOrInside(activeRef.current, op.from)) {
@@ -584,55 +784,120 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   const activeTab = active === null ? undefined : tabs.find((t) => pathKey(t.path) === pathKey(active));
   const showEditor = activeTab?.content?.kind === 'text';
 
+  const tabLabel = (tab: Tab) => labels.get(pathKey(tab.path)) ?? { name: tab.path };
+  /** Nach einem Menü geht der Fokus in den Editor zurück, wenn er etwas zeigt. */
+  const closeMenu = () => {
+    setMenu(null);
+    if (showEditorRef.current) editorRef.current?.focus();
+  };
+  const showEditorRef = useRef(showEditor);
+  showEditorRef.current = showEditor;
+
   return (
     <>
-      {tabs.length > 0 && (
-        <div className="editor-tabs" role="tablist" aria-label="Editor Tabs">
-          {tabs.map((tab) => {
-            const key = pathKey(tab.path);
-            const label = labels.get(key) ?? { name: tab.path };
-            const isActive = activeTab === tab;
-            return (
-              <div
-                key={key}
-                role="tab"
-                className={isActive ? 'editor-tab active' : 'editor-tab'}
-                aria-selected={isActive}
-                aria-label={label.hint ? `${label.name} – ${label.hint}` : label.name}
-                data-modified={dirty.has(key) ? 'true' : undefined}
-                title={relativeLabel(project.path, tab.path)}
-                tabIndex={-1}
-                onMouseDown={(e) => {
-                  if (e.button === 0) activate(tab.path, { focus: true });
-                }}
-              >
-                <span className="editor-tab-icon">
-                  <FileIcon />
-                </span>
-                <span className="editor-tab-name">{label.name}</span>
-                {label.hint && <span className="editor-tab-hint">{label.hint}</span>}
-                {dirty.has(key) && <span className="editor-tab-modified" title="Unsaved changes" />}
-                <button
-                  type="button"
-                  className="editor-tab-close"
-                  aria-label={`Close ${label.name}`}
-                  title="Close"
+      {hasTabs && (
+        <div className="editor-tabs-bar">
+          <div ref={tabListRef} className="editor-tabs" role="tablist" aria-label="Editor Tabs">
+            {tabs.map((tab) => {
+              const key = pathKey(tab.path);
+              const label = tabLabel(tab);
+              const isActive = activeTab === tab;
+              return (
+                <div
+                  key={key}
+                  data-key={key}
+                  role="tab"
+                  className={`editor-tab${isActive ? ' active' : ''}${tab.pinned ? ' pinned' : ''}`}
+                  aria-selected={isActive}
+                  aria-label={label.hint ? `${label.name} – ${label.hint}` : label.name}
+                  data-modified={dirty.has(key) ? 'true' : undefined}
+                  data-pinned={tab.pinned ? 'true' : undefined}
+                  title={relativeLabel(project.path, tab.path)}
                   tabIndex={-1}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={() => close(tab.path)}
+                  onMouseDown={(e) => {
+                    if (e.button === 0) activate(tab.path, { focus: true });
+                    // Mittelklick: ohne das Scrollen mit dem Mausrad, das Chromium sonst beginnt.
+                    if (e.button === 1) e.preventDefault();
+                  }}
+                  onAuxClick={(e) => {
+                    if (e.button === 1) close(tab.path);
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setMenu({ kind: 'tab', path: tab.path, anchor: { x: e.clientX, y: e.clientY } });
+                  }}
                 >
-                  <CloseIcon />
-                </button>
-              </div>
-            );
-          })}
+                  <span className="editor-tab-icon">
+                    <FileIcon />
+                  </span>
+                  <span className="editor-tab-name">{label.name}</span>
+                  {label.hint && <span className="editor-tab-hint">{label.hint}</span>}
+                  {dirty.has(key) && <span className="editor-tab-modified" title="Unsaved changes" />}
+                  {tab.pinned ? (
+                    <button
+                      type="button"
+                      className="editor-tab-close editor-tab-pin"
+                      aria-label={`Unpin ${label.name}`}
+                      title="Unpin Tab"
+                      tabIndex={-1}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={() => setPinned(tab.path, false)}
+                    >
+                      <PinIcon />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="editor-tab-close"
+                      aria-label={`Close ${label.name}`}
+                      title="Close"
+                      tabIndex={-1}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={() => close(tab.path)}
+                    >
+                      <CloseIcon />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {overflowing && (
+            <button
+              type="button"
+              className="icon-button editor-tabs-all"
+              aria-label="Show All Tabs"
+              title="Show All Tabs"
+              aria-haspopup="menu"
+              onClick={(e) => setMenu({ kind: 'all', anchor: e.currentTarget })}
+            >
+              <ChevronDownIcon />
+            </button>
+          )}
         </div>
       )}
-      <div className="editor-body">
+      <div ref={bodyRef} className="editor-body">
         <div ref={hostRef} className="editor-host" style={showEditor ? undefined : { display: 'none' }} />
-        {tabs.length === 0 && empty}
+        {!hasTabs && empty}
         {activeTab && !showEditor && <TabNotice tab={activeTab} />}
       </div>
+      {menu?.kind === 'tab' && <Menu label="Editor Tab" entries={tabMenuEntries(menu.path)} anchor={menu.anchor} onClose={closeMenu} />}
+      {menu?.kind === 'all' && (
+        <Menu
+          label="All Tabs"
+          entries={tabs.map((tab): MenuEntry => {
+            const label = tabLabel(tab);
+            return {
+              kind: 'item',
+              label: label.name,
+              detail: label.hint ?? relativeLabel(project.path, tab.path),
+              run: () => activate(tab.path, { focus: true }),
+            };
+          })}
+          anchor={menu.anchor}
+          onClose={closeMenu}
+        />
+      )}
     </>
   );
 });

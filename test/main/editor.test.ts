@@ -235,7 +235,7 @@ describe('Editor im Kern', () => {
     it('stellt Tabs, aktiven Tab und Cursor nach einem Neustart wieder her', async () => {
       const { test: first, windowId: firstWindow, at } = await openAlpha({ 'src/A.java': 'a', 'src/B.java': 'b', 'README.md': 'r' });
       // Ohne gespeicherte Tabs keine.
-      expect(await call(first, firstWindow, 'project.tabs')).toEqual({ tabs: [], active: null });
+      expect(await call(first, firstWindow, 'project.tabs')).toEqual({ tabs: [], active: null, pinned: [] });
       expect(await call(first, firstWindow, 'project.cursor', { path: at('src', 'A.java') })).toBeNull();
 
       const tabs = [at('README.md'), at('src', 'B.java'), at('src', 'A.java')];
@@ -245,7 +245,7 @@ describe('Editor im Kern', () => {
       await call(first, firstWindow, 'project.setCursor', { path: at('notes.txt'), cursor: { line: 2, column: 1, scrollTop: 0 } });
 
       const { test, windowId } = await restarted(first);
-      expect(await call(test, windowId, 'project.tabs')).toEqual({ tabs, active: at('src', 'B.java') });
+      expect(await call(test, windowId, 'project.tabs')).toEqual({ tabs, active: at('src', 'B.java'), pinned: [] });
       expect(await call(test, windowId, 'project.cursor', { path: at('src', 'B.java') })).toEqual({ line: 3, column: 5, scrollTop: 40 });
       // Die Schreibweise des Pfads spielt keine Rolle.
       expect(await call(test, windowId, 'project.cursor', { path: at('SRC', 'b.java') })).toEqual({ line: 3, column: 5, scrollTop: 40 });
@@ -263,14 +263,14 @@ describe('Editor im Kern', () => {
       fs.rmSync(at('c.txt'));
       fs.mkdirSync(at('c.txt'));
       const { test, windowId } = await restarted(first);
-      expect(await call(test, windowId, 'project.tabs')).toEqual({ tabs: [at('a.txt'), at('d.txt')], active: at('d.txt') });
+      expect(await call(test, windowId, 'project.tabs')).toEqual({ tabs: [at('a.txt'), at('d.txt')], active: at('d.txt'), pinned: [] });
 
       // Fehlt auch alles dahinter, wird der vorherige aktiv; fehlt alles, gibt es keinen.
       await call(test, windowId, 'project.setTabs', { tabs: [at('a.txt'), at('d.txt')], active: at('d.txt') });
       fs.rmSync(at('d.txt'));
-      expect(await call(test, windowId, 'project.tabs')).toEqual({ tabs: [at('a.txt')], active: at('a.txt') });
+      expect(await call(test, windowId, 'project.tabs')).toEqual({ tabs: [at('a.txt')], active: at('a.txt'), pinned: [] });
       fs.rmSync(at('a.txt'));
-      expect(await call(test, windowId, 'project.tabs')).toEqual({ tabs: [], active: null });
+      expect(await call(test, windowId, 'project.tabs')).toEqual({ tabs: [], active: null, pinned: [] });
     });
 
     it('lässt Tabs und Cursor Umbenennungen und Löschungen in Codium folgen', async () => {
@@ -281,13 +281,13 @@ describe('Editor im Kern', () => {
 
       // Den Ordner umbenennen: Tab und Cursor der Datei darin ziehen mit.
       await call(test, windowId, 'files.rename', { path: at('src', 'a'), newName: 'b' });
-      expect(await call(test, windowId, 'project.tabs')).toEqual({ tabs: [at('src', 'b', 'A.java'), at('C.java')], active: at('src', 'b', 'A.java') });
+      expect(await call(test, windowId, 'project.tabs')).toEqual({ tabs: [at('src', 'b', 'A.java'), at('C.java')], active: at('src', 'b', 'A.java'), pinned: [] });
       expect(await call(test, windowId, 'project.cursor', { path: at('src', 'b', 'A.java') })).toEqual({ line: 7, column: 2, scrollTop: 0 });
       expect(await call(test, windowId, 'project.cursor', { path: at('src', 'a', 'A.java') })).toBeNull();
 
       // Löschen entfernt Tab und Cursor.
       await call(test, windowId, 'files.delete', { paths: [at('src')] });
-      expect(await call(test, windowId, 'project.tabs')).toEqual({ tabs: [at('C.java')], active: at('C.java') });
+      expect(await call(test, windowId, 'project.tabs')).toEqual({ tabs: [at('C.java')], active: at('C.java'), pinned: [] });
       expect(await call(test, windowId, 'project.cursor', { path: at('src', 'b', 'A.java') })).toBeNull();
       expect(await call(test, windowId, 'project.cursor', { path: at('C.java') })).toEqual({ line: 1, column: 4, scrollTop: 0 });
     });
@@ -309,7 +309,7 @@ describe('Editor im Kern', () => {
       await invalid('project.setCursor', { path: at('a.txt'), cursor: { line: 1, column: 1.5, scrollTop: 0 } });
       await invalid('project.setCursor', { path: at('a.txt'), cursor: { line: 1, column: 1, scrollTop: -1 } });
       await invalid('project.setCursor', { path: path.join(root, 'x.txt'), cursor: { line: 1, column: 1, scrollTop: 0 } });
-      expect(await call(test, windowId, 'project.tabs')).toEqual({ tabs: [], active: null });
+      expect(await call(test, windowId, 'project.tabs')).toEqual({ tabs: [], active: null, pinned: [] });
     });
 
     it('übergeht doppelte Tabs in einer beschädigten Zustandsdatei, damit sich die Tabs weiter speichern lassen', async () => {
@@ -326,8 +326,30 @@ describe('Editor im Kern', () => {
       await test.core.start();
       const windowId = test.ports.windows.windowTitled(title('Alpha'));
       const tabs = await call(test, windowId, 'project.tabs');
-      expect(tabs).toEqual({ tabs: [at('a.txt'), at('b.txt')], active: at('b.txt') });
+      expect(tabs).toEqual({ tabs: [at('a.txt'), at('b.txt')], active: at('b.txt'), pinned: [] });
       await expect(call(test, windowId, 'project.setTabs', tabs)).resolves.toBeUndefined();
+    });
+
+    it('sichert angeheftete Tabs über einen Neustart; Löschen und fehlende Dateien verringern sie', async () => {
+      const { test: first, windowId: firstWindow, at } = await openAlpha({ 'a.txt': 'a', 'b.txt': 'b', 'c.txt': 'c', 'd.txt': 'd' });
+      const tabs = ['a.txt', 'b.txt', 'c.txt', 'd.txt'].map((n) => at(n));
+      // Angeheftete müssen die ersten Tabs sein.
+      await expect(
+        call(first, firstWindow, 'project.setTabs', { tabs, active: at('c.txt'), pinned: [at('b.txt')] }),
+      ).rejects.toMatchObject({ code: ErrorCode.invalidParams });
+      await call(first, firstWindow, 'project.setTabs', { tabs, active: at('c.txt'), pinned: [at('a.txt'), at('b.txt')] });
+
+      const { test, windowId } = await restarted(first);
+      expect(await call(test, windowId, 'project.tabs')).toEqual({ tabs, active: at('c.txt'), pinned: [at('a.txt'), at('b.txt')] });
+      // Ein angehefteter Tab wird in Codium gelöscht, einer fehlt nach dem nächsten Neustart.
+      await call(test, windowId, 'files.delete', { paths: [at('a.txt')] });
+      expect(await call(test, windowId, 'project.tabs')).toMatchObject({ pinned: [at('b.txt')] });
+      fs.rmSync(at('b.txt'));
+      const { test: third, windowId: thirdWindow } = await restarted(test);
+      expect(await call(third, thirdWindow, 'project.tabs')).toEqual({ tabs: [at('c.txt'), at('d.txt')], active: at('c.txt'), pinned: [] });
+      // c.txt ist jetzt der erste Tab, aber nicht angeheftet.
+      await call(third, thirdWindow, 'project.setTabs', { tabs: [at('c.txt'), at('d.txt')], active: at('c.txt') });
+      expect(await call(third, thirdWindow, 'project.tabs')).toMatchObject({ pinned: [] });
     });
 
     it('merkt sich die Cursor der zuletzt benutzten 500 Dateien', async () => {

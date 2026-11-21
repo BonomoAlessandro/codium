@@ -168,6 +168,8 @@ kbd {
 
 .project-window {
   display: grid;
+  /* Die Spalte wächst nie über das Fenster hinaus, auch nicht mit sehr vielen Tabs. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: var(--header-height) minmax(0, 1fr) var(--statusbar-height);
   height: 100%;
 }
@@ -494,13 +496,38 @@ kbd {
 
 /* ---------- Datei-Tabs und Editor ---------- */
 
-.editor-tabs {
+.editor-tabs-bar {
   display: flex;
   flex: none;
+  align-items: stretch;
   height: var(--editor-tabs-height);
-  overflow: hidden;
   background: var(--bg);
   border-bottom: 1px solid var(--border-subtle);
+}
+
+/* Beliebig viele Tabs: Die Leiste scrollt waagrecht (auch mit dem Mausrad), ohne sichtbare Bildlaufleiste. */
+.editor-tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.editor-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* „Show All Tabs“ rechts neben der Leiste, wenn nicht alle Tabs hineinpassen. */
+.editor-tabs-all {
+  align-self: center;
+  margin: 0 6px;
+}
+
+/* Die Stecknadel eines angehefteten Tabs ist immer zu sehen und löst ihn beim Klick. */
+.editor-tab.pinned .editor-tab-pin {
+  visibility: visible;
 }
 
 .editor-tab {
@@ -529,7 +556,7 @@ kbd {
   content: '';
   position: absolute;
   right: 0;
-  bottom: -1px;
+  bottom: 0;
   left: 0;
   height: 2px;
   background: var(--accent);

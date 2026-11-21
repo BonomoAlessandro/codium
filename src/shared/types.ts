@@ -200,6 +200,8 @@ export interface EditorTabs {
   tabs: string[];
   /** Pfad des aktiven Tabs; `null` ohne Tabs. Muss einer der Tabs sein. */
   active: string | null;
+  /** Die angehefteten Tabs; sie stehen links, vor allen anderen. Ohne Angabe keine. */
+  pinned?: string[];
 }
 
 /**
@@ -299,7 +301,7 @@ export interface Commands {
   'project.tabs': { params: void; result: EditorTabs };
   /**
    * Speichert die offenen Datei-Tabs. Geprüft wird ohne Dateizugriff: absolute Pfade im Projekt, ohne Doppelte,
-   * `active` einer der Tabs oder `null` (sonst `INVALID_PARAMS`).
+   * `active` einer der Tabs oder `null`, `pinned` die ersten Tabs der Reihe (sonst `INVALID_PARAMS`).
    */
   'project.setTabs': { params: EditorTabs; result: void };
   /** Der zuletzt bekannte Cursor und Scrollstand einer Datei, `null`, wenn keiner gespeichert ist. */

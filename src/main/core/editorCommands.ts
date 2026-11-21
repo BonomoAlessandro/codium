@@ -58,16 +58,17 @@ function requireFilePath(project: ProjectCore, value: unknown): string {
  * nächste verbliebene Tab aktiv, sonst der vorherige.
  */
 async function savedTabs(project: ProjectCore): Promise<EditorTabs> {
-  const { tabs = [], activeTab } = project.state;
+  const { tabs = [], activeTab, pinnedTabs = 0 } = project.state;
   const absolute = tabs.map((relative) => absoluteOf(project, relative));
   const exists = await project.files.existingFiles(absolute);
   const kept = absolute.filter((_, i) => exists[i]);
-  if (kept.length === 0) return { tabs: [], active: null };
+  const pinned = absolute.filter((_, i) => i < pinnedTabs && exists[i]);
+  if (kept.length === 0) return { tabs: [], active: null, pinned: [] };
   const activeIndex = activeTab === undefined ? -1 : tabs.indexOf(activeTab);
-  if (activeIndex < 0) return { tabs: kept, active: kept[0] };
+  if (activeIndex < 0) return { tabs: kept, active: kept[0], pinned };
   const next = absolute.findIndex((_, i) => i >= activeIndex && exists[i]);
   const previous = absolute.findLastIndex((_, i) => i < activeIndex && exists[i]);
-  return { tabs: kept, active: absolute[next >= 0 ? next : previous] };
+  return { tabs: kept, active: absolute[next >= 0 ? next : previous], pinned };
 }
 
 function setTabs(project: ProjectCore, params: unknown): void {
@@ -90,10 +91,20 @@ function setTabs(project: ProjectCore, params: unknown): void {
     activeTab = tabs.find((t) => relativeKey(t) === key);
     if (activeTab === undefined) throw invalidParams('The active tab must be one of the tabs.');
   }
+  // Angeheftete Tabs: die ersten der Reihe, in derselben Reihenfolge.
+  const pinned = record.pinned ?? [];
+  if (!Array.isArray(pinned) || pinned.length > tabs.length) throw invalidParams('Pinned tabs must be tabs.');
+  pinned.forEach((value, i) => {
+    if (relativeKey(relativeOf(project, requireFilePath(project, value))) !== relativeKey(tabs[i])) {
+      throw invalidParams('Pinned tabs must come first, in the order of the tabs.');
+    }
+  });
   project.updateState((state) => {
     state.tabs = tabs;
     if (activeTab === undefined) delete state.activeTab;
     else state.activeTab = activeTab;
+    if (pinned.length === 0) delete state.pinnedTabs;
+    else state.pinnedTabs = pinned.length;
   });
 }
 
@@ -137,6 +148,10 @@ export function followFileOperation(projectPath: string, state: ProjectState, op
   if (state.tabs) {
     const active = state.activeTab;
     const moved = state.tabs.map((t) => ({ before: t, after: move(t) }));
+    // Gelöschte unter den angehefteten verringern ihre Zahl.
+    const pinned = moved.slice(0, state.pinnedTabs ?? 0).filter((m) => m.after !== null).length;
+    if (pinned > 0) state.pinnedTabs = pinned;
+    else delete state.pinnedTabs;
     state.tabs = moved.flatMap((m) => (m.after === null ? [] : [m.after]));
     const activeAfter = moved.find((m) => m.before === active)?.after;
     if (activeAfter) state.activeTab = activeAfter;
