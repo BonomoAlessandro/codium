@@ -4,6 +4,14 @@
 // Wichtig für die erste echte Schemaänderung (Version 2): Sie muss eine Übernahme aus Version 1 mitbringen.
 // Ohne sie legt StateFile jede Datei mit Version 1 als kaputt beiseite.
 
+import {
+  TOOL_WINDOW_SIDE,
+  TOOL_WINDOW_SIDES,
+  isToolWindowId,
+  type ToolWindowLayout,
+  type ToolWindowSide,
+  type ToolWindowSideLayout,
+} from '../../shared/types';
 import type { Bounds, WindowPlacement } from './ports';
 
 export const APP_STATE_FILE = 'state.json';
@@ -40,6 +48,54 @@ export interface ProjectState {
   path: string;
   /** Lage des Projektfensters. */
   window?: WindowPlacement;
+  /** Layout der Werkzeugfenster; ohne Angabe gilt `defaultLayout()`. */
+  layout?: ToolWindowLayout;
+}
+
+/** Grösste Grösse eines Werkzeugfensters in Pixeln, die der Kern annimmt; die Oberfläche begrenzt enger. */
+export const MAX_TOOL_WINDOW_SIZE = 10_000;
+
+/** Layout eines Projekts ohne gespeichertes: links „Project“ offen, unten „Terminal“ und rechts „Database“ zu. */
+export function defaultLayout(): ToolWindowLayout {
+  return {
+    left: { active: 'project', open: true, size: 280 },
+    bottom: { active: 'terminal', open: false, size: 260 },
+    right: { active: 'database', open: false, size: 320 },
+  };
+}
+
+/**
+ * Prüft ein vollständiges Layout aus unbekannter Quelle (Befehl `project.setLayout`): `undefined`, sobald eine Seite
+ * fehlt oder nicht passt. Grössen werden auf ganze Pixel gerundet.
+ */
+export function parseLayout(value: unknown): ToolWindowLayout | undefined {
+  if (!isRecord(value)) return undefined;
+  const sides: Partial<ToolWindowLayout> = {};
+  for (const side of TOOL_WINDOW_SIDES) {
+    const parsed = parseSideLayout(side, value[side]);
+    if (!parsed) return undefined;
+    sides[side] = parsed;
+  }
+  return sides as ToolWindowLayout;
+}
+
+/** Ein Layout aus der Zustandsdatei: Unbrauchbare Seiten bekommen den Standard; `undefined`, wenn das Feld fehlt. */
+function normalizeLayout(value: unknown): ToolWindowLayout | undefined {
+  if (!isRecord(value)) return undefined;
+  const defaults = defaultLayout();
+  const layout = { ...defaults };
+  for (const side of TOOL_WINDOW_SIDES) layout[side] = parseSideLayout(side, value[side]) ?? defaults[side];
+  return layout;
+}
+
+/** Eine Seite: ein Werkzeugfenster dieser Seite, offen ja oder nein, eine Grösse von 1 bis `MAX_TOOL_WINDOW_SIZE`. */
+function parseSideLayout(side: ToolWindowSide, value: unknown): ToolWindowSideLayout | undefined {
+  if (!isRecord(value)) return undefined;
+  const { active, open, size } = value;
+  if (!isToolWindowId(active) || TOOL_WINDOW_SIDE[active] !== side) return undefined;
+  if (typeof open !== 'boolean') return undefined;
+  if (typeof size !== 'number' || !Number.isFinite(size) || size < 1 || size > MAX_TOOL_WINDOW_SIZE) return undefined;
+  return { active, open, size: Math.round(size) };
 }
 
 export function emptyAppState(): AppState {
@@ -68,10 +124,12 @@ export function normalizeAppState(raw: Record<string, unknown>): AppState {
 /** Prüft die Felder eines gelesenen Projekt-Zustands; Ungültiges wird durch den Standardwert ersetzt. */
 export function normalizeProjectState(projectPath: string, raw: Record<string, unknown>): ProjectState {
   const window = placement(raw.window);
+  const layout = normalizeLayout(raw.layout);
   return {
     schemaVersion: 1,
     path: projectPath,
     ...(window ? { window } : {}),
+    ...(layout ? { layout } : {}),
   };
 }
 

@@ -1,8 +1,9 @@
 // Projekt-Kern: alles, was zu einem offenen Projekt in einem Fenster gehört. Spätere Tickets hängen hier
 // ihre Dienste an (Dateien, Git, Sprache, Terminal, Datenbank). Lädt nie Electron.
 
-import type { EventName, Events, ProjectInfo } from '../../shared/types';
+import type { EventName, Events, Notice, ProjectInfo } from '../../shared/types';
 import type { EventSink } from './ports';
+import { ProgressReporter } from './progress';
 import { projectName } from './projectPath';
 import type { ProjectState } from './schema';
 import type { StateFile } from './stateFile';
@@ -19,6 +20,8 @@ export class ProjectCore {
   private readonly lateCleanups: Promise<void>[] = [];
   private disposing: Promise<void> | null = null;
   private disposeFinished = false;
+  /** Fortschritt laufender Arbeiten des Projekts, für die Statusleiste seines Fensters. */
+  readonly progress = new ProgressReporter((event) => this.emit('app.progress', event));
 
   constructor(
     /** Normalisierter Pfad des Projektordners. */
@@ -61,10 +64,15 @@ export class ProjectCore {
     this.stateFile.save(next);
   }
 
-  /** Schickt ein Ereignis an das Fenster dieses Projekts. */
+  /** Schickt ein Ereignis an das Fenster dieses Projekts; nach Beginn des Abbaus nichts mehr. */
   emit<K extends EventName>(name: K, payload: Events[K]): void {
     if (this.disposed) return;
     this.events.send(this.windowId, name, payload);
+  }
+
+  /** Zeigt eine Meldung unten rechts im Fenster dieses Projekts. */
+  notify(notice: Notice): void {
+    this.emit('app.notice', notice);
   }
 
   /**

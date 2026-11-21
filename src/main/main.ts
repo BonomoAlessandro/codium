@@ -1,8 +1,8 @@
 // Muss der erste Import bleiben: Fehlerbehandlung im Testmodus und Grösse des Threadpools (siehe earlyStart.ts).
 import './earlyStart';
-import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from 'electron';
 import * as path from 'node:path';
-import { IPC, type EventMessage, type RequestMessage, type ResponseMessage } from '../shared/types';
+import { IPC, type EventMessage, type EventName, type RequestMessage, type ResponseMessage } from '../shared/types';
 import { AppCore } from './core/appCore';
 import type { EventSink } from './core/ports';
 import { dataFolder } from './dataFolder';
@@ -10,7 +10,7 @@ import { DEV_MENU } from './devMenu';
 import { ElectronFolderPicker, ElectronSecrets, ElectronShellActions } from './electron/otherPorts';
 import { ElectronWindowPort } from './electron/windowPort';
 import { NodeSystem } from './system/nodeSystem';
-import { readTestMode, TEST_RECORDER_GLOBAL, TestRecorder } from './testMode';
+import { readTestMode, TEST_HOOKS_GLOBAL, TEST_RECORDER_GLOBAL, TestRecorder, type TestHooks } from './testMode';
 
 // Testmodus für automatische Prüfungen (siehe testMode.ts). Gilt auch für die gebaute App. Den Handler für nicht
 // abgefangene Ausnahmen im Testmodus meldet schon earlyStart.ts an.
@@ -53,6 +53,9 @@ async function start(): Promise<void> {
 }
 
 async function startCore(): Promise<void> {
+  // Codium ist nur dunkel: Auch was Chromium und Electron selbst zeichnen (Bildlaufleisten, Entwicklerwerkzeuge,
+  // Menü der Entwicklungsversion), folgt dem dunklen Design statt dem von Windows.
+  nativeTheme.themeSource = 'dark';
   // Im Dev-Modus ein Menü mit DevTools und Neu laden; die installierte App hat keines.
   Menu.setApplicationMenu(app.isPackaged ? null : Menu.buildFromTemplate(DEV_MENU));
 
@@ -80,6 +83,12 @@ async function startCore(): Promise<void> {
     },
   });
   const appCore = core;
+  if (testMode.hidden) {
+    const hooks: TestHooks = {
+      emit: (windowId, name, payload) => appCore.emitToWindow(windowId, name as EventName, payload as never),
+    };
+    (globalThis as Record<string, unknown>)[TEST_HOOKS_GLOBAL] = hooks;
+  }
 
   ipcMain.handle(IPC.request, (event, message: RequestMessage): Promise<ResponseMessage> => {
     const windowId = BrowserWindow.fromWebContents(event.sender)?.id ?? -1;

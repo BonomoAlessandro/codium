@@ -15,12 +15,14 @@ import {
   type CommandResult,
   type EventName,
   type Events,
+  type Notice,
   type ProjectInfo,
   type RecentProject,
   type WindowInfo,
 } from '../../shared/types';
 import { BufferedEventSink } from './bufferedEvents';
 import type { EventSink, Ports, WindowPlacement } from './ports';
+import { ProgressReporter } from './progress';
 import { DEFAULT_CLEANUP_TIMEOUT_MS, ProjectCore } from './projectCore';
 import { FolderQueries, type FolderStatus } from './folderQueries';
 import { lexicalProjectKey, normalizeProjectPath, projectName, projectStateFileName } from './projectPath';
@@ -30,10 +32,12 @@ import {
   PROJECT_STATE_DIR,
   RECENT_PROJECTS_LIMIT,
   SCHEMA_VERSION,
+  defaultLayout,
   emptyAppState,
   emptyProjectState,
   normalizeAppState,
   normalizeProjectState,
+  parseLayout,
   type AppState,
   type ProjectState,
 } from './schema';
@@ -128,6 +132,19 @@ export class AppCore {
     this.events.send(windowId, name, payload);
   }
 
+  /** Zeigt eine Meldung in einem Fenster, auch in einem ohne Projekt. Für Projektfenster gibt es `ProjectCore.notify`. */
+  notifyWindow(windowId: number, notice: Notice): void {
+    this.emitToWindow(windowId, 'app.notice', notice);
+  }
+
+  /**
+   * Fortschritt für die Statusleiste eines Fensters, auch eines ohne Projekt (etwa beim Klonen aus dem
+   * Willkommensfenster). Für Projektfenster gibt es `ProjectCore.progress`.
+   */
+  progressForWindow(windowId: number): ProgressReporter {
+    return new ProgressReporter((event) => this.emitToWindow(windowId, 'app.progress', event));
+  }
+
   /**
    * Start: öffnet die Projekte, die beim Beenden offen waren. Bleibt keines offen, erscheint das
    * Willkommensfenster. Übersprungene Projekte werden gemeldet:
@@ -172,14 +189,28 @@ export class AppCore {
     if (this.projects.size === 0) this.openWelcomeWindow();
     const target = this.lastUsedWindow();
     if (target !== undefined) {
-      for (const { path: projectPath, status } of skipped) {
-        const text = `Project folder ${status === 'missing' ? 'not found' : 'not reachable'}: ${projectPath}`;
-        this.emitToWindow(target, 'app.notice', { level: 'error', text });
-      }
+      for (const { path: projectPath, status } of skipped) this.notifyWindow(target, this.skippedNotice(projectPath, status));
     }
     // Erst jetzt, nach den Prüfungen fürs Wiederöffnen: die Schlüssel der zuletzt geöffneten Projekte im
     // Hintergrund auflösen, damit spätere Vergleiche auch Kurznamen und Junctions erkennen.
     void Promise.all(this.appState.recentProjects.map((p) => this.keyOf(p)));
+  }
+
+  /**
+   * Meldung für ein beim Start übersprungenes Projekt. Ein fehlender Ordner, der noch unter den zuletzt geöffneten
+   * steht, lässt sich gleich aus der Liste entfernen; ein nicht erreichbarer bleibt, er geht vielleicht bald wieder.
+   */
+  private skippedNotice(projectPath: string, status: Exclude<FolderStatus, 'exists'>): Notice {
+    if (status === 'unreachable') return { level: 'error', text: `Project folder not reachable: ${projectPath}` };
+    const key = this.knownKey(projectPath);
+    const recent = this.appState.recentProjects.find((p) => this.knownKey(p) === key);
+    return {
+      level: 'error',
+      text: `Project folder not found: ${projectPath}`,
+      ...(recent === undefined
+        ? {}
+        : { actions: [{ label: 'Remove from List', action: 'recentProjects.remove', params: { path: recent } }] }),
+    };
   }
 
   /**
@@ -322,6 +353,14 @@ export class AppCore {
       return this.recentProjects();
     });
     this.router.register('app.exit', () => this.quit());
+    this.registerProjectCommand('project.layout', (project) => project.state.layout ?? defaultLayout());
+    this.registerProjectCommand('project.setLayout', (project, params) => {
+      const layout = parseLayout(params);
+      if (!layout) throw new CommandError('The tool window layout is invalid.', ErrorCode.invalidParams);
+      project.updateState((state) => {
+        state.layout = layout;
+      });
+    });
   }
 
   /** `openProject`; mit `remember = false` bleibt die Reihenfolge der zuletzt geöffneten Projekte, wie sie ist. */

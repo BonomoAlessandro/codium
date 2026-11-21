@@ -11,6 +11,8 @@ interface Pending {
 export class BufferedEventSink implements EventSink {
   private readonly ready = new Set<number>();
   private readonly queues = new Map<number, Pending[]>();
+  /** Geschlossene Fenster; Kennungen werden nicht wiederverwendet, Ereignisse an sie fallen weg. */
+  private readonly closed = new Set<number>();
 
   constructor(
     private readonly inner: EventSink,
@@ -19,6 +21,7 @@ export class BufferedEventSink implements EventSink {
   ) {}
 
   send(windowId: number, name: string, payload: unknown): void {
+    if (this.closed.has(windowId)) return;
     if (this.ready.has(windowId)) {
       this.inner.send(windowId, name, payload);
       return;
@@ -31,14 +34,16 @@ export class BufferedEventSink implements EventSink {
 
   /** Das Fenster ist bereit: zurückgehaltene Ereignisse in ihrer Reihenfolge zustellen, neue direkt. */
   markReady(windowId: number): void {
+    if (this.closed.has(windowId)) return;
     this.ready.add(windowId);
     const queue = this.queues.get(windowId) ?? [];
     this.queues.delete(windowId);
     for (const { name, payload } of queue) this.inner.send(windowId, name, payload);
   }
 
-  /** Das Fenster ist zu: nichts mehr zustellen, nichts mehr zurückhalten. */
+  /** Das Fenster ist zu: nichts mehr zustellen, nichts mehr zurückhalten, auch später nicht. */
   forget(windowId: number): void {
+    this.closed.add(windowId);
     this.ready.delete(windowId);
     this.queues.delete(windowId);
   }

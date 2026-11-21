@@ -9,7 +9,8 @@ import * as path from 'node:path';
 import { _electron, type ElectronApplication, type Page } from 'playwright-core';
 import { dataFolder } from '../../src/main/dataFolder';
 import { APP_STATE_FILE, emptyAppState, type AppState } from '../../src/main/core/schema';
-import type { TestEvent } from '../../src/main/testMode';
+import type { TestEvent, TestHooks } from '../../src/main/testMode';
+import type { EventName, Events } from '../../src/shared/types';
 import { shieldedGitEnv } from './git';
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
@@ -48,6 +49,11 @@ export interface LaunchedApp {
   /** Die Seite des Fensters mit diesem Titel, sobald es sie gibt. */
   page(title: string): Promise<Page>;
   /**
+   * Schickt ein Ereignis an das Fenster mit diesem Titel, auf demselben Weg wie der Kern (über die Eingriffe des
+   * Testmodus). Für Ereignisse, deren echte Quelle es noch nicht gibt, etwa Fortschritt vor den Git-Aktionen.
+   */
+  emit<K extends EventName>(title: string, name: K, payload: Events[K]): Promise<void>;
+  /**
    * Startet Codium ein zweites Mal mit derselben Umgebung, ohne Playwright. Der zweite Start muss sich wegen der
    * Einzelinstanz-Sperre sofort beenden; tut er das nicht, wird er beendet und der Aufruf scheitert.
    */
@@ -83,19 +89,31 @@ export async function launchCodium(options: LaunchOptions): Promise<LaunchedApp>
         .map((w) => w.getTitle())
         .sort(),
     );
+  const windowId = async (title: string): Promise<number> => {
+    const id = await app.evaluate(
+      ({ BrowserWindow }, wanted) => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.getTitle() === wanted)?.id,
+      title,
+    );
+    if (id === undefined) throw new Error(`Kein Fenster mit dem Titel ${title}; offen: ${(await windowTitles()).join(', ')}`);
+    return id;
+  };
   return {
     app,
     recorded: () => app.evaluate(() => (globalThis as { __codiumTest?: { events: TestEvent[] } }).__codiumTest?.events ?? []),
     windowTitles,
-    async windowId(title) {
-      const id = await app.evaluate(
-        ({ BrowserWindow }, wanted) => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.getTitle() === wanted)?.id,
-        title,
-      );
-      if (id === undefined) throw new Error(`Kein Fenster mit dem Titel ${title}; offen: ${(await windowTitles()).join(', ')}`);
-      return id;
-    },
+    windowId,
     page: (title) => findPage(app, title),
+    async emit(title, name, payload) {
+      const id = await windowId(title);
+      await app.evaluate(
+        (_electron, event) => {
+          const hooks = (globalThis as { __codiumTestHooks?: TestHooks }).__codiumTestHooks;
+          if (!hooks) throw new Error('Die Eingriffe des Testmodus fehlen.');
+          hooks.emit(event.id, event.name, event.payload);
+        },
+        { id, name, payload: payload as unknown },
+      );
+    },
     startSecondInstance: () => runSecondInstance(electronPath, env),
     exited: () => closed,
     close: async () => {

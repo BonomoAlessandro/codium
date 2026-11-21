@@ -30,11 +30,73 @@ export interface RecentProject {
   exists: boolean;
 }
 
-/** Eine Meldung des Kerns an ein Fenster. */
+/**
+ * Knöpfe an Meldungen des Kerns: Name → Parameter. Die Oberfläche führt sie aus, wenn der Nutzer den Knopf
+ * klickt; so kann ein Knopf auch etwas tun, das nur die Oberfläche kann (etwa einen Tab öffnen). Spätere Tickets
+ * ergänzen die Tabelle.
+ */
+export interface NoticeActions {
+  /** Entfernt ein Projekt (absoluter Pfad) aus den zuletzt geöffneten. */
+  'recentProjects.remove': { path: string };
+}
+
+/** Ein Knopf an einer Meldung des Kerns. */
+export type NoticeAction = {
+  [K in keyof NoticeActions]: { label: string; action: K; params: NoticeActions[K] };
+}[keyof NoticeActions];
+
+/**
+ * Eine Meldung des Kerns an ein Fenster. Erfolg und Information verschwinden nach einigen Sekunden von selbst,
+ * Fehler bleiben, bis der Nutzer sie schliesst.
+ */
 export interface Notice {
   level: 'info' | 'success' | 'error';
   text: string;
+  /** Knöpfe der Meldung; ein Klick führt die Aktion aus und schliesst die Meldung. */
+  actions?: NoticeAction[];
 }
+
+/**
+ * Fortschritt einer Arbeit des Kerns (etwa „Pushing…“), an das Fenster, für das sie läuft. Jede Arbeit hat eine
+ * Kennung, die im ganzen Hauptprozess eindeutig ist; auf `begin` folgen beliebig viele `report` und genau ein `end`.
+ * `fraction` liegt zwischen 0 und 1 und fehlt, solange der Stand unbekannt ist.
+ */
+export type ProgressEvent =
+  | { kind: 'begin'; id: string; title: string; fraction?: number }
+  | { kind: 'report'; id: string; title?: string; fraction?: number }
+  | { kind: 'end'; id: string };
+
+/** Die Seiten des Projektfensters mit Werkzeugfenstern. */
+export type ToolWindowSide = 'left' | 'bottom' | 'right';
+
+export const TOOL_WINDOW_SIDES: readonly ToolWindowSide[] = ['left', 'bottom', 'right'];
+
+/** Alle Werkzeugfenster und ihre Seite. „Find“ erscheint nur, solange es Trefferlisten gibt (Ticket 08). */
+export const TOOL_WINDOW_SIDE = {
+  project: 'left',
+  commit: 'left',
+  terminal: 'bottom',
+  git: 'bottom',
+  find: 'bottom',
+  database: 'right',
+} as const satisfies Record<string, ToolWindowSide>;
+
+export type ToolWindowId = keyof typeof TOOL_WINDOW_SIDE;
+
+/** Ob ein Wert eines der Werkzeugfenster ist. */
+export function isToolWindowId(value: unknown): value is ToolWindowId {
+  return typeof value === 'string' && Object.hasOwn(TOOL_WINDOW_SIDE, value);
+}
+
+/** Zustand einer Seite: das aktive Werkzeugfenster, ob es offen ist, und seine Grösse in Pixeln (Breite bzw. Höhe). */
+export interface ToolWindowSideLayout {
+  active: ToolWindowId;
+  open: boolean;
+  size: number;
+}
+
+/** Layout der Werkzeugfenster eines Projekts; pro Seite ist höchstens ein Werkzeugfenster sichtbar. */
+export type ToolWindowLayout = Record<ToolWindowSide, ToolWindowSideLayout>;
 
 /**
  * Alle Codes gescheiterter Befehle, die die Oberfläche sehen kann. Die Meldung eines Fehlers mit einem dieser
@@ -91,12 +153,22 @@ export interface Commands {
   'app.removeRecentProject': { params: { path: string }; result: RecentProject[] };
   /** „Exit“: beendet Codium; alle offenen Projekte öffnen beim nächsten Start wieder. */
   'app.exit': { params: void; result: void };
+  /** Das gespeicherte Layout der Werkzeugfenster des Projekts, ohne gespeichertes der Standard. */
+  'project.layout': { params: void; result: ToolWindowLayout };
+  /**
+   * Speichert das Layout der Werkzeugfenster des Projekts. Ein unvollständiges oder ungültiges Layout (unbekanntes
+   * Werkzeugfenster, Werkzeugfenster auf der falschen Seite, Grösse ausserhalb von 1 bis 10'000 Pixeln) lehnt der
+   * Kern mit `INVALID_PARAMS` ab.
+   */
+  'project.setLayout': { params: ToolWindowLayout; result: void };
 }
 
 /** Alle Ereignisse: Name → Nutzlast. */
 export interface Events {
   /** Eine Meldung für das Fenster. */
   'app.notice': Notice;
+  /** Fortschritt einer Arbeit des Kerns für das Fenster (Statusleiste). */
+  'app.progress': ProgressEvent;
 }
 
 export type CommandName = keyof Commands;

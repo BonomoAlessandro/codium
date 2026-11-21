@@ -1,25 +1,43 @@
-// „Open Folder“ und die zuletzt geöffneten Projekte: im Willkommensfenster und vorläufig im Platzhalter des
-// Projektfensters (bis das Projektmenü mit Ticket 03 kommt).
+// „Open Folder“ und die zuletzt geöffneten Projekte: im Willkommensfenster und im Projektmenü der Kopfzeile.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CodiumError, ErrorCode, type CodiumApi, type RecentProject } from '../shared/types';
 import { errorText } from './errors';
+import { CloseIcon } from './icons';
 import type { Notify } from './Notices';
+import type { Ask } from './popup/Dialogs';
 
 export interface ProjectActions {
   recent: RecentProject[];
+  /** Fragt die Liste neu ab, etwa beim Öffnen des Projektmenüs (ein anderes Fenster kann sie geändert haben). */
+  refresh: () => Promise<void>;
   openFolder: () => Promise<void>;
   openRecent: (project: RecentProject) => Promise<void>;
-  removeRecent: (project: RecentProject) => Promise<void>;
+  /** Entfernt ein Projekt aus der Liste, ohne Rückfrage (etwa über den Knopf einer Meldung). */
+  removeRecent: (path: string) => Promise<void>;
+  /** Entfernt ein Projekt aus der Liste nach einer Rückfrage. */
+  confirmRemoveRecent: (project: RecentProject) => Promise<void>;
 }
 
-/** Befehle rund ums Öffnen von Projekten; Fehler erscheinen als Hinweis. */
-export function useProjectActions(api: CodiumApi, notify: Notify): ProjectActions {
+/** Befehle rund ums Öffnen von Projekten; Fehler erscheinen als Meldung. */
+export function useProjectActions(api: CodiumApi, notify: Notify, ask: Ask): ProjectActions {
   const [recent, setRecent] = useState<RecentProject[]>([]);
+  // Antworten können in anderer Reihenfolge ankommen, als die Anfragen gingen; es gilt die zuletzt gestellte.
+  const latest = useRef(0);
+
+  const apply = useCallback(async (request: () => Promise<RecentProject[]>) => {
+    const mine = ++latest.current;
+    const list = await request();
+    if (mine === latest.current) setRecent(list);
+  }, []);
 
   const refresh = useCallback(async () => {
-    setRecent(await api.request('app.recentProjects'));
-  }, [api]);
+    try {
+      await apply(() => api.request('app.recentProjects'));
+    } catch (err) {
+      console.error(err);
+    }
+  }, [api, apply]);
 
   useEffect(() => {
     void refresh();
@@ -30,20 +48,41 @@ export function useProjectActions(api: CodiumApi, notify: Notify): ProjectAction
   }, [refresh]);
 
   const removeRecent = useCallback(
-    async (project: RecentProject) => {
-      setRecent(await api.request('app.removeRecentProject', { path: project.path }));
+    async (path: string) => {
+      try {
+        await apply(() => api.request('app.removeRecentProject', { path }));
+      } catch (err) {
+        notify({ level: 'error', text: errorText(err) });
+      }
     },
-    [api],
+    [api, apply, notify],
+  );
+
+  const confirmRemoveRecent = useCallback(
+    async (project: RecentProject) => {
+      const choice = await ask({
+        title: 'Remove Recent Project',
+        message: `Remove “${project.name}” from the list of recent projects? The folder itself stays as it is.`,
+        items: [project.path],
+        buttons: [
+          { id: 'remove', label: 'Remove', primary: true },
+          { id: 'cancel', label: 'Cancel' },
+        ],
+      });
+      if (choice === 'remove') await removeRecent(project.path);
+    },
+    [ask, removeRecent],
   );
 
   const showError = useCallback(
     (err: unknown, project?: RecentProject) => {
-      const folderGone = err instanceof CodiumError && (err.code === ErrorCode.projectNotFound || err.code === ErrorCode.projectUnreachable);
+      const folderGone =
+        err instanceof CodiumError && (err.code === ErrorCode.projectNotFound || err.code === ErrorCode.projectUnreachable);
       if (folderGone && project) {
         notify({
           level: 'error',
           text: errorText(err),
-          actions: [{ label: 'Remove from List', run: () => void removeRecent(project) }],
+          actions: [{ label: 'Remove from List', run: () => void removeRecent(project.path) }],
         });
         void refresh();
         return;
@@ -73,7 +112,12 @@ export function useProjectActions(api: CodiumApi, notify: Notify): ProjectAction
     [api, refresh, showError],
   );
 
-  return { recent, openFolder, openRecent, removeRecent };
+  return { recent, refresh, openFolder, openRecent, removeRecent, confirmRemoveRecent };
+}
+
+/** Ob zwei Projektpfade dasselbe Projekt meinen; Codium läuft unter Windows, Gross-/Kleinschreibung zählt nicht. */
+export function sameProjectPath(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
 }
 
 export function RecentProjectList({ actions }: { actions: ProjectActions }) {
@@ -93,12 +137,12 @@ export function RecentProjectList({ actions }: { actions: ProjectActions }) {
           </button>
           <button
             type="button"
-            className="recent-remove"
+            className="icon-button recent-remove"
             title="Remove from Recent Projects"
             aria-label={`Remove ${project.name} from Recent Projects`}
-            onClick={() => void actions.removeRecent(project)}
+            onClick={() => void actions.confirmRemoveRecent(project)}
           >
-            ×
+            <CloseIcon />
           </button>
         </li>
       ))}

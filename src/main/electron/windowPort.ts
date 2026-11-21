@@ -2,7 +2,8 @@
 // Aktivierung und ohne Taskleisten-Eintrag; „nach vorne holen“ wird nur aufgezeichnet, und Fenster melden
 // keine Lage zum Speichern.
 
-import { app, BrowserWindow, nativeTheme, screen } from 'electron';
+import { app, BrowserWindow, screen } from 'electron';
+import { HEADER_HEIGHT, PANEL_BACKGROUND, WINDOW_BACKGROUND, WINDOW_SYMBOL_COLOR } from '../../shared/theme';
 import type { DisplayInfo, WindowKind, WindowOpenOptions, WindowPlacement, WindowPort } from '../core/ports';
 import type { TestMode, TestRecorder } from '../testMode';
 
@@ -39,8 +40,13 @@ export class ElectronWindowPort implements WindowPort {
       minWidth: 720,
       minHeight: 400,
       show: false,
-      // Deckende Fensterfarbe, damit beim Öffnen nichts aufblitzt (das dunkle Schema folgt mit Ticket 03).
-      backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1f22' : '#ffffff',
+      // Deckende Fensterfarbe des dunklen Schemas, damit beim Öffnen nichts aufblitzt; immer dunkel, auch bei hellem
+      // Windows-Design.
+      backgroundColor: WINDOW_BACKGROUND,
+      // Ohne Windows-Rahmen: Die Oberfläche zeichnet die Kopfzeile selbst und macht sie zur Zieh-Fläche. Die
+      // Fensterknöpfe von Windows bleiben als Überlagerung rechts darüber, mit ihnen die Andock-Layouts von Windows 11.
+      titleBarStyle: 'hidden',
+      titleBarOverlay: { color: PANEL_BACKGROUND, symbolColor: WINDOW_SYMBOL_COLOR, height: HEADER_HEIGHT },
       title: options.title,
       webPreferences: {
         preload: this.options.preloadFile,

@@ -6,10 +6,13 @@ body,
 }
 
 body {
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-ui);
   font-size: 13px;
+  /* Eine IDE-Oberfläche markiert man nicht wie eine Webseite; Inhalte mit Text erlauben es später selbst. */
+  user-select: none;
 }
 
 button {
@@ -18,12 +21,18 @@ button {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 4px 12px;
+  padding: 4px 14px;
   cursor: pointer;
 }
 
 button:hover {
   background: var(--bg-hover);
+}
+
+button:focus-visible,
+[tabindex='-1']:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
 }
 
 .button-primary {
@@ -33,8 +42,28 @@ button:hover {
 }
 
 .button-primary:hover {
-  background: var(--accent);
-  filter: brightness(1.1);
+  background: var(--accent-hover);
+}
+
+.button-primary:focus-visible {
+  outline-offset: 1px;
+}
+
+/* Knopf nur mit Symbol, etwa „Hide“ oder „Close“. */
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--icon);
+}
+
+.icon-button:hover {
+  background: var(--bg-hover);
 }
 
 h2 {
@@ -44,15 +73,598 @@ h2 {
   color: var(--text-muted);
 }
 
-/* Willkommensfenster */
+kbd {
+  font-family: inherit;
+}
+
+/* ---------- Kopfzeile ---------- */
+/*
+ * Das Fenster hat keinen Windows-Rahmen; die Kopfzeile ist seine Zieh-Fläche (Verschieben, Doppelklick maximiert).
+ * Rechts liegen die Fensterknöpfe von Windows als Überlagerung über der Seite: env(titlebar-area-width) ist die
+ * Breite links davon, so überdeckt nichts die Knöpfe.
+ */
+.header {
+  box-sizing: border-box;
+  height: var(--header-height);
+  background: var(--bg-panel);
+  -webkit-app-region: drag;
+}
+
+/* Die Trennlinie unter der Kopfzeile gehört zur Fläche darunter, damit sie auch unter den Fensterknöpfen durchgeht. */
+.workbench,
+.welcome {
+  border-top: 1px solid var(--separator);
+}
+
+.header-content {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: env(titlebar-area-width, 100%);
+  height: 100%;
+  padding: 0 8px;
+}
+
+/*
+ * Bedienelemente in der Kopfzeile sind von der Zieh-Fläche ausgenommen, sonst bekäme die Oberfläche ihre Klicks
+ * nicht. Die Eigenschaft vererbt sich nicht über die Kopfzeile hinaus; Menüs und Dialoge liegen ausserhalb.
+ */
+.header-widget {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px 0 6px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-weight: 600;
+  -webkit-app-region: no-drag;
+}
+
+.header-widget:hover {
+  background: var(--bg-hover);
+}
+
+.header-widget[aria-expanded='true'] {
+  background: var(--bg-selected);
+}
+
+.header-widget .icon {
+  color: var(--icon);
+}
+
+.header-widget-label {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-badge {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.header-branch:empty {
+  display: none;
+}
+
+/* ---------- Projektfenster ---------- */
+
+.project-window {
+  display: grid;
+  grid-template-rows: var(--header-height) minmax(0, 1fr) var(--statusbar-height);
+  height: 100%;
+}
+
+.workbench {
+  display: flex;
+  min-height: 0;
+}
+
+.stripe {
+  box-sizing: border-box;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  width: var(--stripe-width);
+  padding: 6px 0;
+  background: var(--bg-panel);
+}
+
+.stripe-left {
+  border-right: 1px solid var(--separator);
+}
+
+.stripe-right {
+  border-left: 1px solid var(--separator);
+}
+
+.stripe-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.stripe-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--icon);
+}
+
+.stripe-button:hover {
+  background: var(--bg-hover);
+}
+
+.stripe-button.active {
+  background: var(--bg-selected);
+  color: #ffffff;
+}
+
+.stripe-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.tool-area {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tool-area-row {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Werkzeugfenster; die Trennlinie zum Code-Bereich gehört zu ihrer Breite bzw. Höhe. */
+.tool-window {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-panel);
+  outline: none;
+}
+
+.tool-window-left {
+  border-right: 1px solid var(--separator);
+}
+
+.tool-window-right {
+  border-left: 1px solid var(--separator);
+}
+
+.tool-window-bottom {
+  border-top: 1px solid var(--separator);
+}
+
+.tool-window-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--tool-window-header-height);
+  padding: 0 6px 0 12px;
+}
+
+.tool-window-title {
+  font-weight: 600;
+}
+
+.tool-window:focus-within .tool-window-title {
+  color: #ffffff;
+}
+
+.tool-window-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 12px;
+}
+
+.tool-window-placeholder {
+  margin: 6px 0;
+  color: var(--text-muted);
+}
+
+/* Griff an der Trennlinie: unsichtbar, einige Pixel breit, über der Kante zum Code-Bereich. */
+.splitter {
+  position: absolute;
+  z-index: 5;
+}
+
+.splitter-left,
+.splitter-right {
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+}
+
+.splitter-left {
+  right: -4px;
+}
+
+.splitter-right {
+  left: -4px;
+}
+
+.splitter-bottom {
+  top: -4px;
+  left: 0;
+  right: 0;
+  height: 7px;
+  cursor: row-resize;
+}
+
+/* Während des Ziehens bleibt der Zeiger, wo er ist, und nichts wird markiert. */
+.resizing-columns,
+.resizing-columns * {
+  cursor: col-resize !important;
+}
+
+.resizing-rows,
+.resizing-rows * {
+  cursor: row-resize !important;
+}
+
+.code-area {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--bg);
+  outline: none;
+}
+
+.code-empty {
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.code-empty-title {
+  margin: 0 0 14px;
+  font-size: 14px;
+}
+
+.code-empty-hints {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.code-empty-hint {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.code-empty-hint dt {
+  text-align: right;
+}
+
+.code-empty-hint dd {
+  margin: 0;
+  color: var(--link);
+  text-align: left;
+}
+
+/* ---------- Statusleiste ---------- */
+
+.statusbar {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 10px;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--separator);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.status-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.status-progress-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-bar {
+  flex: none;
+  width: 120px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--bg-selected);
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 150ms ease-out;
+}
+
+.progress-fill.indeterminate {
+  width: 35%;
+  animation: progress-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+.status-spacer {
+  flex: 1;
+}
+
+.status-item:empty {
+  display: none;
+}
+
+/* ---------- Menüs ---------- */
+
+.menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 50;
+  min-width: 260px;
+  max-width: 420px;
+  max-height: calc(100vh - 12px);
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--bg-popup);
+  border: 1px solid var(--border-popup);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  outline: none;
+  -webkit-app-region: no-drag;
+}
+
+.menu-separator {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--border-popup);
+}
+
+.menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  text-align: left;
+}
+
+.menu-item:hover {
+  background: none;
+}
+
+.menu-item.highlighted {
+  background: var(--bg-selection);
+}
+
+.menu-item-detail {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-item.muted .menu-item-label {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* ---------- Rückfragen ---------- */
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  background: var(--scrim);
+  -webkit-app-region: no-drag;
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(460px, calc(100% - 32px));
+  max-height: calc(100% - 22vh);
+  margin-top: 14vh;
+  background: var(--bg-popup);
+  border: 1px solid var(--border-popup);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+
+.dialog-title {
+  padding: 14px 18px 6px;
+  font-weight: 600;
+}
+
+.dialog-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 18px;
+}
+
+.dialog-message {
+  margin: 4px 0 10px;
+  line-height: 1.45;
+}
+
+.dialog-items {
+  min-height: 0;
+  max-height: 180px;
+  margin: 0 0 6px;
+  padding: 6px 10px;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--bg);
+  border: 1px solid var(--border-popup);
+  border-radius: 6px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.dialog-items li + li {
+  margin-top: 3px;
+}
+
+.dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 18px 16px;
+}
+
+/* ---------- Meldungen ---------- */
+
+.notices {
+  position: fixed;
+  right: 12px;
+  bottom: calc(var(--statusbar-height) + 10px);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(380px, calc(100% - 24px));
+  max-height: calc(100% - var(--header-height) - var(--statusbar-height) - 24px);
+  overflow-y: auto;
+  -webkit-app-region: no-drag;
+}
+
+.notice {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  column-gap: 8px;
+  padding: 10px 8px 10px 12px;
+  background: var(--bg-popup);
+  border: 1px solid var(--border-popup);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.notice-icon {
+  display: grid;
+  padding-top: 1px;
+}
+
+.notice-info .notice-icon {
+  color: var(--info);
+}
+
+.notice-success .notice-icon {
+  color: var(--success);
+}
+
+.notice-error .notice-icon {
+  color: var(--error);
+}
+
+.notice-text {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.notice-close {
+  width: 20px;
+  height: 20px;
+}
+
+.notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 2;
+  gap: 14px;
+  margin-top: 6px;
+}
+
+.notice-action {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--link);
+}
+
+.notice-action:hover {
+  background: none;
+  text-decoration: underline;
+}
+
+/* ---------- Willkommensfenster ---------- */
+
+.welcome-window {
+  display: grid;
+  grid-template-rows: var(--header-height) minmax(0, 1fr);
+  height: 100%;
+}
+
+.welcome-title {
+  padding-left: 4px;
+  color: var(--text-muted);
+}
 
 .welcome {
-  height: 100%;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 20px;
-  padding: 32px 40px;
+  min-height: 0;
+  padding: 28px 40px;
 }
 
 .welcome-header h1 {
@@ -72,25 +684,29 @@ h2 {
 }
 
 .welcome-recent {
-  flex: 1;
-  min-height: 0;
   display: flex;
+  flex: 1;
   flex-direction: column;
+  min-height: 0;
+}
+
+.welcome-window ~ .notices {
+  bottom: 12px;
 }
 
 /* Zuletzt geöffnete Projekte */
 
 .recent-list {
-  list-style: none;
   margin: 0;
   padding: 0;
   overflow-y: auto;
+  list-style: none;
 }
 
 .recent-item {
   display: flex;
   align-items: center;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
 .recent-item:hover {
@@ -98,19 +714,18 @@ h2 {
 }
 
 .recent-open {
-  flex: 1;
-  min-width: 0;
   display: flex;
+  flex: 1;
   flex-direction: column;
   align-items: flex-start;
-  text-align: left;
-  background: none;
-  border: none;
+  min-width: 0;
   padding: 6px 8px;
+  border: none;
+  background: none;
+  text-align: left;
 }
 
-.recent-open:hover,
-.recent-remove:hover {
+.recent-open:hover {
   background: none;
 }
 
@@ -121,10 +736,10 @@ h2 {
 .recent-path {
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--text-muted);
   font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .recent-missing .recent-name,
@@ -135,10 +750,7 @@ h2 {
 
 .recent-remove {
   visibility: hidden;
-  background: none;
-  border: none;
-  padding: 4px 10px;
-  color: var(--text-muted);
+  margin-right: 6px;
 }
 
 .recent-item:hover .recent-remove,
@@ -148,88 +760,5 @@ h2 {
 
 .recent-empty {
   margin: 0;
-  color: var(--text-muted);
-}
-
-/* Platzhalter des Projektfensters */
-
-.project-placeholder {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.placeholder-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
-}
-
-.placeholder-bar-name {
-  font-weight: 600;
-}
-
-.placeholder-bar-spacer {
-  flex: 1;
-}
-
-.placeholder-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  padding: 32px 40px;
-}
-
-.placeholder-body h1 {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-}
-
-.placeholder-path {
-  margin: 2px 0 24px;
-  color: var(--text-muted);
-}
-
-/* Hinweise (vorläufig) */
-
-.notices {
-  position: fixed;
-  right: 12px;
-  bottom: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-width: 420px;
-}
-
-.notice {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 8px 8px 12px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-.notice-error {
-  background: var(--error-bg);
-  border-color: var(--error);
-}
-
-.notice-text {
-  flex: 1;
-  overflow-wrap: anywhere;
-}
-
-.notice-close {
-  background: none;
-  border: none;
-  padding: 2px 6px;
   color: var(--text-muted);
 }

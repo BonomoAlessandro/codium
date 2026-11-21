@@ -49,3 +49,16 @@ export class TestRecorder {
 
 /** Name der Eigenschaft auf `globalThis`, unter der die Aufzeichnung liegt. */
 export const TEST_RECORDER_GLOBAL = '__codiumTest';
+
+/**
+ * Eingriffe für Oberflächentests, nur im Testmodus unter `globalThis.__codiumTestHooks`. Sie spielen die Seite des
+ * Kerns, solange es noch keine echte Quelle gibt (etwa Fortschritt, bevor Git-Aktionen existieren): Ein Ereignis
+ * geht denselben Weg zum Fenster wie eines des Kerns.
+ */
+export interface TestHooks {
+  /** Schickt ein Ereignis des Vertrags an ein Fenster. */
+  emit(windowId: number, name: string, payload: unknown): void;
+}
+
+/** Name der Eigenschaft auf `globalThis`, unter der die Eingriffe für Tests liegen. */
+export const TEST_HOOKS_GLOBAL = '__codiumTestHooks';

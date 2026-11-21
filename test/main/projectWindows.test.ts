@@ -359,12 +359,19 @@ describe('Projektfenster und Willkommensfenster', () => {
 
       await after.core.start();
       expect(after.ports.windows.openTitles).toEqual([title('Alpha')]);
-      expect(after.events.forWindow(after.ports.windows.windowTitled(title('Alpha')))).toEqual([
-        { name: 'app.notice', payload: { level: 'error', text: `Project folder not found: ${beta}` } },
+      const alphaWindow = after.ports.windows.windowTitled(title('Alpha'));
+      // Die Meldung trägt einen Knopf, der den fehlenden Ordner aus den zuletzt geöffneten Projekten entfernt.
+      const removeButton = { label: 'Remove from List', action: 'recentProjects.remove', params: { path: beta } };
+      expect(after.events.forWindow(alphaWindow)).toEqual([
+        { name: 'app.notice', payload: { level: 'error', text: `Project folder not found: ${beta}`, actions: [removeButton] } },
       ]);
       // Übersprungen heisst: beim nächsten Start nicht mehr offen, aber weiter unter den zuletzt geöffneten.
       expect(after.core.state.openProjects).toEqual([alpha]);
       expect(after.core.state.recentProjects).toEqual([beta, alpha]);
+
+      // Der Knopf führt in der Oberfläche zu diesem Befehl.
+      await call(after, alphaWindow, 'app.removeRecentProject', removeButton.params);
+      expect(after.core.state.recentProjects).toEqual([alpha]);
     });
 
     it('überspringt einen nicht erreichbaren Projektordner nur diesmal und versucht ihn beim nächsten Start wieder', async () => {
@@ -408,7 +415,14 @@ describe('Projektfenster und Willkommensfenster', () => {
       await after.core.start();
       expect(after.ports.windows.openTitles).toEqual([WELCOME]);
       expect(after.events.forWindow(after.ports.windows.windowTitled(WELCOME))).toEqual([
-        { name: 'app.notice', payload: { level: 'error', text: `Project folder not found: ${alpha}` } },
+        {
+          name: 'app.notice',
+          payload: {
+            level: 'error',
+            text: `Project folder not found: ${alpha}`,
+            actions: [{ label: 'Remove from List', action: 'recentProjects.remove', params: { path: alpha } }],
+          },
+        },
       ]);
     });
   });

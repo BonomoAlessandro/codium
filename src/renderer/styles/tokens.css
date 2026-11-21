@@ -1,35 +1,45 @@
-/* Design-Variablen. Hell und dunkel folgen vorerst dem Design von Windows (prefers-color-scheme); Ticket 03
-   reduziert sie auf das dunkle Schema. */
+/* Design-Variablen: ein einziges dunkles Schema nach dem neuen IntelliJ-Design „Dark“. Hintergrund, Panelfarbe,
+   Symbolfarbe und Höhe der Kopfzeile braucht auch das Fenster selbst (src/shared/theme.ts); ein Test prüft, dass
+   die Werte gleich bleiben. */
 
 :root {
+  color-scheme: dark;
+
   --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
 
-  color-scheme: light;
-  --bg: #ffffff;
-  --bg-panel: #f7f8fa;
-  --bg-hover: #dfe1e5;
-  --border: #ebecf0;
-  --text: #1e1f22;
-  --text-muted: #6c707e;
-  --accent: #3574f0;
-  --accent-text: #ffffff;
-  --error: #db3b4b;
-  --error-bg: #fff2f3;
-}
+  --header-height: 40px;
+  --stripe-width: 40px;
+  --statusbar-height: 24px;
+  --tool-window-header-height: 32px;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --bg: #1e1f22;
-    --bg-panel: #2b2d30;
-    --bg-hover: #393b40;
-    --border: #393b40;
-    --text: #dfe1e5;
-    --text-muted: #868a91;
-    --accent: #3574f0;
-    --accent-text: #ffffff;
-    --error: #f75464;
-    --error-bg: #402929;
-  }
+  /* Flächen */
+  --bg: #1e1f22;
+  --bg-panel: #2b2d30;
+  --bg-popup: #2b2d30;
+  --bg-hover: #393b40;
+  --bg-selected: #43454a;
+  /* Gewählter Eintrag in Listen und Menüs */
+  --bg-selection: #2e436e;
+  --separator: #1e1f22;
+  --border: #4e5157;
+  --border-popup: #43454a;
+  --scrim: rgba(0, 0, 0, 0.45);
+  --shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+
+  /* Schrift und Symbole */
+  --text: #dfe1e5;
+  --text-muted: #868a91;
+  --text-faint: #6f737a;
+  --icon: #ced0d6;
+  --link: #548af7;
+
+  /* Hervorhebung und Zustände */
+  --accent: #3574f0;
+  --accent-hover: #4682fa;
+  --accent-text: #ffffff;
+  --focus: #3574f0;
+  --info: #548af7;
+  --success: #5fb865;
+  --error: #f75464;
 }
