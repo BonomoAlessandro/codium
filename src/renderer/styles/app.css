@@ -1509,3 +1509,25 @@ kbd {
   margin: 4px 0 0;
   color: var(--error);
 }
+
+/* ---------- „Clone Repository“ (Ticket 10) ---------- */
+
+.clone-dialog {
+  width: min(680px, calc(100vw - 80px));
+}
+
+.clone-directory {
+  display: flex;
+  gap: 6px;
+}
+
+.clone-status,
+.clone-error {
+  padding: 0 20px;
+}
+
+/* Die Meldung von Git im Wortlaut, mit ihren Zeilenumbrüchen. */
+.clone-error {
+  white-space: pre-wrap;
+  user-select: text;
+}

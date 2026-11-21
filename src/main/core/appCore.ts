@@ -29,6 +29,7 @@ import type { EventSink, Ports, WindowPlacement } from './ports';
 import { ProgressReporter } from './progress';
 import { DEFAULT_CLEANUP_TIMEOUT_MS, ProjectCore } from './projectCore';
 import { FolderQueries, type FolderStatus } from './folderQueries';
+import { cloneRepository } from './clone';
 import { registerEditorCommands } from './editorCommands';
 import { JDTLS_MIN_JAVA, detectJdks, hasJavaMarkers, jdkForLanguageServer, sameJdkPath } from './jdks';
 import { registerFileCommands } from './fileCommands';
@@ -97,6 +98,8 @@ export interface AppCoreOptions {
   ripgrepPath: string;
   /** Pfad zum mitgelieferten README (im Paket ausserhalb des App-Archivs), für „Open README“. */
   readmePath?: string;
+  /** Umgebung für gestartete Programme (Git); ohne Angabe die des Prozesses. Tests schirmen damit die Git-Konfiguration ab. */
+  processEnv?: NodeJS.ProcessEnv;
   log?: (message: string) => void;
 }
 
@@ -456,6 +459,13 @@ export class AppCore {
       const jdks = detectJdks(this.ports.system);
       return { jdks, forLanguageServer: jdkForLanguageServer(jdks, this.appState.settings.jdk ?? null) };
     });
+    this.router.register('app.prerequisites', () => ({ git: this.gitPath !== null }));
+    this.router.register('app.cloneDefaults', () => ({ parent: this.appState.cloneParent ?? this.ports.system.homeDir() }));
+    this.router.register('app.pickFolder', (ctx, params) => {
+      const title = (params as { title?: unknown } | undefined)?.title;
+      return this.ports.folderPicker.pickFolder({ windowId: ctx.windowId, title: typeof title === 'string' ? title : 'Select Folder' });
+    });
+    this.router.register('app.clone', (ctx, params) => this.clone(ctx.windowId, params));
     this.router.register('app.readme', () => {
       const text = this.options.readmePath ? this.ports.system.readTextFile(this.options.readmePath) : null;
       if (text === null) throw new CommandError('The README that comes with Codium was not found.', ErrorCode.fileNotFound);
@@ -551,6 +561,31 @@ export class AppCore {
     this.rememberOpened(normalized, key, remember);
     this.closeWelcomeWindow();
     return core.info;
+  }
+
+  /**
+   * „Clone Repository“: klont mit dem installierten Git und öffnet das Projekt danach in einem neuen Fenster (es landet
+   * in den zuletzt geöffneten Projekten). Der Elternordner wird für den nächsten Vorschlag gemerkt.
+   */
+  private async clone(windowId: number, params: unknown): Promise<ProjectInfo> {
+    this.assertNotQuitting();
+    if (this.gitPath === null) throw new CommandError('Git not found. Install Git to clone repositories.', ErrorCode.gitNotFound);
+    const url = (params as { url?: unknown } | undefined)?.url;
+    const directory = (params as { directory?: unknown } | undefined)?.directory;
+    if (typeof url !== 'string' || url.trim() === '') throw new CommandError('A repository URL is expected.', ErrorCode.invalidParams);
+    if (!isAbsoluteCommandPath(directory)) throw new CommandError('An absolute directory is expected.', ErrorCode.invalidParams);
+    const target = path.resolve(directory);
+    await cloneRepository({
+      git: this.gitPath,
+      url: url.trim(),
+      directory: target,
+      env: this.options.processEnv ?? process.env,
+      progress: this.progressForWindow(windowId),
+    });
+    this.updateState((state) => {
+      state.cloneParent = path.dirname(target);
+    });
+    return this.openProject(target);
   }
 
   /** Lage eines neuen Projektfensters ohne gespeicherte Lage: versetzt zum zuletzt benutzten Projektfenster. */

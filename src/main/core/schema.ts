@@ -48,6 +48,8 @@ export interface AppState {
   settings: Settings;
   /** Lage des Willkommensfensters. */
   welcomeWindow?: WindowPlacement;
+  /** Der zuletzt gewählte Elternordner beim Klonen. */
+  cloneParent?: string;
 }
 
 /** Zustand eines Projekts im Datenordner (nicht im Projektordner). */
@@ -189,6 +191,7 @@ export function normalizeAppState(raw: Record<string, unknown>): AppState {
       ...(isJdkPath(settings.jdk) ? { jdk: settings.jdk } : {}),
     },
     ...(welcomeWindow ? { welcomeWindow } : {}),
+    ...(typeof raw.cloneParent === 'string' && raw.cloneParent !== '' ? { cloneParent: raw.cloneParent } : {}),
   };
 }
 

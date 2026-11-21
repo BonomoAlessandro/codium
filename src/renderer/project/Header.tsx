@@ -3,8 +3,9 @@
 // maximiert); rechts liegen die Fensterknöpfe von Windows als Überlagerung darüber.
 
 import { useRef, useState } from 'react';
-import type { ProjectInfo } from '../../shared/types';
+import type { CodiumApi, ProjectInfo } from '../../shared/types';
 import { ChevronDownIcon } from '../icons';
+import { CLONE_WITHOUT_GIT, useCloneDialog, useGitAvailable } from '../CloneDialog';
 import { shortcutLabel } from '../keymap';
 import { Menu, type MenuEntry } from '../popup/Menu';
 import { sameProjectPath, type ProjectActions } from '../RecentProjects';
@@ -16,9 +17,12 @@ interface HeaderProps {
   onExit: () => void;
   /** „Settings…“: öffnet den Einstellungsdialog. */
   onSettings: () => void;
+  api: CodiumApi;
 }
 
-export function Header({ project, actions, onExit, onSettings }: HeaderProps) {
+export function Header({ project, actions, onExit, onSettings, api }: HeaderProps) {
+  const git = useGitAvailable(api);
+  const clone = useCloneDialog(api);
   const [menu, setMenu] = useState<{ viaKeyboard: boolean } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -26,7 +30,13 @@ export function Header({ project, actions, onExit, onSettings }: HeaderProps) {
   const others = actions.recent.filter((p) => !sameProjectPath(p.path, project.path));
   const entries: MenuEntry[] = [
     { kind: 'item', label: 'Open Folder…', run: () => void actions.openFolder() },
-    // Platz für „Clone Repository…“ (Ticket 10).
+    {
+      kind: 'item',
+      label: 'Clone Repository…',
+      disabled: git !== true,
+      ...(git === false ? { detail: CLONE_WITHOUT_GIT } : {}),
+      run: clone.open,
+    },
     ...(others.length > 0 ? [{ kind: 'separator' } as const] : []),
     ...others.map(
       (p): MenuEntry => ({ kind: 'item', label: p.name, detail: p.path, muted: !p.exists, run: () => void actions.openRecent(p) }),
@@ -79,6 +89,7 @@ export function Header({ project, actions, onExit, onSettings }: HeaderProps) {
           }}
         />
       )}
+      {clone.dialog}
     </header>
   );
 }

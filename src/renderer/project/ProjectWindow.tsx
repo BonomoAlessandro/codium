@@ -457,7 +457,7 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
 
   return (
     <div className="project-window">
-      <Header project={project} actions={actions} onExit={() => void api.request('app.exit')} onSettings={() => setSettingsOpen(true)} />
+      <Header project={project} actions={actions} onExit={() => void api.request('app.exit')} onSettings={() => setSettingsOpen(true)} api={api} />
       <div className="workbench">
         <Stripe side="left" groups={[STRIPES.left.top, STRIPES.left.bottom]} layout={shown} available={available} onToggle={toggle} />
         <div className="tool-area" ref={areaRef}>

@@ -296,6 +296,10 @@ export const ErrorCode = {
   cannotEncode: 'CANNOT_ENCODE',
   /** Die Datei hat sich seit dem erwarteten Stand geändert (etwa von aussen); `data.path` ist der Pfad. */
   fileChanged: 'FILE_CHANGED',
+  /** Git wurde nicht gefunden; Git-Funktionen sind aus. */
+  gitNotFound: 'GIT_NOT_FOUND',
+  /** Git ist gescheitert; die Meldung ist die von Git im Wortlaut. */
+  gitFailed: 'GIT_FAILED',
 } as const;
 
 export type ErrorCodeValue = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -352,6 +356,19 @@ export interface Commands {
    * das neueste ab Java 25; `null`, wenn es keines gibt.
    */
   'app.jdks': { params: void; result: { jdks: JdkInfo[]; forLanguageServer: JdkInfo | null } };
+  /** Was von den Voraussetzungen da ist: Git (ohne Git sind Git-Funktionen und „Clone Repository“ aus). */
+  'app.prerequisites': { params: void; result: { git: boolean } };
+  /** Vorschlag für „Clone Repository“: der zuletzt gewählte Elternordner, sonst der Benutzerordner. */
+  'app.cloneDefaults': { params: void; result: { parent: string } };
+  /** Ordnerauswahl von Windows (etwa für „Browse…“); `null`, wenn sie abgebrochen wurde. */
+  'app.pickFolder': { params: { title: string }; result: string | null };
+  /**
+   * „Clone Repository“: klont `url` in den absoluten Ordner `directory` (mit Fortschritt in der Statusleiste des
+   * Fensters) und öffnet das Projekt wie `app.openProject`. Ein bestehender, nicht leerer Ordner: `FILE_EXISTS`. Ohne
+   * Git: `GIT_NOT_FOUND`. Scheitert Git, kommt seine Meldung im Wortlaut (`GIT_FAILED`), und was der Klon angelegt
+   * hat, ist entfernt.
+   */
+  'app.clone': { params: { url: string; directory: string }; result: ProjectInfo };
   /** Das mit Codium mitgelieferte README (Markdown), für „Open README“. */
   'app.readme': { params: void; result: { text: string } };
   /**

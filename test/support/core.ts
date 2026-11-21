@@ -26,6 +26,8 @@ export interface TestCoreOptions {
   folderQueryTimeoutMs?: number;
   /** Höchstdauer einer Aufräumarbeit beim Abbau (Standard der Tests: 200 ms). */
   cleanupTimeoutMs?: number;
+  /** Umgebung für gestartete Programme (Git), etwa mit abgeschirmter Git-Konfiguration. */
+  processEnv?: NodeJS.ProcessEnv;
   /** Zeitlimit fürs Speichern der Tabs vor dem Schliessen und Beenden (Standard der Tests: 0, also nicht fragen). */
   flushTimeoutMs?: number;
   /** Ab dieser Dauer zeigt eine Dateioperation Fortschritt (Standard des Kerns: 1 s). */
@@ -48,6 +50,7 @@ export function createTestCore(dataDir: string, options: TestCoreOptions = {}): 
     flushTimeoutMs: options.flushTimeoutMs ?? 0,
     ripgrepPath: ripgrepPath(path.resolve(__dirname, '..', '..'), false),
     readmePath: path.resolve(__dirname, '..', '..', 'README.md'),
+    processEnv: options.processEnv,
     folderQueryTimeoutMs: options.folderQueryTimeoutMs,
     log: (message) => logs.push(message),
   });
