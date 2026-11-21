@@ -1,8 +1,12 @@
-// Projekt-Kern: alles, was zu einem offenen Projekt in einem Fenster gehört. Spätere Tickets hängen hier
-// ihre Dienste an (Dateien, Git, Sprache, Terminal, Datenbank). Lädt nie Electron.
+// Projekt-Kern: alles, was zu einem offenen Projekt in einem Fenster gehört, mit seinen Diensten (ab Ticket 04 der
+// Datei-Dienst; Git, Sprache, Terminal und Datenbank folgen). Lädt nie Electron.
+//
+// Ereignisse an das Fenster des Projekts können auch Dienste im Kern abonnieren (`subscribe`), etwa der Git-Dienst
+// die Dateiereignisse des Datei-Dienstes.
 
 import type { EventName, Events, Notice, ProjectInfo } from '../../shared/types';
-import type { EventSink } from './ports';
+import { FileService } from './fileService';
+import type { EventSink, ShellActionsPort } from './ports';
 import { ProgressReporter } from './progress';
 import { projectName } from './projectPath';
 import type { ProjectState } from './schema';
@@ -13,29 +17,59 @@ type Cleanup = () => void | Promise<void>;
 /** Höchstdauer einer einzelnen Aufräumarbeit; danach geht der Abbau ohne sie weiter. */
 export const DEFAULT_CLEANUP_TIMEOUT_MS = 5000;
 
+export interface ProjectCoreOptions {
+  /** Normalisierter Pfad des Projektordners. */
+  path: string;
+  /** Das Fenster, in dem das Projekt offen ist. */
+  windowId: number;
+  stateFile: StateFile<ProjectState>;
+  events: EventSink;
+  /** Port „Shell-Aktionen“ (Papierkorb, Explorer, Zwischenablage) für den Datei-Dienst. */
+  shell: ShellActionsPort;
+  log?: (message: string) => void;
+  cleanupTimeoutMs?: number;
+  /** Schon gelesener Zustand (etwa für die Fensterlage vor dem Öffnen); ohne Angabe liest der Kern ihn selbst. */
+  initialState?: ProjectState;
+  /** Wartezeiten der Dateiüberwachung, für Tests. */
+  watchDebounceMs?: number;
+  watchMaxDelayMs?: number;
+}
+
 export class ProjectCore {
+  /** Normalisierter Pfad des Projektordners. */
+  readonly path: string;
+  /** Das Fenster, in dem das Projekt offen ist. */
+  readonly windowId: number;
   private projectState: ProjectState;
+  private readonly stateFile: StateFile<ProjectState>;
+  private readonly events: EventSink;
+  private readonly log: (message: string) => void;
+  private readonly cleanupTimeoutMs: number;
   private readonly cleanups: Cleanup[] = [];
   /** Aufräumarbeiten, die erst nach Beginn des Abbaus angemeldet wurden und sofort laufen. */
   private readonly lateCleanups: Promise<void>[] = [];
+  private readonly subscribers = new Map<string, Set<(payload: never) => void>>();
   private disposing: Promise<void> | null = null;
   private disposeFinished = false;
   /** Fortschritt laufender Arbeiten des Projekts, für die Statusleiste seines Fensters. */
   readonly progress = new ProgressReporter((event) => this.emit('app.progress', event));
+  /** Datei-Dienst: Dateibaum, Dateioperationen, Dateiüberwachung. */
+  readonly files: FileService;
 
-  constructor(
-    /** Normalisierter Pfad des Projektordners. */
-    readonly path: string,
-    /** Das Fenster, in dem das Projekt offen ist. */
-    readonly windowId: number,
-    private readonly stateFile: StateFile<ProjectState>,
-    private readonly events: EventSink,
-    private readonly log: (message: string) => void = () => {},
-    private readonly cleanupTimeoutMs = DEFAULT_CLEANUP_TIMEOUT_MS,
-    /** Schon gelesener Zustand (etwa für die Fensterlage vor dem Öffnen); ohne Angabe liest der Kern ihn selbst. */
-    initialState?: ProjectState,
-  ) {
-    this.projectState = initialState ?? stateFile.load();
+  constructor(options: ProjectCoreOptions) {
+    this.path = options.path;
+    this.windowId = options.windowId;
+    this.stateFile = options.stateFile;
+    this.events = options.events;
+    this.log = options.log ?? (() => {});
+    this.cleanupTimeoutMs = options.cleanupTimeoutMs ?? DEFAULT_CLEANUP_TIMEOUT_MS;
+    this.projectState = options.initialState ?? options.stateFile.load();
+    this.files = new FileService(this, {
+      shell: options.shell,
+      log: this.log,
+      watchDebounceMs: options.watchDebounceMs,
+      watchMaxDelayMs: options.watchMaxDelayMs,
+    });
   }
 
   get name(): string {
@@ -64,10 +98,28 @@ export class ProjectCore {
     this.stateFile.save(next);
   }
 
-  /** Schickt ein Ereignis an das Fenster dieses Projekts; nach Beginn des Abbaus nichts mehr. */
+  /**
+   * Schickt ein Ereignis an das Fenster dieses Projekts und an die Abonnenten im Kern; nach Beginn des Abbaus
+   * nichts mehr.
+   */
   emit<K extends EventName>(name: K, payload: Events[K]): void {
     if (this.disposed) return;
+    for (const listener of [...(this.subscribers.get(name) ?? [])]) {
+      try {
+        (listener as (payload: Events[K]) => void)(payload);
+      } catch (err) {
+        this.log(`Abonnent von ${name} im Projekt ${this.path} fehlgeschlagen: ${(err as Error).message}`);
+      }
+    }
     this.events.send(this.windowId, name, payload);
+  }
+
+  /** Abonniert ein Ereignis dieses Projekts im Kern (für andere Dienste); liefert eine Funktion zum Abmelden. */
+  subscribe<K extends EventName>(name: K, listener: (payload: Events[K]) => void): () => void {
+    const listeners = this.subscribers.get(name) ?? new Set();
+    listeners.add(listener as (payload: never) => void);
+    this.subscribers.set(name, listeners);
+    return () => listeners.delete(listener as (payload: never) => void);
   }
 
   /** Zeigt eine Meldung unten rechts im Fenster dieses Projekts. */
@@ -101,6 +153,8 @@ export class ProjectCore {
   }
 
   private async runDispose(): Promise<void> {
+    // Noch im selben Aufruf: Die Dateiüberwachung endet und lässt den Projektordner los.
+    this.files.dispose();
     // Sofort sichern: Wer das Projekt gleich wieder öffnet oder die App beendet, soll den letzten Stand sehen.
     this.stateFile.flush();
     for (const cleanup of [...this.cleanups].reverse()) await this.runCleanup(cleanup);
@@ -113,6 +167,7 @@ export class ProjectCore {
       done = end;
     }
     this.disposeFinished = true;
+    this.subscribers.clear();
     this.stateFile.flush();
   }
 

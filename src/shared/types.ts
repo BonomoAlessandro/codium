@@ -99,6 +99,48 @@ export interface ToolWindowSideLayout {
 export type ToolWindowLayout = Record<ToolWindowSide, ToolWindowSideLayout>;
 
 /**
+ * Ein Eintrag eines Ordners im Dateibaum. Pfade im Vertrag sind absolut und beginnen mit dem Projektpfad in der
+ * Schreibweise von `ProjectInfo.path`; die Namen haben die Schreibweise auf der Festplatte.
+ */
+export interface FileEntry {
+  name: string;
+  path: string;
+  /** Ein Ordner (auch ein symbolischer Link oder eine Junction auf einen Ordner). */
+  isDirectory: boolean;
+}
+
+/**
+ * Eine Änderung von aussen, wie sie nach dem Bündeln der Dateiereignisse feststeht: `deleted` heisst, der Pfad
+ * fehlt nach dem Bündeln noch; „gelöscht und neu angelegt“ ist `changed`. Eine Änderung an einem Ordner gilt für
+ * alles darunter (ein umbenannter Ordner meldet nur sich selbst, nicht jede Datei darin).
+ */
+export interface FileChange {
+  path: string;
+  kind: 'created' | 'changed' | 'deleted';
+}
+
+/** Gebündelte Änderungen von aussen. Eigene Dateioperationen meldet stattdessen `files.operation`. */
+export interface FilesChangedEvent {
+  changes: FileChange[];
+  /**
+   * Die Überwachung hat womöglich Ereignisse verpasst (ein Ereignis ohne Dateinamen, etwa bei übergelaufenem
+   * Puffer, oder sehr viele auf einmal). Die schon gelesenen Ordner sind neu eingelesen und ihre Unterschiede in
+   * `changes` gemeldet; was darüber hinaus wichtig ist (etwa offene Dateien), prüft der Empfänger selbst.
+   */
+  rescanned?: true;
+}
+
+/**
+ * Eine Dateioperation von Codium selbst, gemeldet, sobald sie fertig ist; spätere Dienste reagieren darauf (Tabs
+ * folgen einer Umbenennung, Sprachserver und Git erfahren davon). Gelöscht heisst: in den Papierkorb verschoben.
+ */
+export type FileOperation =
+  | { kind: 'created'; path: string; isDirectory: boolean }
+  | { kind: 'renamed'; from: string; to: string; isDirectory: boolean }
+  | { kind: 'deleted'; path: string; isDirectory: boolean }
+  | { kind: 'copied'; from: string; to: string; isDirectory: boolean };
+
+/**
  * Alle Codes gescheiterter Befehle, die die Oberfläche sehen kann. Die Meldung eines Fehlers mit einem dieser
  * Codes ist englisch und lässt sich so anzeigen. Ein Fehler ohne Code ist ein interner Fehler; seine Meldung ist
  * nicht für Nutzer gedacht, die Oberfläche zeigt dafür einen allgemeinen Text.
@@ -116,6 +158,19 @@ export const ErrorCode = {
   projectUnreachable: 'PROJECT_UNREACHABLE',
   /** Codium wird gerade beendet und öffnet nichts mehr. */
   shuttingDown: 'SHUTTING_DOWN',
+  /**
+   * Ein Pfad liegt ausserhalb des Projekts, auch erst nach dem Auflösen von `..`, Junctions oder symbolischen
+   * Links; `data.path` ist der Pfad.
+   */
+  pathOutsideProject: 'PATH_OUTSIDE_PROJECT',
+  /** Die Datei oder der Ordner fehlt; `data.path` ist der Pfad. */
+  fileNotFound: 'FILE_NOT_FOUND',
+  /** Am Ziel gibt es schon eine Datei oder einen Ordner dieses Namens; `data.path` ist das Ziel. */
+  fileExists: 'FILE_EXISTS',
+  /** Der Name einer Datei oder eines Ordners ist unter Windows nicht erlaubt. */
+  invalidFileName: 'INVALID_FILE_NAME',
+  /** Eine Dateioperation ist am Dateisystem gescheitert (etwa fehlende Rechte, Datei in Gebrauch). */
+  fileOperationFailed: 'FILE_OPERATION_FAILED',
 } as const;
 
 export type ErrorCodeValue = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -161,6 +216,44 @@ export interface Commands {
    * Kern mit `INVALID_PARAMS` ab.
    */
   'project.setLayout': { params: ToolWindowLayout; result: void };
+  /** Die aufgeklappten Ordner im Dateibaum (absolute Pfade); ohne gespeicherte nur der Projektordner selbst. */
+  'project.expandedFolders': { params: void; result: string[] };
+  /** Speichert die aufgeklappten Ordner; Pfade ausserhalb des Projekts lehnt der Kern ab. */
+  'project.setExpandedFolders': { params: { paths: string[] }; result: void };
+
+  // Datei-Dienst. Jeder Befehl prüft, dass seine Pfade absolut sind (sonst `INVALID_PARAMS`), dass es sie gibt
+  // (sonst `FILE_NOT_FOUND`) und dass sie auch nach dem Auflösen von `..`, Junctions und symbolischen Links im
+  // Projekt liegen (sonst `PATH_OUTSIDE_PROJECT`). Den Projektordner selbst kann man weder umbenennen, löschen
+  // noch kopieren (`INVALID_PARAMS`).
+
+  /** Inhalt eines Ordners: Ordner vor Dateien, alphabetisch ohne Unterscheidung der Gross-/Kleinschreibung, ohne `.git`. */
+  'files.list': { params: { path: string }; result: FileEntry[] };
+  /**
+   * Legt eine leere Datei an und liefert ihren Pfad. Der Name darf wie in IntelliJ Unterordner enthalten
+   * (`a/b/c.txt`); fehlende Ordner entstehen dabei. Gibt es die Datei schon: `FILE_EXISTS`.
+   */
+  'files.createFile': { params: { parent: string; name: string }; result: string };
+  /** Legt einen Ordner an (auch verschachtelt, `a/b`) und liefert seinen Pfad. Gibt es ihn schon: `FILE_EXISTS`. */
+  'files.createDirectory': { params: { parent: string; name: string }; result: string };
+  /** Benennt eine Datei oder einen Ordner um (nur der Name, kein Verschieben) und liefert den neuen Pfad. */
+  'files.rename': { params: { path: string; newName: string }; result: string };
+  /** Verschiebt Dateien und Ordner in den Papierkorb; liegt ein Eintrag in einem anderen, genügt dieser. */
+  'files.delete': { params: { paths: string[] }; result: void };
+  /**
+   * Kopiert Dateien und Ordner in den Ordner `target` und liefert die neuen Pfade. Bei einem Namenskonflikt bekommt
+   * die Kopie einen Namen mit Zusatz („Name (2).ext“). `newName` gibt bei genau einer Quelle den Namen vor; ist er
+   * vergeben: `FILE_EXISTS`.
+   */
+  'files.copy': { params: { sources: string[]; target: string; newName?: string }; result: string[] };
+  /**
+   * Der Name, den `files.copy` für eine Kopie von `source` im Ordner `target` wählen würde: der Name der Quelle
+   * selbst, wenn er dort frei ist, sonst einer mit Zusatz. Für den Vorschlag im Dialog „Copy“.
+   */
+  'files.suggestCopyName': { params: { source: string; target: string }; result: string };
+  /** „Copy Path“: schreibt die absoluten Pfade (je Zeile einer) in die Zwischenablage. */
+  'files.copyPaths': { params: { paths: string[] }; result: void };
+  /** „Open in Explorer“: zeigt die Datei oder den Ordner markiert im Explorer. */
+  'files.showInExplorer': { params: { path: string }; result: void };
 }
 
 /** Alle Ereignisse: Name → Nutzlast. */
@@ -169,6 +262,15 @@ export interface Events {
   'app.notice': Notice;
   /** Fortschritt einer Arbeit des Kerns für das Fenster (Statusleiste). */
   'app.progress': ProgressEvent;
+  /** Dateien des Projekts wurden von aussen angelegt, geändert oder gelöscht (gebündelt). */
+  'files.changed': FilesChangedEvent;
+  /** Codium hat eine Dateioperation ausgeführt. */
+  'files.operation': FileOperation;
+  /**
+   * Im Ordner `.git` des Projekts haben sich HEAD, der Index oder Refs geändert (gebündelt). Änderungen in `.git`
+   * lösen sonst keine Dateiereignisse aus. Grundlage für den Git-Dienst (Ticket 15).
+   */
+  'git.dataChanged': Record<string, never>;
 }
 
 export type CommandName = keyof Commands;

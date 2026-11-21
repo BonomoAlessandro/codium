@@ -50,7 +50,15 @@ export interface ProjectState {
   window?: WindowPlacement;
   /** Layout der Werkzeugfenster; ohne Angabe gilt `defaultLayout()`. */
   layout?: ToolWindowLayout;
+  /**
+   * Aufgeklappte Ordner im Dateibaum, relativ zum Projektordner mit „/“ getrennt; der Projektordner selbst ist der
+   * leere Pfad. Ohne Angabe ist nur der Projektordner aufgeklappt.
+   */
+  expandedFolders?: string[];
 }
+
+/** Höchstzahl gespeicherter aufgeklappter Ordner. */
+export const MAX_EXPANDED_FOLDERS = 10_000;
 
 /** Grösste Grösse eines Werkzeugfensters in Pixeln, die der Kern annimmt; die Oberfläche begrenzt enger. */
 export const MAX_TOOL_WINDOW_SIZE = 10_000;
@@ -125,12 +133,22 @@ export function normalizeAppState(raw: Record<string, unknown>): AppState {
 export function normalizeProjectState(projectPath: string, raw: Record<string, unknown>): ProjectState {
   const window = placement(raw.window);
   const layout = normalizeLayout(raw.layout);
+  const expandedFolders = Array.isArray(raw.expandedFolders)
+    ? stringArray(raw.expandedFolders).filter(isRelativeFolder).slice(0, MAX_EXPANDED_FOLDERS)
+    : undefined;
   return {
     schemaVersion: 1,
     path: projectPath,
     ...(window ? { window } : {}),
     ...(layout ? { layout } : {}),
+    ...(expandedFolders ? { expandedFolders } : {}),
   };
+}
+
+/** Ein relativer Ordnerpfad aus der Zustandsdatei: mit „/“ getrennt, ohne Laufwerk, ohne leere Teile, `.` oder `..`. */
+function isRelativeFolder(value: string): boolean {
+  if (value === '') return true;
+  return value.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..' && !/[\\:]/.test(segment));
 }
 
 /** Eine Bounds-Angabe aus einer Datei ist nur brauchbar, wenn alle vier Werte endliche Zahlen sind. */

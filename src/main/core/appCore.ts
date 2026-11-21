@@ -25,7 +25,14 @@ import type { EventSink, Ports, WindowPlacement } from './ports';
 import { ProgressReporter } from './progress';
 import { DEFAULT_CLEANUP_TIMEOUT_MS, ProjectCore } from './projectCore';
 import { FolderQueries, type FolderStatus } from './folderQueries';
-import { lexicalProjectKey, normalizeProjectPath, projectName, projectStateFileName } from './projectPath';
+import { registerFileCommands } from './fileCommands';
+import {
+  isAbsoluteCommandPath,
+  lexicalProjectKey,
+  normalizeProjectPath,
+  projectName,
+  projectStateFileName,
+} from './projectPath';
 import { CommandError, CommandRouter, type CallContext } from './router';
 import {
   APP_STATE_FILE,
@@ -64,6 +71,9 @@ export interface AppCoreOptions {
   cleanupTimeoutMs?: number;
   /** Zeitlimit einer Abfrage auf einem Projektordner; danach gilt sein Laufwerk eine Weile als nicht erreichbar. */
   folderQueryTimeoutMs?: number;
+  /** Wartezeiten der Dateiüberwachung (siehe fileWatcher.ts). */
+  watchDebounceMs?: number;
+  watchMaxDelayMs?: number;
   log?: (message: string) => void;
 }
 
@@ -361,6 +371,7 @@ export class AppCore {
         state.layout = layout;
       });
     });
+    registerFileCommands((name, handler) => this.registerProjectCommand(name, handler));
   }
 
   /** `openProject`; mit `remember = false` bleibt die Reihenfolge der zuletzt geöffneten Projekte, wie sie ist. */
@@ -591,32 +602,29 @@ export class AppCore {
     stateFile: StateFile<ProjectState>,
     state: ProjectState,
   ): ProjectCore {
-    const core = new ProjectCore(
-      normalized,
+    const core = new ProjectCore({
+      path: normalized,
       windowId,
       stateFile,
-      this.events,
-      this.log,
-      this.options.cleanupTimeoutMs ?? DEFAULT_CLEANUP_TIMEOUT_MS,
-      state,
-    );
+      events: this.events,
+      shell: this.ports.shell,
+      log: this.log,
+      cleanupTimeoutMs: this.options.cleanupTimeoutMs ?? DEFAULT_CLEANUP_TIMEOUT_MS,
+      initialState: state,
+      watchDebounceMs: this.options.watchDebounceMs,
+      watchMaxDelayMs: this.options.watchMaxDelayMs,
+    });
     this.projects.set(windowId, core);
     return core;
   }
 }
 
-/** Ein absoluter Pfad unter Windows: mit Laufwerk (`C:\`) oder als Freigabe (`\\server\share`). */
-const WINDOWS_ABSOLUTE = /^([A-Za-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+)/;
-
 /**
- * Der absolute Pfad aus den Parametern eines Befehls. Die Oberfläche ist eigener Code, geprüft wird trotzdem: Ein
- * relativer Pfad hinge vom Arbeitsordner des Hauptprozesses ab, ein Pfad ohne Laufwerk wie `\foo` vom Laufwerk
- * dieses Arbeitsordners.
+ * Der absolute Pfad aus den Parametern eines Befehls. Die Oberfläche ist eigener Code, geprüft wird trotzdem (siehe
+ * `isAbsoluteCommandPath`).
  */
 function requireAbsolutePath(params: unknown): string {
   const value = (params as { path?: unknown } | undefined)?.path;
-  const absolute =
-    typeof value === 'string' && (process.platform === 'win32' ? WINDOWS_ABSOLUTE.test(value) : path.isAbsolute(value));
-  if (!absolute) throw new CommandError('An absolute path is expected.', ErrorCode.invalidParams);
+  if (!isAbsoluteCommandPath(value)) throw new CommandError('An absolute path is expected.', ErrorCode.invalidParams);
   return value;
 }

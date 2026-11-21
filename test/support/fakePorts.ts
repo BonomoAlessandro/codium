@@ -172,6 +172,7 @@ export class FakeShellActions implements ShellActionsPort {
   readonly trashed: Array<{ path: string; movedTo: string }> = [];
   readonly shownInExplorer: string[] = [];
   clipboard = '';
+  private trashCounter = 0;
 
   constructor(private readonly trashDir: string) {}
 
@@ -180,9 +181,9 @@ export class FakeShellActions implements ShellActionsPort {
   }
 
   async trash(targetPath: string): Promise<void> {
-    fs.mkdirSync(this.trashDir, { recursive: true });
-    const movedTo = path.join(this.trashDir, `${this.trashed.length}-${path.basename(targetPath)}`);
-    fs.renameSync(targetPath, movedTo);
+    await fs.promises.mkdir(this.trashDir, { recursive: true });
+    const movedTo = path.join(this.trashDir, `${this.trashCounter++}-${path.basename(targetPath)}`);
+    await fs.promises.rename(targetPath, movedTo);
     this.trashed.push({ path: targetPath, movedTo });
   }
 

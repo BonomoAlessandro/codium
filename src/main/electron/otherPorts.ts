@@ -61,15 +61,17 @@ export class ElectronShellActions implements ShellActionsPort {
       await shell.trashItem(targetPath);
       return;
     }
-    fs.mkdirSync(this.testTrashDir, { recursive: true });
+    // Asynchron wie der echte Papierkorb: Der Pfad liegt im Projekt, vielleicht auf einem langsamen Laufwerk.
+    await fs.promises.mkdir(this.testTrashDir, { recursive: true });
     // Eindeutig auch bei gleichen Namen in derselben Millisekunde.
     const destination = path.join(this.testTrashDir, `${Date.now()}-${this.trashCounter++}-${path.basename(targetPath)}`);
     try {
-      fs.renameSync(targetPath, destination);
-    } catch {
+      await fs.promises.rename(targetPath, destination);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EXDEV') throw err;
       // Anderes Laufwerk: kopieren und löschen.
-      fs.cpSync(targetPath, destination, { recursive: true });
-      fs.rmSync(targetPath, { recursive: true, force: true });
+      await fs.promises.cp(targetPath, destination, { recursive: true });
+      await fs.promises.rm(targetPath, { recursive: true, force: true });
     }
     this.recorder.record('trash', { path: targetPath, movedTo: destination });
   }

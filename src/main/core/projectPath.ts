@@ -41,6 +41,23 @@ export function projectStateFileName(key: string): string {
   return `${readable}-${hash}.json`;
 }
 
+/** Ein absoluter Pfad unter Windows: mit Laufwerk (`C:\`) oder als Freigabe (`\\server\share`). */
+const WINDOWS_ABSOLUTE = /^([A-Za-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+)/;
+
+/**
+ * Ob ein Wert aus einem Befehl ein absoluter Pfad ist. Ein relativer Pfad hinge vom Arbeitsordner des Hauptprozesses
+ * ab, ein Pfad ohne Laufwerk wie `\foo` unter Windows vom Laufwerk dieses Arbeitsordners.
+ */
+export function isAbsoluteCommandPath(value: unknown): value is string {
+  return typeof value === 'string' && (process.platform === 'win32' ? WINDOWS_ABSOLUTE.test(value) : path.isAbsolute(value));
+}
+
+/** Ob ein Schlüssel (siehe `lexicalProjectKey`) derselbe ist wie `root` oder darunter liegt. */
+export function isKeyWithin(key: string, root: string): boolean {
+  if (key === root) return true;
+  return key.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
+}
+
 function stripTrailingSeparators(resolved: string): string {
   const root = path.parse(resolved).root;
   let result = resolved;
