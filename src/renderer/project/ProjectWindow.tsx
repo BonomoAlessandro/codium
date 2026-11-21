@@ -14,7 +14,9 @@ import { EditorArea, type EditorAreaHandle, type EditorStatus } from '../editor/
 import { FindInFilesPopup, type SearchOutcome } from '../search/FindInFilesPopup';
 import { GotoFilePopup, RecentFilesPopup } from '../search/FilePopups';
 import { FindToolWindow, type FindTab } from '../search/FindToolWindow';
+import { errorText } from '../errors';
 import { useSettings } from '../settings';
+import { SettingsDialog } from '../SettingsDialog';
 import { flushSync } from 'react-dom';
 import {
   TOOL_WINDOW_SIDE,
@@ -68,6 +70,12 @@ function focusToolWindow(section: HTMLElement | undefined): void {
   (section?.querySelector<HTMLElement>('[data-autofocus]') ?? section)?.focus({ preventScroll: true });
 }
 
+/** Ereignis am Fenster: „Open README“ einer Meldung; das Projektfenster öffnet das README in einem Tab. */
+export const OPEN_README_EVENT = 'codium:open-readme';
+
+/** Die Überschrift im README, an der „Open README“ steht. */
+const PREREQUISITES_HEADING = /^##\s+Voraussetzungen\s*$/;
+
 /** Optionen der Projektsuche beim ersten Öffnen. */
 const INITIAL_SEARCH: SearchOptions = {
   query: '',
@@ -117,6 +125,24 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
   const openFile = useCallback((path: string) => editorRef.current?.open(path, { focus: true }), []);
 
   // ---------- Suchen (Ticket 08) ----------
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // „Open README“ (Meldungen zu fehlenden Voraussetzungen): das mitgelieferte README schreibgeschützt, am Abschnitt
+  // „Voraussetzungen“.
+  useEffect(() => {
+    const onOpenReadme = () => {
+      api.request('app.readme').then(
+        ({ text }) => {
+          const line = text.split(/\r?\n/).findIndex((l) => PREREQUISITES_HEADING.test(l));
+          editorRef.current?.openDocument({ title: 'README.md', text, language: 'markdown', line: line >= 0 ? line + 1 : 1 });
+        },
+        (err: unknown) => notify({ level: 'error', text: errorText(err) }),
+      );
+    };
+    window.addEventListener(OPEN_README_EVENT, onOpenReadme);
+    return () => window.removeEventListener(OPEN_README_EVENT, onOpenReadme);
+  }, [api, notify]);
 
   const [popup, setPopup] = useState<SearchPopup>(null);
   const popupRef = useRef(popup);
@@ -264,6 +290,16 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
       if (popupRef.current !== null && (command.startsWith('toolWindow.') || command.startsWith('tab.') || command === 'file.saveAll')) {
         e.preventDefault();
         e.stopPropagation();
+        return;
+      }
+      if (command === 'settings.open') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.repeat) return;
+        closeOpenMenus();
+        stopDrag();
+        setPopup(null);
+        setSettingsOpen(true);
         return;
       }
       if (command === 'file.gotoFile' || command === 'file.recent' || command === 'find.inFiles') {
@@ -421,7 +457,7 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
 
   return (
     <div className="project-window">
-      <Header project={project} actions={actions} onExit={() => void api.request('app.exit')} />
+      <Header project={project} actions={actions} onExit={() => void api.request('app.exit')} onSettings={() => setSettingsOpen(true)} />
       <div className="workbench">
         <Stripe side="left" groups={[STRIPES.left.top, STRIPES.left.bottom]} layout={shown} available={available} onToggle={toggle} />
         <div className="tool-area" ref={areaRef}>
@@ -446,6 +482,7 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
         <Stripe side="right" groups={[STRIPES.right.top, []]} layout={shown} available={available} onToggle={toggle} />
       </div>
       <StatusBar work={work} editor={status} />
+      {settingsOpen && <SettingsDialog api={api} settings={settings} onClose={() => setSettingsOpen(false)} />}
       {popup === 'gotoFile' && <GotoFilePopup api={api} project={project} onOpen={openFile} onClose={() => setPopup(null)} />}
       {popup === 'recentFiles' && <RecentFilesPopup api={api} project={project} onOpen={openFile} onClose={() => setPopup(null)} />}
       {popup === 'findInFiles' && (

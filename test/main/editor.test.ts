@@ -196,11 +196,11 @@ describe('Editor im Kern', () => {
       const first = createTestCore(path.join(root, 'data'));
       await first.core.start();
       const welcome = first.ports.windows.windowTitled(WELCOME);
-      expect(await call(first, welcome, 'app.settings')).toEqual({ fontSize: DEFAULT_FONT_SIZE });
+      expect(await call(first, welcome, 'app.settings')).toEqual({ fontSize: DEFAULT_FONT_SIZE, jdk: null });
 
       // Im Willkommensfenster geändert, kommt die Änderung dort an.
-      expect(await call(first, welcome, 'app.updateSettings', { fontSize: 15 })).toEqual({ fontSize: 15 });
-      expect(settingsEvents(first, welcome)).toEqual([{ fontSize: 15 }]);
+      expect(await call(first, welcome, 'app.updateSettings', { fontSize: 15 })).toEqual({ fontSize: 15, jdk: null });
+      expect(settingsEvents(first, welcome)).toEqual([{ fontSize: 15, jdk: null }]);
 
       await call(first, welcome, 'app.openProject', { path: alpha });
       const alphaWindow = first.ports.windows.windowTitled(title('Alpha'));
@@ -208,13 +208,13 @@ describe('Editor im Kern', () => {
       const betaWindow = first.ports.windows.windowTitled(title('Beta'));
 
       // In einem Projektfenster geändert, erreicht die Änderung beide Projektfenster.
-      expect(await call(first, betaWindow, 'app.updateSettings', { fontSize: 16 })).toEqual({ fontSize: 16 });
-      expect(settingsEvents(first, alphaWindow)).toEqual([{ fontSize: 16 }]);
-      expect(settingsEvents(first, betaWindow)).toEqual([{ fontSize: 16 }]);
-      expect(await call(first, alphaWindow, 'app.settings')).toEqual({ fontSize: 16 });
+      expect(await call(first, betaWindow, 'app.updateSettings', { fontSize: 16 })).toEqual({ fontSize: 16, jdk: null });
+      expect(settingsEvents(first, alphaWindow)).toEqual([{ fontSize: 16, jdk: null }]);
+      expect(settingsEvents(first, betaWindow)).toEqual([{ fontSize: 16, jdk: null }]);
+      expect(await call(first, alphaWindow, 'app.settings')).toEqual({ fontSize: 16, jdk: null });
 
       const { test, windowId } = await restarted(first);
-      expect(await call(test, windowId, 'app.settings')).toEqual({ fontSize: 16 });
+      expect(await call(test, windowId, 'app.settings')).toEqual({ fontSize: 16, jdk: null });
     });
 
     it('lehnt ungültige Einstellungen ab und ändert dann nichts', async () => {
@@ -228,7 +228,7 @@ describe('Editor im Kern', () => {
       await expect(call(test, windowId, 'app.updateSettings', { fontSize: 14, other: 1 } as never)).rejects.toMatchObject({
         code: ErrorCode.invalidParams,
       });
-      expect(await call(test, windowId, 'app.settings')).toEqual({ fontSize: DEFAULT_FONT_SIZE });
+      expect(await call(test, windowId, 'app.settings')).toEqual({ fontSize: DEFAULT_FONT_SIZE, jdk: null });
       expect(settingsEvents(test, windowId)).toEqual([]);
     });
   });

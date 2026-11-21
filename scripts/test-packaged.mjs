@@ -66,6 +66,10 @@ if (existsSync(ripgrep)) {
   const version = execFileSync(ripgrep, ['--version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 });
   check(/^ripgrep \d+\.\d+/.test(version), `ripgrep startet (${version.split(/\r?\n/)[0]})`);
 }
+// Das README für „Open README“ liegt ausserhalb des App-Archivs, mit dem Abschnitt „Voraussetzungen“ (Ticket 09).
+const readme = path.join(unpacked, 'resources', 'README.md');
+check(existsSync(readme), 'das README liegt ausserhalb des App-Archivs');
+if (existsSync(readme)) check(/^## Voraussetzungen\s*$/m.test(readFileSync(readme, 'utf8')), 'das README hat den Abschnitt „Voraussetzungen“');
 // Was esbuild bündelt (Monaco, Schrift), gehört nicht noch einmal ins Paket.
 const bundledTwice = ['monaco-editor', '@fontsource'].filter((name) => existsSync(path.join(unpacked, 'resources', 'app.asar.unpacked', 'node_modules', name)));
 check(bundledTwice.length === 0, 'Monaco und die Schrift liegen nur gebündelt im Paket');

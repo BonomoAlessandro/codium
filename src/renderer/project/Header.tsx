@@ -5,6 +5,7 @@
 import { useRef, useState } from 'react';
 import type { ProjectInfo } from '../../shared/types';
 import { ChevronDownIcon } from '../icons';
+import { shortcutLabel } from '../keymap';
 import { Menu, type MenuEntry } from '../popup/Menu';
 import { sameProjectPath, type ProjectActions } from '../RecentProjects';
 import { projectBadgeColor, projectInitials } from './projectBadge';
@@ -13,9 +14,11 @@ interface HeaderProps {
   project: ProjectInfo;
   actions: ProjectActions;
   onExit: () => void;
+  /** „Settings…“: öffnet den Einstellungsdialog. */
+  onSettings: () => void;
 }
 
-export function Header({ project, actions, onExit }: HeaderProps) {
+export function Header({ project, actions, onExit, onSettings }: HeaderProps) {
   const [menu, setMenu] = useState<{ viaKeyboard: boolean } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -29,7 +32,8 @@ export function Header({ project, actions, onExit }: HeaderProps) {
       (p): MenuEntry => ({ kind: 'item', label: p.name, detail: p.path, muted: !p.exists, run: () => void actions.openRecent(p) }),
     ),
     { kind: 'separator' },
-    // Platz für „Settings…“ (Ticket 09).
+    { kind: 'item', label: 'Settings…', shortcut: shortcutLabel('settings.open'), run: onSettings },
+    { kind: 'separator' },
     { kind: 'item', label: 'Exit', run: onExit },
   ];
 

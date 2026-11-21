@@ -8,7 +8,7 @@ import { createApi } from './api';
 import { NoticeList, useNotices } from './Notices';
 import { DialogHost, useAsk } from './popup/Dialogs';
 import { applyProgress, type RunningWork } from './progress';
-import { ProjectWindow } from './project/ProjectWindow';
+import { OPEN_README_EVENT, ProjectWindow } from './project/ProjectWindow';
 import { useProjectActions, type ProjectActions } from './RecentProjects';
 import { WelcomeScreen } from './WelcomeScreen';
 
@@ -76,6 +76,10 @@ function runNoticeAction(actions: ProjectActions, action: NoticeAction): void {
   switch (kind) {
     case 'recentProjects.remove':
       void actions.removeRecent(action.params.path);
+      return;
+    case 'readme.open':
+      // Das Projektfenster öffnet das README in einem Tab (siehe ProjectWindow).
+      window.dispatchEvent(new CustomEvent(OPEN_README_EVENT));
       return;
     default:
       assertNever(kind);

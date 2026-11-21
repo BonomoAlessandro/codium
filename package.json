@@ -37,6 +37,12 @@
     },
     "asarUnpack": [
       "node_modules/@vscode/ripgrep-win32-x64/**"
+    ],
+    "extraResources": [
+      {
+        "from": "README.md",
+        "to": "README.md"
+      }
     ]
   },
   "dependencies": {

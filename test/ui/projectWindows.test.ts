@@ -80,7 +80,7 @@ describe('Projektfenster', () => {
       await (await codium.page(WELCOME)).getByRole('button', { name: 'Open Folder' }).click();
       const alphaPage = await codium.page('Alpha – Codium');
       let menu = await openProjectMenu(alphaPage, 'Alpha');
-      expect(await menuLabels(menu)).toEqual(['Open Folder…', 'Beta', 'Gamma', 'Exit']);
+      expect(await menuLabels(menu)).toEqual(['Open Folder…', 'Beta', 'Gamma', 'Settings…', 'Exit']);
       expect(await menu.getByRole('menuitem', { name: /^Gamma/ }).getAttribute('title')).toBe(gamma);
 
       // Beta aus dem Projektmenü öffnen.
@@ -93,7 +93,7 @@ describe('Projektfenster', () => {
       const betaPage = await codium.page('Beta – Codium');
       menu = await openProjectMenu(betaPage, 'Beta');
       // Neueste zuerst: Beta wurde zuletzt geöffnet, davor Alpha.
-      expect(await menuLabels(menu)).toEqual(['Open Folder…', 'Alpha', 'Gamma', 'Exit']);
+      expect(await menuLabels(menu)).toEqual(['Open Folder…', 'Alpha', 'Gamma', 'Settings…', 'Exit']);
       expect(await menu.getByRole('menuitem', { name: /^Alpha/ }).getAttribute('title')).toBe(alpha);
       await menu.getByRole('menuitem', { name: 'Open Folder…' }).click();
       await expect

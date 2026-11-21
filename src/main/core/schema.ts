@@ -31,6 +31,8 @@ export interface Settings {
   terminalShell?: string;
   /** Schriftgrösse der Editoren; ohne Angabe `DEFAULT_FONT_SIZE`. */
   fontSize?: number;
+  /** JDK für den Java-Sprachserver (Ordner); ohne Angabe „Newest detected“. */
+  jdk?: string;
 }
 
 /** App-Zustand im Datenordner. */
@@ -90,12 +92,17 @@ export const MAX_RECENT_FILES = 50;
 
 /** Die Einstellungen für die Oberfläche: gespeicherte Werte, sonst die Standardwerte. */
 export function appSettings(settings: Settings): AppSettings {
-  return { fontSize: settings.fontSize ?? DEFAULT_FONT_SIZE };
+  return { fontSize: settings.fontSize ?? DEFAULT_FONT_SIZE, jdk: settings.jdk ?? null };
 }
 
 /** Ob eine Schriftgrösse gültig ist: eine ganze Zahl von `MIN_FONT_SIZE` bis `MAX_FONT_SIZE`. */
 export function isFontSize(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= MIN_FONT_SIZE && value <= MAX_FONT_SIZE;
+}
+
+/** Ob ein JDK-Ordner als Einstellung taugt: ein absoluter Windows-Pfad. */
+export function isJdkPath(value: unknown): value is string {
+  return typeof value === 'string' && /^([a-z]:[\\/]|\\\\)/i.test(value) && value.length < 1000;
 }
 
 /** Ein Cursor aus unbekannter Quelle: Zeile und Spalte ganze Zahlen ab 1, Scrollstand endlich und nicht negativ. */
@@ -179,6 +186,7 @@ export function normalizeAppState(raw: Record<string, unknown>): AppState {
     settings: {
       ...(typeof settings.terminalShell === 'string' ? { terminalShell: settings.terminalShell } : {}),
       ...(isFontSize(settings.fontSize) ? { fontSize: settings.fontSize } : {}),
+      ...(isJdkPath(settings.jdk) ? { jdk: settings.jdk } : {}),
     },
     ...(welcomeWindow ? { welcomeWindow } : {}),
   };

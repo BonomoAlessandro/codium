@@ -47,6 +47,7 @@ export function createTestCore(dataDir: string, options: TestCoreOptions = {}): 
     fileProgressDelayMs: options.fileProgressDelayMs,
     flushTimeoutMs: options.flushTimeoutMs ?? 0,
     ripgrepPath: ripgrepPath(path.resolve(__dirname, '..', '..'), false),
+    readmePath: path.resolve(__dirname, '..', '..', 'README.md'),
     folderQueryTimeoutMs: options.folderQueryTimeoutMs,
     log: (message) => logs.push(message),
   });

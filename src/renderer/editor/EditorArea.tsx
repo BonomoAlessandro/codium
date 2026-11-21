@@ -71,12 +71,32 @@ export interface EditorAreaHandle {
    * (ab Ticket 15) warten darauf. Tabs mit „File changed on disk“ bleiben bis zur Entscheidung ungespeichert.
    */
   saveAll(): Promise<void>;
+  /**
+   * Öffnet ein mitgeliefertes Dokument (etwa das README) schreibgeschützt in einem Tab, an einer Zeile. Solche Tabs
+   * sind keine Datei-Tabs: Sie werden weder gespeichert noch nach einem Neustart wiederhergestellt.
+   */
+  openDocument(doc: ReadOnlyDocument): void;
 }
+
+/** Ein schreibgeschütztes Dokument für einen Tab. */
+export interface ReadOnlyDocument {
+  /** Name im Tab, etwa „README.md“. */
+  title: string;
+  text: string;
+  /** Sprache für die Farben, etwa „markdown“. */
+  language: string;
+  /** Zeile (ab 1), an der der Cursor stehen soll. */
+  line?: number;
+}
+
+/** Pfade schreibgeschützter Dokument-Tabs beginnen so; es sind keine Dateien. */
+const DOCUMENT_PREFIX = 'codium:\\';
+export const isDocumentTab = (tabPath: string) => tabPath.startsWith(DOCUMENT_PREFIX);
 
 /** Was ein Tab zeigt; `null`, solange die Datei noch nicht gelesen wurde. */
 type TabContent =
   | { kind: 'loading' }
-  | { kind: 'text'; encoding: TextEncoding; lineEnding: LineEnding; large: boolean }
+  | { kind: 'text'; encoding: TextEncoding; lineEnding: LineEnding; large: boolean; readOnly?: true }
   | { kind: 'image'; dataUrl: string; size: number }
   | { kind: 'binary'; size: number }
   | { kind: 'tooLarge'; size: number };
@@ -173,9 +193,9 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     if (!restored.current) return;
     api
       .request('project.setTabs', {
-        tabs: tabsRef.current.map((t) => t.path),
-        active: activeRef.current,
-        pinned: tabsRef.current.filter((t) => t.pinned).map((t) => t.path),
+        tabs: tabsRef.current.filter((t) => !isDocumentTab(t.path)).map((t) => t.path),
+        active: activeRef.current !== null && !isDocumentTab(activeRef.current) ? activeRef.current : null,
+        pinned: tabsRef.current.filter((t) => t.pinned && !isDocumentTab(t.path)).map((t) => t.path),
       })
       .catch((err: unknown) => console.error('Tabs nicht gespeichert:', err));
   }, [api]);
@@ -197,7 +217,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     const position = editor?.getPosition();
     if (!editor || !pair || !position) return;
     const filePath = tabPath(pair[0]);
-    if (filePath === undefined) return;
+    if (filePath === undefined || isDocumentTab(filePath)) return;
     const cursor = { line: position.lineNumber, column: position.column, scrollTop: Math.max(0, Math.round(editor.getScrollTop())) };
     api.request('project.setCursor', { path: filePath, cursor }).catch((err: unknown) => console.error('Cursor nicht gespeichert:', err));
   }, [api, entryOfModel]);
@@ -277,7 +297,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     entry.saveTimer = null;
     const version = entry.model.getAlternativeVersionId();
     const tab = tabsRef.current.find((t) => pathKey(t.path) === key);
-    if (!tab || tab.content?.kind !== 'text' || conflictsRef.current.has(key)) return entry.saving;
+    if (!tab || tab.content?.kind !== 'text' || tab.content.readOnly || conflictsRef.current.has(key)) return entry.saving;
     if (!force && version === entry.savedVersion) return entry.saving;
     const text = entry.model.getValue();
     const { encoding, lineEnding } = tab.content;
@@ -600,7 +620,27 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     [close, saveAll, switchRecent],
   );
 
-  useImperativeHandle(ref, () => ({ open, handleCommand, saveAll }), [open, handleCommand, saveAll]);
+  const openDocument = useCallback(
+    (doc: ReadOnlyDocument) => {
+      const docPath = DOCUMENT_PREFIX + doc.title;
+      const key = pathKey(docPath);
+      const target = doc.line ? { lineNumber: doc.line, column: 1 } : undefined;
+      if (!tabsRef.current.some((t) => pathKey(t.path) === key)) {
+        const uri = monaco.Uri.from({ scheme: 'codium-doc', path: `/${doc.title}` });
+        monaco.editor.getModel(uri)?.dispose();
+        const model = monaco.editor.createModel(doc.text, doc.language, uri);
+        addModel(key, model, model.getAlternativeVersionId());
+        setTabs([
+          ...tabsRef.current,
+          { path: docPath, content: { kind: 'text', encoding: 'utf-8', lineEnding: 'LF', large: false, readOnly: true }, pinned: false },
+        ]);
+      }
+      activate(docPath, { focus: true, ...(target ? { target } : {}) });
+    },
+    [activate, addModel, setTabs],
+  );
+
+  useImperativeHandle(ref, () => ({ open, handleCommand, saveAll, openDocument }), [open, handleCommand, saveAll, openDocument]);
 
   // Verliert das Fenster den Fokus, wird alles gespeichert (etwa vor dem Wechsel in ein Terminal oder zu Git).
   useEffect(() => {
@@ -846,6 +886,8 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       entry.target = pending;
       pendingTargets.current.delete(key);
     }
+    const activeContent = tabsRef.current.find((t) => pathKey(t.path) === key)?.content;
+    editor.updateOptions({ readOnly: activeContent?.kind === 'text' && activeContent.readOnly === true });
     if (editor.getModel() !== entry.model) {
       editor.layout();
       editor.setModel(entry.model);
@@ -873,8 +915,9 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
 
   // Den aktiven Datei-Tab melden (für „Select Opened File“) und als zuletzt geöffnet merken (Ctrl + E).
   useEffect(() => {
-    callbacks.current.onActiveFileChange(active);
-    if (active !== null) void api.request('project.addRecentFile', { path: active }).catch(() => {});
+    const isFile = active !== null && !isDocumentTab(active);
+    callbacks.current.onActiveFileChange(isFile ? active : null);
+    if (isFile) void api.request('project.addRecentFile', { path: active }).catch(() => {});
   }, [active, api]);
 
   // Die gespeicherten Tabs laden; gelesen wird nur der aktive.

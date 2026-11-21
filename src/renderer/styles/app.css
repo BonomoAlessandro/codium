@@ -1461,3 +1461,51 @@ kbd {
   color: var(--text-muted);
   text-align: right;
 }
+
+/* ---------- Einstellungsdialog (Ticket 09) ---------- */
+
+.settings-dialog {
+  width: min(640px, calc(100vw - 80px));
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 12px 16px;
+  align-items: start;
+  padding: 8px 20px 4px;
+}
+
+.settings-grid > label {
+  padding-top: 5px;
+}
+
+.settings-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 4px 6px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.settings-input[type='number'] {
+  width: 80px;
+}
+
+.settings-input:focus {
+  border-color: var(--focus);
+  outline: none;
+}
+
+.settings-hint {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+}
+
+.settings-error {
+  margin: 4px 0 0;
+  color: var(--error);
+}

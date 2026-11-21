@@ -79,6 +79,8 @@ async function startCore(): Promise<void> {
     events,
     appInfo: { name: app.getName(), version: app.getVersion() },
     ripgrepPath: ripgrepPath(app.getAppPath(), app.isPackaged),
+    // Das README liegt im Paket neben dem App-Archiv (`extraResources`), unpaketiert im Projekt.
+    readmePath: app.isPackaged ? path.join(process.resourcesPath, 'README.md') : path.join(app.getAppPath(), 'README.md'),
     ports: {
       windows: new ElectronWindowPort({
         preloadFile: path.join(__dirname, '..', 'preload', 'preload.js'),

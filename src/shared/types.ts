@@ -38,6 +38,8 @@ export interface RecentProject {
 export interface NoticeActions {
   /** Entfernt ein Projekt (absoluter Pfad) aus den zuletzt geöffneten. */
   'recentProjects.remove': { path: string };
+  /** Öffnet das mitgelieferte README schreibgeschützt in einem Tab, am Abschnitt „Voraussetzungen“. */
+  'readme.open': { section: 'prerequisites' };
 }
 
 /** Ein Knopf an einer Meldung des Kerns. */
@@ -221,6 +223,20 @@ export const SEARCH_MATCH_LIMIT = 2000;
 export interface AppSettings {
   /** Schriftgrösse aller Editoren, wie Monaco sie zählt. */
   fontSize: number;
+  /** JDK für den Java-Sprachserver (Ordner); `null` heisst „Newest detected“. */
+  jdk: string | null;
+}
+
+/** Ein erkanntes JDK. */
+export interface JdkInfo {
+  /** Ordner des JDK (mit `bin\java.exe`). */
+  path: string;
+  /** Version aus der Datei `release`, etwa „25.0.5.1“. */
+  version: string;
+  /** Hauptversion, etwa 25. */
+  major: number;
+  /** Hersteller aus der Datei `release`, etwa „Eclipse Adoptium“. */
+  vendor?: string;
 }
 
 export const DEFAULT_FONT_SIZE = 13;
@@ -332,6 +348,13 @@ export interface Commands {
   /** Die Einstellungen; ohne gespeicherte die Standardwerte. */
   'app.settings': { params: void; result: AppSettings };
   /**
+   * Die erkannten JDKs (neueste zuerst) und das JDK, das der Java-Sprachserver nehmen würde: das eingestellte, sonst
+   * das neueste ab Java 25; `null`, wenn es keines gibt.
+   */
+  'app.jdks': { params: void; result: { jdks: JdkInfo[]; forLanguageServer: JdkInfo | null } };
+  /** Das mit Codium mitgelieferte README (Markdown), für „Open README“. */
+  'app.readme': { params: void; result: { text: string } };
+  /**
    * Suche nach Namen (Ctrl + Shift + N): die besten Treffer (höchstens 100) unter allen Dateien des Projekts,
    * versteckte eingeschlossen, ohne `.git`; von `.gitignore` ausgenommene nur mit `includeIgnored`.
    */
@@ -351,8 +374,8 @@ export interface Commands {
   'editor.flushed': { params: { requestId: number }; result: void };
   /**
    * Ändert Einstellungen (nur die angegebenen Felder) und liefert alle. Die Änderung geht als `app.settingsChanged`
-   * an alle Fenster. Ungültige Werte (etwa eine Schriftgrösse ausserhalb von 6 bis 72) lehnt der Kern mit
-   * `INVALID_PARAMS` ab.
+   * an alle Fenster. Ungültige Werte (etwa eine Schriftgrösse ausserhalb von 6 bis 72, ein JDK, das kein absoluter
+   * Pfad ist) lehnt der Kern mit `INVALID_PARAMS` ab.
    */
   'app.updateSettings': { params: Partial<AppSettings>; result: AppSettings };
   /**

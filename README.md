@@ -4,6 +4,23 @@ Eine kleine eigene IDE im Stil von IntelliJ, als Desktop-App für Windows.
 
 > Stand: im Aufbau nach der [Spezifikation](docs/specs/codium-v1.md) und den [Tickets](docs/tickets/README.md). Projekte öffnen in eigenen Fenstern mit Kopfzeile, Werkzeugfenstern, Statusleiste, Meldungen und Rückfragen. Das Werkzeugfenster „Project“ zeigt den Dateibaum mit Dateioperationen und Dateiüberwachung. Dateien öffnen in Tabs mit Monaco (Farben nach IntelliJ „Dark“, JetBrains Mono), Bilder als Bild; Eingaben werden automatisch gespeichert, mit Erhalt von Kodierung und Zeilenende, und von aussen geänderte Dateien laden neu. Dateien lassen sich nach Namen und im ganzen Projekt suchen (ripgrep). Die übrigen Werkzeugfenster sind noch ohne Inhalt.
 
+## Voraussetzungen
+
+### Zum Benutzen
+
+- Windows 10 oder 11
+- [Git für Windows](https://git-scm.com/download/win) im PATH. Ohne Git öffnen Projekte trotzdem; nur die Git-Funktionen fehlen, und Codium zeigt einen Hinweis.
+- Ein JDK 25 oder neuer, nur für die Java-Sprachfunktionen (Ctrl + Linksklick, Vervollständigung, Fehler in Java). Codium findet es selbst in den üblichen Installationsordnern (Oracle, Eclipse Adoptium/Temurin, Microsoft, Amazon Corretto, Azul Zulu, BellSoft, auch unter `%LOCALAPPDATA%\Programs`) und unter den von IntelliJ geladenen JDKs (`%USERPROFILE%\.jdks`); welches es nimmt, lässt sich unter „Settings…“ wählen. `JAVA_HOME` muss nicht darauf zeigen, und ältere JDKs für ältere Projekte dürfen zusätzlich installiert sein.
+- Optional PowerShell 7 für das Terminal.
+- Ausdrücklich nicht nötig: Node.js, Maven, Gradle, ein PostgreSQL-Client.
+
+### Zum Entwickeln
+
+- Node.js 22 oder neuer mit npm
+- Git
+- Netzzugang beim ersten Bauen und für einzelne langsame Tests (npm-Pakete, später jdtls, Maven Central und die Gradle-Verteilung)
+- Ob ein C++-Compiler nötig ist, wird mit dem Terminal (Ticket 11) geprüft und hier eingetragen.
+
 ## Stack
 
 Aufgebaut wie THub.

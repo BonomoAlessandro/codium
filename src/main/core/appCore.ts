@@ -30,6 +30,7 @@ import { ProgressReporter } from './progress';
 import { DEFAULT_CLEANUP_TIMEOUT_MS, ProjectCore } from './projectCore';
 import { FolderQueries, type FolderStatus } from './folderQueries';
 import { registerEditorCommands } from './editorCommands';
+import { detectJdks, hasJavaMarkers, jdkForLanguageServer } from './jdks';
 import { registerFileCommands } from './fileCommands';
 import {
   isAbsoluteCommandPath,
@@ -47,6 +48,7 @@ import {
   appSettings,
   defaultLayout,
   isFontSize,
+  isJdkPath,
   emptyAppState,
   emptyProjectState,
   normalizeAppState,
@@ -93,6 +95,8 @@ export interface AppCoreOptions {
   fileProgressDelayMs?: number;
   /** Pfad zu ripgrep (mitgeliefert, im Paket ausserhalb des App-Archivs). */
   ripgrepPath: string;
+  /** Pfad zum mitgelieferten README (im Paket ausserhalb des App-Archivs), für „Open README“. */
+  readmePath?: string;
   log?: (message: string) => void;
 }
 
@@ -120,6 +124,8 @@ export class AppCore {
   private relaunchRequested = false;
   private readonly log: (message: string) => void;
   private shuttingDown: Promise<void> | null = null;
+  /** Das gefundene Git (Pfad), `null` ohne Git: Die Git-Funktionen bleiben dann aus (ab Ticket 15). */
+  readonly gitPath: string | null;
 
   constructor(private readonly options: AppCoreOptions) {
     this.ports = options.ports;
@@ -133,6 +139,8 @@ export class AppCore {
       onError: (message) => this.log(message),
     });
     this.appState = this.appStateFile.load();
+    // Voraussetzungen: Git beim Start (für alle Projekte), das JDK erst beim Öffnen eines Java-Projekts.
+    this.gitPath = this.ports.system.findProgram('git');
 
     // Lebenszyklus der Fenster: Ereignisse erst zustellen, wenn die Seite bereit ist; ein geschlossenes Fenster
     // baut seinen Projekt-Kern ab und kann Codium beenden.
@@ -444,6 +452,15 @@ export class AppCore {
     registerFileCommands((name, handler) => this.registerProjectCommand(name, handler));
     registerEditorCommands((name, handler) => this.registerProjectCommand(name, handler));
     this.router.register('app.settings', () => appSettings(this.appState.settings));
+    this.router.register('app.jdks', () => {
+      const jdks = detectJdks(this.ports.system);
+      return { jdks, forLanguageServer: jdkForLanguageServer(jdks, this.appState.settings.jdk ?? null) };
+    });
+    this.router.register('app.readme', () => {
+      const text = this.options.readmePath ? this.ports.system.readTextFile(this.options.readmePath) : null;
+      if (text === null) throw new CommandError('The README that comes with Codium was not found.', ErrorCode.fileNotFound);
+      return { text };
+    });
     this.router.register('editor.flushed', (_ctx, params) => {
       const requestId = (params as { requestId?: unknown } | undefined)?.requestId;
       if (typeof requestId === 'number') this.flushWaiters.get(requestId)?.();
@@ -461,7 +478,10 @@ export class AppCore {
     }
     const changes = params as Record<string, unknown>;
     for (const name of Object.keys(changes)) {
-      if (name !== 'fontSize') throw new CommandError(`Unknown setting: ${name}`, ErrorCode.invalidParams);
+      if (name !== 'fontSize' && name !== 'jdk') throw new CommandError(`Unknown setting: ${name}`, ErrorCode.invalidParams);
+    }
+    if ('jdk' in changes && changes.jdk !== null && !isJdkPath(changes.jdk)) {
+      throw new CommandError('The JDK must be a folder (absolute path) or “Newest detected”.', ErrorCode.invalidParams);
     }
     if ('fontSize' in changes && !isFontSize(changes.fontSize)) {
       throw new CommandError(
@@ -471,6 +491,8 @@ export class AppCore {
     }
     this.updateState((state) => {
       if (isFontSize(changes.fontSize)) state.settings.fontSize = changes.fontSize;
+      if (changes.jdk === null) delete state.settings.jdk;
+      else if (isJdkPath(changes.jdk)) state.settings.jdk = changes.jdk;
     });
     const settings = appSettings(this.appState.settings);
     const windows = [...this.projects.keys(), ...(this.welcomeWindowId === null ? [] : [this.welcomeWindowId])];
@@ -721,7 +743,29 @@ export class AppCore {
       ripgrepPath: this.options.ripgrepPath,
     });
     this.projects.set(windowId, core);
+    this.checkPrerequisites(core);
     return core;
+  }
+
+  /**
+   * Hinweise zu fehlenden Voraussetzungen im Fenster eines Projekts: ohne Git immer, ohne JDK ab 25 nur bei einem
+   * Projekt mit Java-Kennzeichen (Maven- oder Gradle-Baudatei), damit Nutzer ohne Java nicht gestört werden.
+   */
+  private checkPrerequisites(core: ProjectCore): void {
+    const openReadme = [{ label: 'Open README', action: 'readme.open' as const, params: { section: 'prerequisites' as const } }];
+    if (this.gitPath === null) {
+      core.notify({ level: 'error', text: 'Git not found. Git features are off until Git is installed.', actions: openReadme });
+    }
+    if (hasJavaMarkers(this.ports.system, core.path)) {
+      const jdk = jdkForLanguageServer(detectJdks(this.ports.system), this.appState.settings.jdk ?? null);
+      if (jdk === null) {
+        core.notify({
+          level: 'error',
+          text: 'No JDK 25 or newer found. Java language features are off until one is installed.',
+          actions: openReadme,
+        });
+      }
+    }
   }
 }
 
