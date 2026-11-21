@@ -191,7 +191,7 @@ export class FileService {
   private async renameNow(params: CommandParams<'files.rename'>): Promise<string> {
     const source = await this.guard.entry(field(params, 'path'));
     if (this.guard.isRoot(source)) throw invalidParams('The project folder cannot be renamed.');
-    this.assertOutsideGit(source);
+    await this.guard.assertOutsideGit(source, 'entry');
     const newName = requireName(field(params, 'newName'));
     if (isGitFolderName(newName)) throw new CommandError(GIT_FOLDER_PROBLEM, ErrorCode.invalidFileName);
     const target = path.join(path.dirname(source), newName);
@@ -225,7 +225,7 @@ export class FileService {
   private async deleteNow(params: CommandParams<'files.delete'>): Promise<void> {
     const targets = await this.entryList(field(params, 'paths'));
     if (targets.some((t) => this.guard.isRoot(t))) throw invalidParams('The project folder cannot be deleted.');
-    for (const target of targets) this.assertOutsideGit(target);
+    for (const target of targets) await this.guard.assertOutsideGit(target, 'entry');
     const list = outermost(targets);
     const title = list.length === 1 ? `Deleting “${path.basename(list[0])}”…` : `Deleting ${list.length} items…`;
     await this.withProgress(title, async (report) => {
@@ -253,7 +253,7 @@ export class FileService {
 
   private async copyNow(params: CommandParams<'files.copy'>): Promise<string[]> {
     const target = await this.existingDirectory(field(params, 'target'));
-    this.assertOutsideGit(target);
+    await this.guard.assertOutsideGit(target, 'follow');
     const sources = await this.existingList(field(params, 'sources'));
     const rawName = field(params, 'newName');
     const newName = rawName === undefined ? undefined : requireName(rawName);
@@ -300,6 +300,7 @@ export class FileService {
       }
       own.settle(isDirectory ? null : await this.stamp(destination));
       await this.guard.assertRealInside(destination);
+      await this.guard.assertOutsideGit(destination, 'entry');
       this.known.update(destination, true, isDirectory);
       this.host.emit('files.operation', { kind: 'copied', from: source, to: destination, isDirectory });
       return destination;
@@ -434,7 +435,7 @@ export class FileService {
   /** Neue Datei oder neuer Ordner, auch mit Unterordnern im Namen (`a/b/c.txt`). */
   private async create(params: { parent: string; name: string }, directory: boolean): Promise<string> {
     const parent = await this.existingDirectory(field(params, 'parent'));
-    this.assertOutsideGit(parent);
+    await this.guard.assertOutsideGit(parent, 'follow');
     const name = field(params, 'name');
     if (typeof name !== 'string') throw invalidParams('A name is expected.');
     const split = splitNewName(name);
@@ -455,6 +456,7 @@ export class FileService {
     }
     own.settle(firstNew === target ? await this.stamp(target) : null);
     await this.guard.assertRealInside(target);
+    await this.guard.assertOutsideGit(target, 'entry');
     const firstIsDirectory = directory || firstNew !== target;
     this.known.update(firstNew, true, firstIsDirectory);
     // Ein Ereignis für den obersten neuen Eintrag; es gilt für alles darunter.
@@ -478,18 +480,16 @@ export class FileService {
       });
       if (!own) return next;
       if (i === segments.length - 1) return null;
-      if (own.isSymbolicLink()) await this.guard.existing(next);
+      if (own.isSymbolicLink()) {
+        // Ein Link als Zwischenordner muss aufgelöst im Projekt liegen, und nicht in `.git`.
+        await this.guard.existing(next);
+        await this.guard.assertOutsideGit(next, 'follow');
+      }
       const stat = own.isSymbolicLink() ? await this.fileOp(() => fs.promises.stat(next), next, 'create') : own;
       if (!stat.isDirectory()) throw alreadyExists(next);
       current = next;
     }
     return null;
-  }
-
-  /** Lehnt Pfade im Ordner `.git` (auf jeder Ebene) und `.git` selbst ab: Dort ändert nur Git etwas. */
-  private assertOutsideGit(target: string): void {
-    const relative = path.relative(this.host.path, target);
-    if (relative.split(path.sep).some(isGitFolderName)) throw invalidParams(GIT_FOLDER_PROBLEM);
   }
 
   /** Ob ein Eintrag ein Ordner ist; bei einem Link zählt das Ziel (fehlt es, gilt er als Datei). */

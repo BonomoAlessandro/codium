@@ -404,6 +404,33 @@ describe('Datei-Dienst', () => {
       expect(operations(test, windowId)).toEqual([]);
     });
 
+    it('ändert auch über eine Junction nichts im Ordner .git', async () => {
+      const { test, windowId, project, at } = await openAlpha({ '.git/hooks/sample': 'x', 'a.txt': '' });
+      fs.symlinkSync(at('.git', 'hooks'), at('hooks-link'), 'junction');
+      const attempts: Array<[CommandName, unknown]> = [
+        ['files.createFile', { parent: at('hooks-link'), name: 'pre-commit' }],
+        ['files.createFile', { parent: project, name: 'hooks-link/pre-commit' }],
+        ['files.createDirectory', { parent: at('hooks-link'), name: 'neu' }],
+        ['files.copy', { sources: [at('a.txt')], target: at('hooks-link') }],
+        ['files.rename', { path: at('hooks-link', 'sample'), newName: 'pre-commit' }],
+        ['files.delete', { paths: [at('hooks-link', 'sample')] }],
+      ];
+      for (const [name, params] of attempts) {
+        const response = await test.core.router.dispatch({ windowId }, name, params);
+        expect(response, `${name} ${JSON.stringify(params)}`).toMatchObject({
+          ok: false,
+          error: { code: 'INVALID_PARAMS', message: 'Codium does not change the Git folder (.git).' },
+        });
+      }
+      expect(fs.readdirSync(at('.git', 'hooks'))).toEqual(['sample']);
+      expect(test.ports.shell.trashed).toEqual([]);
+
+      // Den Link selbst darf man umbenennen und löschen; das Ziel in .git bleibt.
+      expect(await call(test, windowId, 'files.rename', { path: at('hooks-link'), newName: 'hooks' })).toBe(at('hooks'));
+      await call(test, windowId, 'files.delete', { paths: [at('hooks')] });
+      expect(fs.readdirSync(at('.git', 'hooks'))).toEqual(['sample']);
+    });
+
     it('lässt eine laufende Kopie beim Abbau des Projekt-Kerns noch fertig werden', async () => {
       const files: Record<string, string> = {};
       for (let i = 0; i < 300; i++) files[`big/file-${i}.txt`] = 'x'.repeat(1000);

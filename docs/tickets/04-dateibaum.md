@@ -107,3 +107,7 @@ Entscheidungen bei der Umsetzung, die Ticket und Spezifikation nicht vorgeben:
 - **Dateiüberwachung:** Bündel nach 75 ms Ruhe, spätestens nach 500 ms; ab 2000 Pfaden nur noch Elternordner; Neustart nach einem Abbruch mit Pausen von 1 bis 30 s. Wird der Projektordner selbst gelöscht, meldet libuv das unter Windows ohne Ende; die Überwachung lässt den Ordner dann los. Sie endet synchron beim Beginn des Abbaus.
 - **Höchstens 4 gleichzeitige Dateizugriffe** pro Projekt; beim Abbau darf eine laufende Operation noch fertig werden, höchstens bis zum Zeitlimit der Aufräumarbeiten (5 s).
 - **Knopf „Collapse All“** im Kopf des Werkzeugfensters, wie in IntelliJ; „Select Opened File“ ist bis Ticket 05 inaktiv.
+
+Nachprüfung durch denselben Agenten: Alle 16 Befunde sind bestätigt behoben, auch gezielte Angriffe auf die neue Kopierlogik scheiterten. Ein letzter Punkt ist eingearbeitet:
+
+- **Die Sperre für `.git` liess sich über eine Junction umgehen** (nachgewiesen): Geprüft wurde nur der übergebene Pfad. Mit einer Junction `hooks-link` auf `.git\hooks` legte `files.createFile` die Datei in `.git\hooks` an. Jetzt prüft `PathGuard.assertOutsideGit` zusätzlich den echten Pfad gegen den echten Projektpfad: bei Anlegen und Kopieren den Zielordner (samt Links als Zwischenordner in neuen Namen), bei Umbenennen und Löschen den Eintrag selbst (echter Elternordner plus Name; den Link selbst darf man weiterhin umbenennen und löschen). Anlegen und Kopieren prüfen ihr Ergebnis danach noch einmal. Ein Kern-Test mit genau diesem Fall scheitert ohne die Korrektur.

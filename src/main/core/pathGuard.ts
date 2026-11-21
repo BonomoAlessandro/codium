@@ -7,6 +7,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { GIT_FOLDER_PROBLEM, isGitFolderName } from '../../shared/fileNames';
 import { ErrorCode } from '../../shared/types';
 import { isAbsoluteCommandPath, isKeyWithin, lexicalProjectKey, normalizeProjectPath } from './projectPath';
 import { CommandError } from './router';
@@ -138,6 +139,21 @@ export class PathGuard {
     if (!isPathWithin(await this.realPathOf(target), await this.realRootPath())) throw outsideProject(target);
   }
 
+  /**
+   * Lehnt einen Pfad ab, der im Ordner `.git` liegt (auf jeder Ebene) oder `.git` selbst ist: Dort ändert nur Git
+   * etwas. Geprüft wird der echte Pfad, damit auch eine Junction im Projekt, die auf `.git\hooks` zeigt, nicht
+   * hineinführt. Mit `entry` zählt der Eintrag selbst (der echte Elternordner und sein Name), sonst das Ziel eines
+   * Links. Der Pfad muss existieren.
+   */
+  async assertOutsideGit(target: string, mode: 'follow' | 'entry'): Promise<void> {
+    if (relativeSegments(this.root, target).some(isGitFolderName)) throw gitFolder();
+    const real =
+      mode === 'follow' || this.isRoot(target)
+        ? await this.realPathOf(target)
+        : path.join(await this.realPathOf(path.dirname(target), target), path.basename(target));
+    if (relativeSegments(await this.realRootPath(), real).some(isGitFolderName)) throw gitFolder();
+  }
+
   /** Ob ein echter Pfad (aus `realpath`) im echten Projektordner liegt. */
   async isRealInside(real: string): Promise<boolean> {
     return isPathWithin(real, await this.realRootPath());
@@ -167,6 +183,16 @@ export class PathGuard {
       throw fileError(err, this.root, 'read');
     });
   }
+}
+
+function gitFolder(): CommandError {
+  return new CommandError(GIT_FOLDER_PROBLEM, ErrorCode.invalidParams);
+}
+
+/** Die Teile eines Pfads unterhalb von `root`. */
+function relativeSegments(root: string, target: string): string[] {
+  const relative = path.relative(root, target);
+  return relative === '' ? [] : relative.split(path.sep);
 }
 
 /**
