@@ -312,7 +312,8 @@ describe('Datei-Dienst', () => {
         expect(fs.lstatSync(at('src (2)', link)).isSymbolicLink(), link).toBe(true);
         expect(fs.realpathSync.native(at('src (2)', link)), link).toBe(target);
       }
-      expect(fs.readlinkSync(at('src (2)', 'dead'))).toBe(path.join(root, 'gone'));
+      // path.resolve, weil manche Node-Versionen das Ziel einer Junction mit einem "\" am Ende liefern.
+      expect(path.resolve(fs.readlinkSync(at('src (2)', 'dead')))).toBe(path.join(root, 'gone'));
       // Die Junctions wurden nicht verfolgt: Draussen und im gemeinsamen Ordner ist nichts dazugekommen.
       expect(fs.readdirSync(outside)).toEqual([]);
       expect(fs.readdirSync(at('shared'))).toEqual(['s.txt']);

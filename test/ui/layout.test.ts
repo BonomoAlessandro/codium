@@ -287,6 +287,16 @@ describe('Layout des Projektfensters', () => {
       await expect.poll(() => shownToolWindows(page)).toEqual(['Project', 'Database']);
       await setWindowSize(720, 400);
       await expect.poll(async () => (await box(right)).width).toBeLessThan(320);
+      // Warten, bis sich das Layout nach dem Verkleinern gesetzt hat: Beide Seiten bleiben zwischen zwei Messungen gleich.
+      let last = '';
+      await expect
+        .poll(async () => {
+          const now = `${(await box(left)).width}/${(await box(right)).width}`;
+          const settled = now === last;
+          last = now;
+          return settled;
+        })
+        .toBe(true);
       const before = (await box(left)).width;
       expect(before).toBeLessThan(280);
 
@@ -305,7 +315,8 @@ describe('Layout des Projektfensters', () => {
 
       // Im grossen Fenster: links die gezogene Breite, rechts wieder die gespeicherten 320.
       await setWindowSize(1280, 800);
-      await expect.poll(async () => (await box(right)).width).toBe(320);
+      // toBeCloseTo, weil Chromium bei Anzeigeskalierung über 100 % mit Bruchteilen von Pixeln rechnet.
+      await expect.poll(async () => (await box(right)).width).toBeCloseTo(320, 2);
       expect((await box(left)).width).toBe(widest);
       const stored = (await page.evaluate(() =>
         (window as unknown as { codium: { invoke(name: string): Promise<unknown> } }).codium.invoke('project.layout'),
