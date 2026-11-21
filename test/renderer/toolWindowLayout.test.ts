@@ -7,7 +7,9 @@ import {
   SIDE_MIN_SIZE,
   STRIPES,
   TOOL_WINDOWS,
+  beginResize,
   dragSize,
+  resizeTo,
   hideSide,
   isShown,
   panelSizes,
@@ -110,6 +112,29 @@ describe('Werkzeugfenster: Grössen', () => {
     // Die gespeicherten Grössen bleiben; nur zum Ziehen werden die angezeigten übernommen.
     expect(withShownSizes(wide, { width: 840, height: 400 }).left.size).toBe(sizes.left);
     expect(wide.left.size).toBe(650);
+  });
+
+  it('Ziehen in einem kleinen Fenster speichert nur die gezogene Seite; die Gegenseite behält ihre Grösse', () => {
+    const both: ToolWindowLayout = { ...LAYOUT, left: { ...LAYOUT.left, size: 280 }, right: { ...LAYOUT.right, open: true, size: 320 } };
+    const small = { width: 640, height: 335 };
+    const before = panelSizes(both, small);
+    // Zu eng für beide: Sie zeigen sich schmaler als gespeichert.
+    expect(before.right).toBeLessThan(320);
+
+    const resize = beginResize(both, 'left', small);
+    expect(resize.startSize).toBe(before.left);
+    const step = resizeTo(resize, resize.startSize + 1, small);
+    expect(step.stored.left.size).toBe(before.left + 1);
+    expect(step.stored.right.size).toBe(320);
+    // Zu sehen bleibt die Gegenseite, wie sie war.
+    expect(panelSizes(step.shown, small)).toEqual({ left: before.left + 1, right: before.right, bottom: 0 });
+
+    // Die Höchstgrösse rechnet mit der angezeigten Breite der Gegenseite, der Code-Bereich bleibt.
+    const far = resizeTo(resize, 5000, small);
+    expect(far.stored.left.size).toBe(small.width - CODE_MIN_WIDTH - before.right);
+    expect(far.stored.right.size).toBe(320);
+    // Im grossen Fenster ist die Gegenseite wieder so breit wie gespeichert.
+    expect(panelSizes(far.stored, AREA).right).toBe(320);
   });
 
   it('eine zu kleine gespeicherte Grösse zeigt sich in der Mindestgrösse', () => {

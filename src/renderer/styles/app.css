@@ -5,6 +5,11 @@ body,
   margin: 0;
 }
 
+/* Verborgenes bleibt verborgen, auch wenn eine Klasse `display` setzt. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   overflow: hidden;
   background: var(--bg);
@@ -238,8 +243,11 @@ kbd {
   min-height: 0;
 }
 
-/* Werkzeugfenster; die Trennlinie zum Code-Bereich gehört zu ihrer Breite bzw. Höhe. */
-.tool-window {
+/*
+ * Fläche einer Seite mit ihren Werkzeugfenstern; die Trennlinie zum Code-Bereich gehört zu ihrer Breite bzw. Höhe.
+ * Geschlossene Seiten und nicht aktive Werkzeugfenster bleiben eingehängt und sind nur verborgen.
+ */
+.tool-window-side {
   position: relative;
   box-sizing: border-box;
   display: flex;
@@ -248,6 +256,14 @@ kbd {
   min-width: 0;
   min-height: 0;
   background: var(--bg-panel);
+}
+
+.tool-window {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   outline: none;
 }
 
@@ -649,8 +665,13 @@ kbd {
 
 .welcome-window {
   display: grid;
-  grid-template-rows: var(--header-height) minmax(0, 1fr);
+  grid-template-rows: var(--header-height) minmax(0, 1fr) auto;
   height: 100%;
+}
+
+/* Schmale Leiste unten, nur solange eine Arbeit des Kerns läuft (etwa Klonen). */
+.welcome-statusbar {
+  height: var(--statusbar-height);
 }
 
 .welcome-title {
@@ -692,6 +713,10 @@ kbd {
 
 .welcome-window ~ .notices {
   bottom: 12px;
+}
+
+.welcome-window:has(.welcome-statusbar) ~ .notices {
+  bottom: calc(var(--statusbar-height) + 10px);
 }
 
 /* Zuletzt geöffnete Projekte */

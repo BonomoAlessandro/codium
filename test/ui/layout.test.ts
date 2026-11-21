@@ -15,9 +15,27 @@ import { useTempDirs } from '../support/tempDir';
 const ALPHA = 'Alpha – Codium';
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** Die sichtbaren Werkzeugfenster: links, rechts, unten. */
+/** Die sichtbaren Werkzeugfenster: links, rechts, unten. Geschlossene bleiben eingehängt, sind aber verborgen. */
 function shownToolWindows(page: Page): Promise<(string | null)[]> {
-  return page.locator('section.tool-window').evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')));
+  return page
+    .locator('section.tool-window')
+    .evaluateAll((els) => els.filter((el) => el.checkVisibility()).map((el) => el.getAttribute('aria-label')));
+}
+
+/** Markiert den Inhalt eines Werkzeugfensters bzw. liest die Markierung; sie lebt nur, solange das Element lebt. */
+function markContent(page: Page, name: string): Promise<void> {
+  return page.evaluate((n) => {
+    const body = document.querySelector(`section[aria-label="${n}"] .tool-window-body`) as (HTMLElement & { probe?: string }) | null;
+    if (!body) throw new Error(`Kein Inhalt für ${n}`);
+    body.probe = `${n} lebt noch`;
+  }, name);
+}
+
+function contentMark(page: Page, name: string): Promise<string | null> {
+  return page.evaluate(
+    (n) => (document.querySelector(`section[aria-label="${n}"] .tool-window-body`) as (HTMLElement & { probe?: string }) | null)?.probe ?? null,
+    name,
+  );
 }
 
 /** Das Werkzeugfenster, in dem der Fokus liegt, falls einer darin liegt. */
@@ -28,6 +46,11 @@ function focusedToolWindow(page: Page): Promise<string | null> {
 /** Das Symbol eines Werkzeugfensters in den Symbolleisten. */
 function stripeButton(page: Page, name: string): Locator {
   return page.getByRole('navigation').getByRole('button', { name, exact: true });
+}
+
+/** Die Fläche einer Seite mit ihren Werkzeugfenstern; ihre Grösse (samt Trennlinie) ist die gespeicherte. */
+function sideArea(page: Page, side: 'left' | 'bottom' | 'right'): Locator {
+  return page.locator(`.tool-window-side.tool-window-${side}`);
 }
 
 async function box(locator: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
@@ -193,38 +216,38 @@ describe('Layout des Projektfensters', () => {
     let { codium, page } = await launchAlpha(dataRoot);
     let expected: { left: number; bottom: number } = { left: 0, bottom: 0 };
     await withApp(codium, async () => {
-      const project = page.getByRole('region', { name: 'Project' });
+      const left = sideArea(page, 'left');
       const projectSplitter = page.getByRole('separator', { name: 'Resize Project' });
       const editor = page.getByRole('main', { name: 'Editor' });
 
-      const start = (await box(project)).width;
+      const start = (await box(left)).width;
       await dragBy(page, projectSplitter, 120, 0);
-      expect((await box(project)).width).toBe(start + 120);
+      expect((await box(left)).width).toBe(start + 120);
 
       // Über die Höchstgrösse hinaus geht es nicht: Der Code-Bereich behält seine Mindestbreite.
       await dragBy(page, projectSplitter, 3000, 0);
-      const max = (await box(project)).width;
+      const max = (await box(left)).width;
       expect(Math.abs((await box(editor)).width - CODE_MIN_WIDTH)).toBeLessThanOrEqual(1);
       await dragBy(page, projectSplitter, 200, 0);
-      expect((await box(project)).width).toBe(max);
+      expect((await box(left)).width).toBe(max);
 
       // Unten dasselbe in der Höhe.
       await page.keyboard.press('Alt+F12');
-      const terminal = page.getByRole('region', { name: 'Terminal' });
-      await terminal.waitFor();
+      const bottom = sideArea(page, 'bottom');
+      await page.getByRole('region', { name: 'Terminal' }).waitFor();
       const terminalSplitter = page.getByRole('separator', { name: 'Resize Terminal' });
       await dragBy(page, terminalSplitter, 0, -3000);
       expect(Math.abs((await box(editor)).height - CODE_MIN_HEIGHT)).toBeLessThanOrEqual(1);
-      const maxHeight = (await box(terminal)).height;
+      const maxHeight = (await box(bottom)).height;
       await dragBy(page, terminalSplitter, 0, -100);
-      expect((await box(terminal)).height).toBe(maxHeight);
+      expect((await box(bottom)).height).toBe(maxHeight);
 
       // Eine mittlere Grösse einstellen, links auf „Commit“ wechseln (gleiche Seite, gleiche Breite) und beenden.
       await dragBy(page, projectSplitter, 410 - max, 0);
       await dragBy(page, terminalSplitter, 0, maxHeight - 230);
       await stripeButton(page, 'Commit').click();
-      const commit = page.getByRole('region', { name: 'Commit' });
-      expected = { left: (await box(commit)).width, bottom: (await box(terminal)).height };
+      await page.getByRole('region', { name: 'Commit' }).waitFor();
+      expected = { left: (await box(left)).width, bottom: (await box(bottom)).height };
       expect(expected).toEqual({ left: 410, bottom: 230 });
 
       await page.getByRole('button', { name: 'Alpha', exact: true }).click();
@@ -235,8 +258,97 @@ describe('Layout des Projektfensters', () => {
     ({ codium, page } = await launchAlpha(dataRoot));
     await withApp(codium, async () => {
       await expect.poll(() => shownToolWindows(page)).toEqual(['Commit', 'Terminal']);
-      expect((await box(page.getByRole('region', { name: 'Commit' }))).width).toBe(expected.left);
-      expect((await box(page.getByRole('region', { name: 'Terminal' }))).height).toBe(expected.bottom);
+      expect((await box(sideArea(page, 'left'))).width).toBe(expected.left);
+      expect((await box(sideArea(page, 'bottom'))).height).toBe(expected.bottom);
+    });
+  });
+
+  it('beendet das Ziehen, wenn das Werkzeugfenster dabei verschwindet, ohne einen Zieh-Zeiger zurückzulassen', async () => {
+    const { dataRoot } = setup();
+    const { codium, page } = await launchAlpha(dataRoot);
+    await withApp(codium, async () => {
+      const project = sideArea(page, 'left');
+      const start = (await box(project)).width;
+      const handle = await box(page.getByRole('separator', { name: 'Resize Project' }));
+      const x = handle.x + handle.width / 2;
+      const y = handle.y + handle.height / 2;
+      const pointer = () => page.evaluate(() => ({ classes: [...document.body.classList], cursor: getComputedStyle(document.body).cursor }));
+
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x + 60, y, { steps: 4 });
+      expect((await pointer()).classes).toContain('resizing-columns');
+      expect((await box(project)).width).toBe(start + 60);
+
+      // Mitten im Ziehen verschwindet das Werkzeugfenster (Alt + 1 setzt den Fokus hinein, ein zweites schliesst es).
+      await page.keyboard.press('Alt+1');
+      await page.keyboard.press('Alt+1');
+      await expect.poll(() => shownToolWindows(page)).toEqual([]);
+      expect(await pointer()).toEqual({ classes: [], cursor: 'auto' });
+
+      // Weitere Bewegungen und das Loslassen ändern nichts mehr; die bis dahin gezogene Breite bleibt.
+      await page.mouse.move(x + 200, y, { steps: 4 });
+      await page.mouse.up();
+      await page.keyboard.press('Alt+1');
+      await expect.poll(() => shownToolWindows(page)).toEqual(['Project']);
+      expect((await box(project)).width).toBe(start + 60);
+      expect((await pointer()).classes).toEqual([]);
+    });
+  });
+
+  it('ein Werkzeugfenster behält seinen Inhalt über Schliessen, Wechseln und Öffnen', async () => {
+    const { dataRoot } = setup();
+    const { codium, page } = await launchAlpha(dataRoot);
+    await withApp(codium, async () => {
+      await markContent(page, 'Project');
+      await stripeButton(page, 'Project').click();
+      await expect.poll(() => shownToolWindows(page)).toEqual([]);
+      await stripeButton(page, 'Commit').click();
+      await expect.poll(() => shownToolWindows(page)).toEqual(['Commit']);
+      await stripeButton(page, 'Project').click();
+      await expect.poll(() => shownToolWindows(page)).toEqual(['Project']);
+      expect(await contentMark(page, 'Project')).toBe('Project lebt noch');
+
+      // Unten ebenso, über die Kürzel.
+      await page.keyboard.press('Alt+F12');
+      await expect.poll(() => shownToolWindows(page)).toEqual(['Project', 'Terminal']);
+      await markContent(page, 'Terminal');
+      await page.keyboard.press('Alt+F12');
+      await expect.poll(() => shownToolWindows(page)).toEqual(['Project']);
+      await page.keyboard.press('Alt+F12');
+      await expect.poll(() => shownToolWindows(page)).toEqual(['Project', 'Terminal']);
+      expect(await contentMark(page, 'Terminal')).toBe('Terminal lebt noch');
+    });
+  });
+
+  it('ein offenes Projektmenü schliesst sich vor einem Alt-Kürzel und nimmt danach keine Tasten mehr an', async () => {
+    const { dataRoot } = setup();
+    const { codium, page } = await launchAlpha(dataRoot);
+    await withApp(codium, async () => {
+      const menuButton = page.getByRole('button', { name: 'Alpha', exact: true });
+      const menu = page.getByRole('menu', { name: 'Project' });
+
+      // Menü per Klick, Pfeil runter hebt „Open Folder…“ hervor, dann Alt + 1 und Enter.
+      await menuButton.click();
+      await menu.waitFor();
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('Alt+1');
+      await expect.poll(() => menu.count()).toBe(0);
+      expect(await focusedToolWindow(page)).toBe('Project');
+      await page.keyboard.press('Enter');
+      await sleep(300);
+      expect((await codium.recorded()).filter((e) => e.kind === 'folder-picked')).toEqual([]);
+
+      // Pfeil hoch hebt „Exit“ hervor; nach Alt + 0 und Enter läuft Codium weiter.
+      await menuButton.click();
+      await menu.waitFor();
+      await page.keyboard.press('ArrowUp');
+      await page.keyboard.press('Alt+0');
+      await expect.poll(() => menu.count()).toBe(0);
+      await page.keyboard.press('Enter');
+      await sleep(500);
+      expect(await codium.windowTitles()).toEqual([ALPHA]);
+      expect(await shownToolWindows(page)).toEqual(['Commit']);
     });
   });
 
@@ -283,6 +395,23 @@ describe('Layout des Projektfensters', () => {
       await expect.poll(text).toEqual(['Importing Java project…']);
       await codium.emit(ALPHA, 'app.progress', { kind: 'end', id: 'import' });
       await expect.poll(() => bar.count()).toBe(0);
+    });
+  });
+
+  it('zeigt laufende Arbeiten auch im Willkommensfenster, in einer schmalen Leiste unten', async () => {
+    const codium = await launchCodium({ dataRoot: tempDir() });
+    await withApp(codium, async () => {
+      const page = await codium.page('Welcome to Codium');
+      await expect.poll(() => page.locator('h1').textContent(), { timeout: 15_000 }).toBe('Codium');
+      const bar = page.getByRole('progressbar');
+      expect(await page.locator('.welcome-statusbar').count()).toBe(0);
+
+      await codium.emit('Welcome to Codium', 'app.progress', { kind: 'begin', id: 'clone', title: 'Cloning…', fraction: 0.25 });
+      await expect.poll(() => page.locator('.welcome-statusbar .status-progress-text').allTextContents()).toEqual(['Cloning…']);
+      expect(await bar.getAttribute('aria-valuenow')).toBe('25');
+
+      await codium.emit('Welcome to Codium', 'app.progress', { kind: 'end', id: 'clone' });
+      await expect.poll(() => page.locator('.welcome-statusbar').count()).toBe(0);
     });
   });
 

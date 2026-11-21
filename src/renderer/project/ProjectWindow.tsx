@@ -2,6 +2,9 @@
 // Werkzeugfenster um den Code-Bereich (das untere über die ganze Breite zwischen den Symbolleisten), unten die
 // Statusleiste. Welches Werkzeugfenster je Seite aktiv und offen ist und wie gross es ist, speichert der Kern im
 // Projekt-Zustand. Die Regeln dazu stehen ohne DOM in toolWindowLayout.ts.
+//
+// Ein Werkzeugfenster bleibt nach dem ersten Öffnen eingehängt und wird beim Schliessen nur verborgen, wie in
+// IntelliJ: Dateibaum, Terminal und Log behalten so ihren Zustand.
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
@@ -16,6 +19,7 @@ import {
 import { HideIcon, TOOL_WINDOW_ICONS } from '../icons';
 import { commandForKey, shortcutLabel } from '../keymap';
 import { isDialogOpen } from '../popup/Dialogs';
+import { closeOpenMenus } from '../popup/Menu';
 import type { RunningWork } from '../progress';
 import type { ProjectActions } from '../RecentProjects';
 import { Header } from './Header';
@@ -23,15 +27,16 @@ import { StatusBar } from './StatusBar';
 import {
   STRIPES,
   TOOL_WINDOWS,
-  dragSize,
+  beginResize,
   hideSide,
   isShown,
   panelSizes,
+  resizeTo,
   shortcutAction,
   showToolWindow,
   toggleToolWindow,
+  toolWindowsOn,
   visibleLayout,
-  withShownSizes,
   type Availability,
   type LayoutArea,
 } from './toolWindowLayout';
@@ -56,6 +61,15 @@ const CLOSED_LAYOUT: ToolWindowLayout = {
   right: { active: 'database', open: false, size: 320 },
 };
 
+const RESIZE_CLASSES = ['resizing-rows', 'resizing-columns'];
+
+/** Ein laufendes Ziehen an einer Trennlinie. */
+interface ActiveDrag {
+  side: ToolWindowSide;
+  /** Meldet die Ereignisse am Fenster wieder ab und gibt den Zeiger frei. */
+  release: () => void;
+}
+
 export function ProjectWindow({ api, project, actions, work }: ProjectWindowProps) {
   const { layout, layoutRef, change } = useToolWindowLayout(api);
   const areaRef = useRef<HTMLDivElement>(null);
@@ -63,13 +77,14 @@ export function ProjectWindow({ api, project, actions, work }: ProjectWindowProp
   const areaValue = useRef<LayoutArea | null>(null);
   areaValue.current = area;
   const codeRef = useRef<HTMLElement>(null);
-  const panelRefs: Record<ToolWindowSide, RefObject<HTMLElement | null>> = {
-    left: useRef<HTMLElement>(null),
-    bottom: useRef<HTMLElement>(null),
-    right: useRef<HTMLElement>(null),
-  };
-  const panelRefsValue = useRef(panelRefs);
-  panelRefsValue.current = panelRefs;
+  /** Die eingehängten Werkzeugfenster und die Flächen der Seiten, für den Fokus. */
+  const sections = useRef(new Map<ToolWindowId, HTMLElement>());
+  const sides = useRef(new Map<ToolWindowSide, HTMLElement>());
+  /** Werkzeugfenster, die schon einmal offen waren; sie bleiben eingehängt. */
+  const mounted = useRef(new Set<ToolWindowId>());
+  /** Während des Ziehens das angezeigte Layout (die Gegenseite in ihrer angezeigten Grösse), sonst `null`. */
+  const [dragView, setDragView] = useState<ToolWindowLayout | null>(null);
+  const drag = useRef<ActiveDrag | null>(null);
 
   /** Das Layout, wie es sich gerade zeigt; Grundlage jeder Änderung. */
   const shownLayout = useCallback((): ToolWindowLayout | null => {
@@ -77,9 +92,30 @@ export function ProjectWindow({ api, project, actions, work }: ProjectWindowProp
     return current ? visibleLayout(current, available) : null;
   }, [layoutRef]);
 
-  /** Liegt der Fokus in einem Werkzeugfenster, das gleich verschwindet, geht er in den Code-Bereich. */
+  /** Beendet ein laufendes Ziehen und speichert, was bis dahin gezogen wurde. */
+  const stopDrag = useCallback(() => {
+    const active = drag.current;
+    if (!active) return;
+    drag.current = null;
+    active.release();
+    document.body.classList.remove(...RESIZE_CLASSES);
+    setDragView(null);
+    if (layoutRef.current) change(layoutRef.current, true);
+  }, [change, layoutRef]);
+
+  // Verschwindet das Fenster während des Ziehens, nichts zurücklassen.
+  useEffect(
+    () => () => {
+      drag.current?.release();
+      drag.current = null;
+      document.body.classList.remove(...RESIZE_CLASSES);
+    },
+    [],
+  );
+
+  /** Liegt der Fokus auf einer Seite, die gleich verschwindet, geht er in den Code-Bereich. */
   const moveFocusOutOf = useCallback((side: ToolWindowSide) => {
-    if (panelRefsValue.current[side].current?.contains(document.activeElement)) codeRef.current?.focus({ preventScroll: true });
+    if (sides.current.get(side)?.contains(document.activeElement)) codeRef.current?.focus({ preventScroll: true });
   }, []);
 
   /** Zeigt ein Werkzeugfenster und setzt den Fokus hinein, wie IntelliJ beim Aktivieren eines Werkzeugfensters. */
@@ -87,7 +123,7 @@ export function ProjectWindow({ api, project, actions, work }: ProjectWindowProp
     (current: ToolWindowLayout, id: ToolWindowId) => {
       // Erst zeichnen, dann den Fokus hinein; so schliesst das nächste Kürzel das Werkzeugfenster wieder.
       flushSync(() => change(showToolWindow(current, id), true));
-      panelRefsValue.current[TOOL_WINDOW_SIDE[id]].current?.focus({ preventScroll: true });
+      sections.current.get(id)?.focus({ preventScroll: true });
     },
     [change],
   );
@@ -95,6 +131,7 @@ export function ProjectWindow({ api, project, actions, work }: ProjectWindowProp
   /** Klick auf ein Symbol der Symbolleiste: schliesst das sichtbare Werkzeugfenster, sonst zeigt es dieses. */
   const toggle = useCallback(
     (id: ToolWindowId) => {
+      stopDrag();
       const current = shownLayout();
       if (!current) return;
       if (!isShown(current, id)) {
@@ -104,20 +141,22 @@ export function ProjectWindow({ api, project, actions, work }: ProjectWindowProp
       moveFocusOutOf(TOOL_WINDOW_SIDE[id]);
       change(toggleToolWindow(current, id), true);
     },
-    [change, moveFocusOutOf, showAndFocus, shownLayout],
+    [change, moveFocusOutOf, showAndFocus, shownLayout, stopDrag],
   );
 
   const hide = useCallback(
     (side: ToolWindowSide) => {
+      stopDrag();
       const current = shownLayout();
       if (!current) return;
       moveFocusOutOf(side);
       change(hideSide(current, side), true);
     },
-    [change, moveFocusOutOf, shownLayout],
+    [change, moveFocusOutOf, shownLayout, stopDrag],
   );
 
   // Tastenkürzel der Werkzeugfenster, in der Capture-Phase vor allen anderen Belegungen (später Monaco, Terminal).
+  // Während einer Rückfrage ruhen sie; ein offenes Menü schliessen sie zuerst, sonst nähme es weiter Tasten an.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const command = commandForKey(e);
@@ -125,16 +164,18 @@ export function ProjectWindow({ api, project, actions, work }: ProjectWindowProp
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat) return;
+      closeOpenMenus();
+      stopDrag();
       const id = command.slice('toolWindow.'.length) as ToolWindowId;
       const current = shownLayout();
       if (!current) return;
       const side = TOOL_WINDOW_SIDE[id];
-      const panel = panelRefsValue.current[side];
-      const action = shortcutAction(current, id, panel.current?.contains(document.activeElement) ?? false, available);
+      const section = sections.current.get(id);
+      const action = shortcutAction(current, id, section?.contains(document.activeElement) ?? false, available);
       if (action === 'show') {
         showAndFocus(current, id);
       } else if (action === 'focus') {
-        panel.current?.focus({ preventScroll: true });
+        section?.focus({ preventScroll: true });
       } else if (action === 'hide') {
         moveFocusOutOf(side);
         change(hideSide(current, side), true);
@@ -142,74 +183,101 @@ export function ProjectWindow({ api, project, actions, work }: ProjectWindowProp
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [change, moveFocusOutOf, showAndFocus, shownLayout]);
+  }, [change, moveFocusOutOf, showAndFocus, shownLayout, stopDrag]);
 
-  // Ziehen an einer Trennlinie: begrenzt auf Mindest- und Höchstgrösse, gespeichert beim Loslassen.
-  const drag = useRef<{ side: ToolWindowSide; start: number; startSize: number; base: ToolWindowLayout } | null>(null);
+  // Ziehen an einer Trennlinie: begrenzt auf Mindest- und Höchstgrösse, gespeichert beim Loslassen. Bewegung und
+  // Loslassen kommen über das Fenster, damit das Ziehen auch endet, wenn die Trennlinie dabei verschwindet.
   const startDrag = (side: ToolWindowSide, e: ReactPointerEvent<HTMLElement>) => {
     const current = shownLayout();
     const currentArea = areaValue.current;
-    if (e.button !== 0 || !current || !currentArea) return;
+    if (e.button !== 0 || !current || !currentArea || drag.current) return;
     e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    // Gezogen wird von dem aus, was zu sehen ist (in einem kleinen Fenster kann das weniger sein als gespeichert).
-    const base = withShownSizes(current, currentArea);
-    drag.current = { side, start: side === 'bottom' ? e.clientY : e.clientX, startSize: base[side].size, base };
+    const handle = e.currentTarget;
+    const pointerId = e.pointerId;
+    handle.setPointerCapture(pointerId);
+    const resize = beginResize(current, side, currentArea);
+    const start = side === 'bottom' ? e.clientY : e.clientX;
+    const onMove = (ev: PointerEvent) => {
+      const latestArea = areaValue.current;
+      if (ev.pointerId !== pointerId || !latestArea) return;
+      const delta = (side === 'bottom' ? ev.clientY : ev.clientX) - start;
+      // Links wächst nach rechts, rechts nach links, unten nach oben.
+      const requested = side === 'left' ? resize.startSize + delta : resize.startSize - delta;
+      const next = resizeTo(resize, requested, latestArea);
+      change(next.stored, false);
+      setDragView(next.shown);
+    };
+    const onEnd = (ev: PointerEvent) => {
+      if (ev.pointerId === pointerId) stopDrag();
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onEnd);
+    window.addEventListener('pointercancel', onEnd);
+    drag.current = {
+      side,
+      release: () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onEnd);
+        window.removeEventListener('pointercancel', onEnd);
+        if (handle.isConnected && handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
+      },
+    };
+    setDragView(resize.shown);
     document.body.classList.add(side === 'bottom' ? 'resizing-rows' : 'resizing-columns');
   };
-  const moveDrag = (e: ReactPointerEvent<HTMLElement>) => {
-    const d = drag.current;
-    const currentArea = areaValue.current;
-    if (!d || !currentArea) return;
-    const delta = (d.side === 'bottom' ? e.clientY : e.clientX) - d.start;
-    // Links wächst nach rechts, rechts nach links, unten nach oben.
-    const requested = d.side === 'left' ? d.startSize + delta : d.startSize - delta;
-    const size = dragSize(d.side, requested, d.base, currentArea);
-    change({ ...d.base, [d.side]: { ...d.base[d.side], size } }, false);
-  };
-  const endDrag = () => {
-    if (!drag.current) return;
-    drag.current = null;
-    document.body.classList.remove('resizing-rows', 'resizing-columns');
-    if (layoutRef.current) change(layoutRef.current, true);
-  };
-  const splitter = (side: ToolWindowSide, title: string) => (
-    <div
-      className={`splitter splitter-${side}`}
-      role="separator"
-      aria-orientation={side === 'bottom' ? 'horizontal' : 'vertical'}
-      aria-label={`Resize ${title}`}
-      onPointerDown={(e) => startDrag(side, e)}
-      onPointerMove={moveDrag}
-      onPointerUp={endDrag}
-      onLostPointerCapture={endDrag}
-    />
-  );
 
-  const shown = layout ? visibleLayout(layout, available) : null;
+  const shown = dragView ?? (layout ? visibleLayout(layout, available) : null);
   const sizes = shown && area ? panelSizes(shown, area) : null;
-  const panel = (side: ToolWindowSide) => {
-    if (!shown || !sizes || !shown[side].open) return null;
-    const def = TOOL_WINDOWS[shown[side].active];
+  if (shown && sizes) for (const s of ['left', 'bottom', 'right'] as const) if (shown[s].open) mounted.current.add(shown[s].active);
+
+  const side = (s: ToolWindowSide) => {
+    const ids = toolWindowsOn(s).filter((id) => mounted.current.has(id));
+    if (!shown || !sizes || ids.length === 0) return null;
+    const { open, active } = shown[s];
+    const title = TOOL_WINDOWS[active].title;
     return (
-      <section
-        ref={panelRefs[side]}
-        className={`tool-window tool-window-${side}`}
-        style={side === 'bottom' ? { height: sizes.bottom } : { width: sizes[side] }}
-        aria-label={def.title}
-        tabIndex={-1}
+      <div
+        ref={(el) => {
+          if (el) sides.current.set(s, el);
+          else sides.current.delete(s);
+        }}
+        className={`tool-window-side tool-window-${s}`}
+        style={s === 'bottom' ? { height: sizes.bottom } : { width: sizes[s] }}
+        hidden={!open}
       >
-        <div className="tool-window-header">
-          <span className="tool-window-title">{def.title}</span>
-          <button type="button" className="icon-button" aria-label="Hide" title="Hide" onClick={() => hide(side)}>
-            <HideIcon />
-          </button>
-        </div>
-        <div className="tool-window-body">
-          <p className="tool-window-placeholder">{def.placeholder}</p>
-        </div>
-        {splitter(side, def.title)}
-      </section>
+        {ids.map((id) => (
+          <section
+            key={id}
+            ref={(el) => {
+              if (el) sections.current.set(id, el);
+              else sections.current.delete(id);
+            }}
+            className="tool-window"
+            aria-label={TOOL_WINDOWS[id].title}
+            tabIndex={-1}
+            hidden={!open || active !== id}
+          >
+            <div className="tool-window-header">
+              <span className="tool-window-title">{TOOL_WINDOWS[id].title}</span>
+              <button type="button" className="icon-button" aria-label="Hide" title="Hide" onClick={() => hide(s)}>
+                <HideIcon />
+              </button>
+            </div>
+            <div className="tool-window-body">
+              <p className="tool-window-placeholder">{TOOL_WINDOWS[id].placeholder}</p>
+            </div>
+          </section>
+        ))}
+        {open && (
+          <div
+            className={`splitter splitter-${s}`}
+            role="separator"
+            aria-orientation={s === 'bottom' ? 'horizontal' : 'vertical'}
+            aria-label={`Resize ${title}`}
+            onPointerDown={(e) => startDrag(s, e)}
+          />
+        )}
+      </div>
     );
   };
 
@@ -220,11 +288,11 @@ export function ProjectWindow({ api, project, actions, work }: ProjectWindowProp
         <Stripe side="left" groups={[STRIPES.left.top, STRIPES.left.bottom]} layout={shown} onToggle={toggle} />
         <div className="tool-area" ref={areaRef}>
           <div className="tool-area-row">
-            {panel('left')}
+            {side('left')}
             <CodeArea codeRef={codeRef} />
-            {panel('right')}
+            {side('right')}
           </div>
-          {panel('bottom')}
+          {side('bottom')}
         </div>
         <Stripe side="right" groups={[STRIPES.right.top, []]} layout={shown} onToggle={toggle} />
       </div>

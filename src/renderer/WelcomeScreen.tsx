@@ -3,9 +3,19 @@
 
 import { useEffect, useState } from 'react';
 import type { AppInfo, CodiumApi } from '../shared/types';
+import { ProgressIndicator } from './ProgressIndicator';
+import type { RunningWork } from './progress';
 import { RecentProjectList, type ProjectActions } from './RecentProjects';
 
-export function WelcomeScreen({ api, actions, title }: { api: CodiumApi; actions: ProjectActions; title: string }) {
+interface WelcomeScreenProps {
+  api: CodiumApi;
+  actions: ProjectActions;
+  title: string;
+  /** Laufende Arbeiten des Kerns für dieses Fenster (etwa Klonen); dann erscheint unten eine schmale Leiste. */
+  work: readonly RunningWork[];
+}
+
+export function WelcomeScreen({ api, actions, title, work }: WelcomeScreenProps) {
   const [info, setInfo] = useState<AppInfo | null>(null);
 
   useEffect(() => {
@@ -35,6 +45,11 @@ export function WelcomeScreen({ api, actions, title }: { api: CodiumApi; actions
           <RecentProjectList actions={actions} />
         </section>
       </main>
+      {work.length > 0 && (
+        <footer className="statusbar welcome-statusbar">
+          <ProgressIndicator work={work} />
+        </footer>
+      )}
     </div>
   );
 }

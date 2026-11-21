@@ -24,6 +24,19 @@ type MenuItem = Extract<MenuEntry, { kind: 'item' }>;
 const MARGIN = 6;
 const GAP = 4;
 
+/** Die offenen Menüs, jeweils mit der Funktion, die es schliesst. */
+const openMenus = new Set<() => void>();
+
+/**
+ * Schliesst alle offenen Menüs, etwa bevor ein Tastenkürzel der App wirkt; sonst bliebe ein Menü offen und nähme
+ * weiter Tasten an. Liefert, ob eines offen war.
+ */
+export function closeOpenMenus(): boolean {
+  const wasOpen = openMenus.size > 0;
+  for (const close of [...openMenus]) close();
+  return wasOpen;
+}
+
 interface MenuProps {
   /** Name des Menüs für Screenreader. */
   label: string;
@@ -49,11 +62,28 @@ export function Menu({ label, entries, anchor, highlightFirst = false, onClose }
   // Für die Handler am Fenster: immer der zuletzt angezeigte Stand.
   const current = useRef({ highlighted, items, onClose });
   current.current = { highlighted, items, onClose };
+  // Geschlossen heisst sofort: Bis React das Menü entfernt hat, nimmt es keine Tasten mehr an.
+  const closed = useRef(false);
+  const close = () => {
+    if (closed.current) return;
+    closed.current = true;
+    current.current.onClose();
+  };
 
   const choose = (item: MenuItem) => {
-    current.current.onClose();
+    close();
     item.run();
   };
+
+  // Angemeldet, damit Tastenkürzel der App ein offenes Menü zuerst schliessen können.
+  useEffect(() => {
+    closed.current = false;
+    openMenus.add(close);
+    return () => {
+      openMenus.delete(close);
+    };
+    // `close` liest nur aus Refs.
+  }, []);
 
   // Unter dem Element aufgehen, im Fenster gehalten; dann den Fokus übernehmen.
   useLayoutEffect(() => {
@@ -66,9 +96,10 @@ export function Menu({ label, entries, anchor, highlightFirst = false, onClose }
     el.focus({ preventScroll: true });
   }, [anchor]);
 
-  // Tasten in der Capture-Phase, vor den Kürzeln der App; Klick daneben, Fokusverlust und Grössenänderung schliessen.
+  // Tasten (in der Capture-Phase) bedienen das Menü; Klick daneben, Fokusverlust und Grössenänderung schliessen es.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (closed.current) return;
       const { highlighted: h, items: list } = current.current;
       const action = menuKey(e.key, h, list.length);
       if (!action) return;
@@ -76,13 +107,12 @@ export function Menu({ label, entries, anchor, highlightFirst = false, onClose }
       e.stopPropagation();
       if (action.type === 'highlight') setHighlighted(action.index);
       else if (action.type === 'choose') choose(list[action.index]);
-      else current.current.onClose();
+      else close();
     };
     const onPointerDown = (e: PointerEvent) => {
       const target = e.target as Node;
-      if (!ref.current?.contains(target) && !anchor.contains(target)) current.current.onClose();
+      if (!ref.current?.contains(target) && !anchor.contains(target)) close();
     };
-    const close = () => current.current.onClose();
     window.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('pointerdown', onPointerDown, true);
     window.addEventListener('blur', close);
@@ -93,7 +123,7 @@ export function Menu({ label, entries, anchor, highlightFirst = false, onClose }
       window.removeEventListener('blur', close);
       window.removeEventListener('resize', close);
     };
-    // `choose` liest nur aus `current` und braucht deshalb keine Abhängigkeit.
+    // `choose` und `close` lesen nur aus Refs und brauchen deshalb keine Abhängigkeit.
   }, [anchor]);
 
   const itemId = (index: number) => `${id}-${index}`;
@@ -109,6 +139,13 @@ export function Menu({ label, entries, anchor, highlightFirst = false, onClose }
       aria-activedescendant={highlighted >= 0 ? itemId(highlighted) : undefined}
       // Klicks ins Menü lassen den Fokus beim Menü.
       onMouseDown={(e) => e.preventDefault()}
+      // Verlässt der Fokus das Menü (etwa durch ein Tastenkürzel), schliesst es sich; den Fokus auf dem Element, an dem
+      // es hängt, regelt dessen Klick (es schaltet das Menü um).
+      onBlur={(e) => {
+        const next = e.relatedTarget instanceof Node ? e.relatedTarget : null;
+        if (next && (ref.current?.contains(next) || anchor.contains(next))) return;
+        close();
+      }}
     >
       {entries.map((entry, i) => {
         if (entry.kind === 'separator') return <div key={i} className="menu-separator" role="separator" />;

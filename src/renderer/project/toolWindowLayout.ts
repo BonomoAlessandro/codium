@@ -169,6 +169,38 @@ export function dragSize(side: ToolWindowSide, requested: number, layout: ToolWi
   return Math.round(clamp(requested, min, max));
 }
 
+/** Ein Ziehen an der Trennlinie einer Seite, vom Beginn an. */
+export interface Resize {
+  side: ToolWindowSide;
+  /** Angezeigte Grösse der gezogenen Seite zu Beginn. */
+  startSize: number;
+  /** Das Layout, wie es zu Beginn zu sehen war (angezeigte Grössen aller offenen Seiten). */
+  shown: ToolWindowLayout;
+  /** Das gespeicherte Layout zu Beginn. */
+  stored: ToolWindowLayout;
+}
+
+/** Beginnt das Ziehen an einer Trennlinie: Gezogen wird von dem aus, was zu sehen ist. */
+export function beginResize(layout: ToolWindowLayout, side: ToolWindowSide, area: LayoutArea): Resize {
+  const shown = withShownSizes(layout, area);
+  return { side, startSize: shown[side].size, shown, stored: layout };
+}
+
+/**
+ * Das Ziehen ist bei der verlangten Grösse: `shown` ist das anzuzeigende Layout, `stored` das zu speichernde. Die
+ * Grenzen rechnen mit den angezeigten Grössen der übrigen Seiten, so bleibt der Code-Bereich sichtbar. Gespeichert wird
+ * nur die neue Grösse der gezogenen Seite; die Gegenseite behält ihre gespeicherte, auch wenn sie in einem kleinen
+ * Fenster gerade schmaler zu sehen ist.
+ */
+export function resizeTo(resize: Resize, requested: number, area: LayoutArea): { shown: ToolWindowLayout; stored: ToolWindowLayout } {
+  const { side } = resize;
+  const size = dragSize(side, requested, resize.shown, area);
+  return {
+    shown: { ...resize.shown, [side]: { ...resize.shown[side], size } },
+    stored: { ...resize.stored, [side]: { ...resize.stored[side], size } },
+  };
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }

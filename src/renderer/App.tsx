@@ -54,7 +54,7 @@ function Root() {
 
   return (
     <>
-      {windowInfo?.kind === 'welcome' && <WelcomeScreen api={api} actions={actions} title={windowInfo.title} />}
+      {windowInfo?.kind === 'welcome' && <WelcomeScreen api={api} actions={actions} title={windowInfo.title} work={work} />}
       {windowInfo?.kind === 'project' && (
         <ProjectWindow api={api} project={windowInfo.project} actions={actions} work={work} />
       )}
@@ -70,11 +70,18 @@ function useRunningWork(): RunningWork[] {
   return work;
 }
 
-/** Führt den Knopf einer Meldung des Kerns aus. */
+/** Führt den Knopf einer Meldung des Kerns aus. Kommt eine Aktion zur Tabelle dazu, verlangt TypeScript sie hier. */
 function runNoticeAction(actions: ProjectActions, action: NoticeAction): void {
-  switch (action.action) {
+  const kind = action.action;
+  switch (kind) {
     case 'recentProjects.remove':
       void actions.removeRecent(action.params.path);
       return;
+    default:
+      assertNever(kind);
   }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unbekannte Aktion an einer Meldung: ${String(value)}`);
 }
