@@ -2,7 +2,8 @@
 // Funktionen ohne Dateizugriff; das Lesen und die Grössengrenzen übernimmt der Datei-Dienst. Lädt nie Electron.
 //
 // Reihenfolge nach der Spezifikation („Editor, Tabs und Speichern“): BOM, Null-Bytes in den ersten 8 KB, gültiges
-// UTF-8, sonst Windows-1252. Bilder erkennt Codium vorher an der Endung; SVG ist Text.
+// UTF-8, sonst Windows-1252. Bilder erkennt Codium vorher an der Endung; SVG ist Text. Geschrieben wird in derselben
+// Kodierung, mit demselben BOM und Zeilenende (`encodeText`).
 
 import * as path from 'node:path';
 import { LARGE_FILE_BYTES, type FileContent, type LineEnding, type TextEncoding } from '../../shared/types';
@@ -62,13 +63,69 @@ export function decodeText(data: Buffer): { text: string; encoding: TextEncoding
   }
 }
 
+/**
+ * Die Bytes eines Textes zum Schreiben: in der Kodierung der Datei, mit ihrem BOM, alle Zeilenumbrüche mit dem
+ * Zeilenende der Datei. Sonst wird nichts verändert. Ein Zeichen, das Windows-1252 nicht kennt, ergibt
+ * `UnencodableError`.
+ */
+export function encodeText(text: string, encoding: TextEncoding, lineEnding: LineEnding): Buffer {
+  const normalized = text.replace(/\r\n|\r|\n/g, lineEnding === 'CRLF' ? '\r\n' : '\n');
+  switch (encoding) {
+    case 'utf-8':
+      return Buffer.from(normalized, 'utf8');
+    case 'utf-8-bom':
+      return Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(normalized, 'utf8')]);
+    case 'utf-16le':
+      return Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(normalized, 'utf16le')]);
+    case 'utf-16be': {
+      const body = Buffer.from(normalized, 'utf16le');
+      body.swap16();
+      return Buffer.concat([Buffer.from([0xfe, 0xff]), body]);
+    }
+    case 'windows-1252':
+      return encodeWindows1252(normalized);
+  }
+}
+
+/** Ein Zeichen lässt sich in der Kodierung der Datei nicht schreiben. */
+export class UnencodableError extends Error {
+  constructor(readonly character: string) {
+    super(`The character “${character}” cannot be saved in windows-1252.`);
+  }
+}
+
+/** Zeichen von 0x80 bis 0x9F in Windows-1252 (die übrigen Bytes sind Latin-1); fehlende Stellen sind unbelegt. */
+const WINDOWS_1252_HIGH = '€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008dŽ\u008f\u0090‘’“”•–—˜™š›œ\u009džŸ';
+
+const WINDOWS_1252 = new Map<number, number>();
+for (let byte = 0; byte < 256; byte++) {
+  const char = byte >= 0x80 && byte <= 0x9f ? WINDOWS_1252_HIGH.charCodeAt(byte - 0x80) : byte;
+  WINDOWS_1252.set(char, byte);
+}
+
+function encodeWindows1252(text: string): Buffer {
+  const bytes = Buffer.alloc(text.length);
+  for (let i = 0; i < text.length; i++) {
+    const byte = WINDOWS_1252.get(text.charCodeAt(i));
+    if (byte === undefined) throw new UnencodableError(String.fromCodePoint(text.codePointAt(i)!));
+    bytes[i] = byte;
+  }
+  return bytes;
+}
+
 /** Das überwiegende Zeilenende; bei Gleichstand und ohne Zeilenumbruch LF. Ein einzelnes CR zählt nicht. */
 export function lineEndingOf(text: string): LineEnding {
+  const { crlf, lf } = countLineEndings(text);
+  return crlf > lf ? 'CRLF' : 'LF';
+}
+
+/** Wie viele Zeilenumbrüche CRLF und wie viele nur LF sind. */
+export function countLineEndings(text: string): { crlf: number; lf: number } {
   let crlf = 0;
   let lf = 0;
   for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) {
     if (i > 0 && text.charCodeAt(i - 1) === 13) crlf++;
     else lf++;
   }
-  return crlf > lf ? 'CRLF' : 'LF';
+  return { crlf, lf };
 }

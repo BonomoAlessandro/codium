@@ -14,9 +14,13 @@
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
+  CodiumError,
+  ErrorCode,
   MAX_FONT_SIZE,
   MIN_FONT_SIZE,
   type CodiumApi,
+  type FileContent,
+  type FilesChangedEvent,
   type CursorState,
   type FileOperation,
   type LineEnding,
@@ -61,6 +65,11 @@ export interface EditorAreaHandle {
    * (auch nicht an Monaco).
    */
   handleCommand(command: AreaCommand, repeat: boolean): boolean;
+  /**
+   * Speichert alle Tabs mit Eingaben und wartet, bis alle Speichervorgänge des Fensters fertig sind. Git-Aktionen
+   * (ab Ticket 15) warten darauf. Tabs mit „File changed on disk“ bleiben bis zur Entscheidung ungespeichert.
+   */
+  saveAll(): Promise<void>;
 }
 
 /** Was ein Tab zeigt; `null`, solange die Datei noch nicht gelesen wurde. */
@@ -91,8 +100,17 @@ interface ModelEntry {
   initialCursor: CursorState | null;
   /** Ziel, das beim nächsten Zeigen angesteuert wird. */
   target: EditorTarget | null;
+  /** Der Text auf der Festplatte, wie er zuletzt gelesen oder geschrieben wurde (mit dem Zeilenende des Modells). */
+  diskText: string;
+  /** Zeitgeber des automatischen Speicherns nach der letzten Eingabe. */
+  saveTimer: number | null;
+  /** Das laufende Speichern; das nächste schliesst sich an, damit nie eine ältere Fassung eine neuere überschreibt. */
+  saving: Promise<void>;
   listener: monaco.IDisposable;
 }
+
+/** So lange nach der letzten Eingabe wird automatisch gespeichert. */
+const AUTOSAVE_DELAY_MS = 1000;
 
 /** So viele Pixel `deltaY` sind eine Raste des Mausrads (Chromium unter Windows: 100). */
 const WHEEL_NOTCH_PIXELS = 100;
@@ -192,8 +210,22 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
 
   const addModel = useCallback(
     (key: string, model: monaco.editor.ITextModel, savedVersion: number, extra: Partial<ModelEntry> = {}) => {
-      const listener = model.onDidChangeContent(() => updateDirty(key));
-      models.current.set(key, { model, savedVersion, viewState: null, initialCursor: null, target: null, ...extra, listener });
+      const listener = model.onDidChangeContent(() => {
+        updateDirty(key);
+        scheduleSaveRef.current(key);
+      });
+      models.current.set(key, {
+        model,
+        savedVersion,
+        viewState: null,
+        initialCursor: null,
+        target: null,
+        diskText: model.getValue(),
+        saveTimer: null,
+        saving: Promise.resolve(),
+        ...extra,
+        listener,
+      });
       updateDirty(key);
     },
     [updateDirty],
@@ -204,11 +236,84 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     const entry = models.current.get(key);
     if (!entry) return;
     if (editorRef.current?.getModel() === entry.model) editorRef.current.setModel(null);
+    if (entry.saveTimer !== null) window.clearTimeout(entry.saveTimer);
     entry.listener.dispose();
     entry.model.dispose();
     models.current.delete(key);
     updateDirty(key);
+    setConflict(key, false);
   }, [updateDirty]);
+
+  // ---------- Speichern (Ticket 07) ----------
+
+  /** Tabs mit „File changed on disk“: Bis zur Entscheidung ruht ihr automatisches Speichern. */
+  const [conflicts, setConflictsState] = useState<ReadonlySet<string>>(() => new Set());
+  const conflictsRef = useRef(conflicts);
+  const setConflict = (key: string, on: boolean) => {
+    if (conflictsRef.current.has(key) === on) return;
+    const next = new Set(conflictsRef.current);
+    if (on) next.add(key);
+    else next.delete(key);
+    conflictsRef.current = next;
+    setConflictsState(next);
+  };
+
+  /**
+   * Speichert eine Datei, wenn ihr Modell vom Stand auf der Festplatte abweicht. Text und Stand werden sofort
+   * festgehalten (auch wenn der Tab gleich schliesst); geschrieben wird nach dem vorherigen Speichern derselben Datei.
+   * Mit `force` auch ohne Abweichung („Keep Mine“).
+   */
+  const saveNow = (key: string, force = false): Promise<void> => {
+    const entry = models.current.get(key);
+    if (!entry) return Promise.resolve();
+    if (entry.saveTimer !== null) window.clearTimeout(entry.saveTimer);
+    entry.saveTimer = null;
+    const version = entry.model.getAlternativeVersionId();
+    const tab = tabsRef.current.find((t) => pathKey(t.path) === key);
+    if (!tab || tab.content?.kind !== 'text' || conflictsRef.current.has(key)) return entry.saving;
+    if (!force && version === entry.savedVersion) return entry.saving;
+    const request = {
+      path: tab.path,
+      text: entry.model.getValue(),
+      encoding: tab.content.encoding,
+      lineEnding: tab.content.lineEnding,
+    };
+    const run = entry.saving.then(async () => {
+      try {
+        await api.request('files.write', request);
+      } catch (err) {
+        // Wurde die Datei inzwischen in Codium umbenannt, speichert der Tab unter dem neuen Namen; sonst bleibt die
+        // Markierung „ungespeichert“ (bzw. der Tab ist zu), und die Meldung sagt warum.
+        const renamedMeanwhile = models.current.get(key) !== entry && err instanceof CodiumError && err.code === ErrorCode.fileNotFound;
+        if (!renamedMeanwhile) callbacks.current.notify({ level: 'error', text: errorText(err) });
+        return;
+      }
+      // Gilt nur, solange das Modell noch dasselbe ist (nicht geschlossen, nicht umbenannt).
+      if (models.current.get(key) !== entry) return;
+      entry.savedVersion = version;
+      entry.diskText = request.text;
+      updateDirty(key);
+    });
+    entry.saving = run;
+    return run;
+  };
+
+  /** Automatisches Speichern etwa eine Sekunde nach der letzten Eingabe; im Konflikt nicht. */
+  const scheduleSave = (key: string) => {
+    const entry = models.current.get(key);
+    if (!entry || conflictsRef.current.has(key)) return;
+    if (entry.saveTimer !== null) window.clearTimeout(entry.saveTimer);
+    entry.saveTimer = window.setTimeout(() => void saveNow(key), AUTOSAVE_DELAY_MS);
+  };
+  const scheduleSaveRef = useRef(scheduleSave);
+  scheduleSaveRef.current = scheduleSave;
+
+  /** Speichert alle Tabs mit Eingaben und wartet, bis alle Speichervorgänge fertig sind (etwa vor Git-Aktionen). */
+  const saveAll = useCallback(async (): Promise<void> => {
+    await Promise.all([...models.current.keys()].map((key) => saveNowRef.current(key)));
+  }, []);
+  const saveNowRef = useRef(saveNow);
+  saveNowRef.current = saveNow;
 
   /** Ersetzt den Inhalt eines Tabs, solange der Tab noch offen ist. */
   const setContent = useCallback(
@@ -279,6 +384,8 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       if (editor && shown && shown[0] !== key) {
         saveCursorNow();
         shown[1].viewState = editor.saveViewState();
+        // Tabwechsel speichert den bisherigen sofort.
+        void saveNowRef.current(shown[0]);
       }
       const entry = models.current.get(key);
       if (options.target) {
@@ -337,6 +444,8 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       let result = { tabs: tabsRef.current.map((t) => t.path), active: activeRef.current };
       for (const t of tabsRef.current) if (keys.has(pathKey(t.path))) result = withoutTab(result.tabs, result.active, t.path);
       for (const key of keys) {
+        // Schliessen speichert vorher (Text und Stand werden sofort festgehalten); eine gelöschte Datei nicht.
+        if (saveCursor) void saveNowRef.current(key);
         disposeModel(key);
         pendingTargets.current.delete(key);
         loads.current.delete(key);
@@ -426,15 +535,25 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
           if (tabsRef.current.length === 0) return false;
           switchRecent(command === 'tab.recent' ? 1 : -1);
           return true;
+        case 'file.saveAll':
+          if (!repeat) void saveAll();
+          return true;
         default:
           // Kürzel späterer Tickets: im Editor abfangen, damit Monacos eigene Belegung nicht wirkt.
           return editor?.hasWidgetFocus() ?? false;
       }
     },
-    [close, switchRecent],
+    [close, saveAll, switchRecent],
   );
 
-  useImperativeHandle(ref, () => ({ open, handleCommand }), [open, handleCommand]);
+  useImperativeHandle(ref, () => ({ open, handleCommand, saveAll }), [open, handleCommand, saveAll]);
+
+  // Verliert das Fenster den Fokus, wird alles gespeichert (etwa vor dem Wechsel in ein Terminal oder zu Git).
+  useEffect(() => {
+    const onBlur = () => void saveAll();
+    window.addEventListener('blur', onBlur);
+    return () => window.removeEventListener('blur', onBlur);
+  }, [saveAll]);
 
   // ---------- Anheften, Sammel-Schliessen, Menüs ----------
 
@@ -760,10 +879,15 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       const attached = editor?.getModel() === entry.model;
       const viewState = attached && editor ? editor.saveViewState() : entry.viewState;
       const wasDirty = entry.model.getAlternativeVersionId() !== entry.savedVersion;
+      const inConflict = conflictsRef.current.has(oldKey);
       const model = monaco.editor.createModel(entry.model.getValue(), languageOf(newPath), monaco.Uri.file(newPath));
       model.setEOL(entry.model.getEndOfLineSequence());
       disposeModel(oldKey);
-      addModel(pathKey(newPath), model, wasDirty ? -1 : model.getAlternativeVersionId(), { viewState });
+      const newKey = pathKey(newPath);
+      addModel(newKey, model, wasDirty ? -1 : model.getAlternativeVersionId(), { viewState, diskText: entry.diskText });
+      // Ungespeicherte Eingaben werden unter dem neuen Namen gespeichert, ein offener Konflikt bleibt.
+      if (inConflict) setConflict(newKey, true);
+      else if (wasDirty) scheduleSave(newKey);
     }
     // Tabs, die gerade lesen, lesen unter dem neuen Pfad neu (der alte Lesevorgang zählt nicht mehr).
     const interrupted = new Set(affected.map((t) => pathKey(t.path)).filter((key) => loads.current.delete(key)));
@@ -781,6 +905,131 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     persistTabs();
   };
   useEffect(() => api.on('files.operation', (op) => onOperation.current(op)), [api]);
+
+  // ---------- Änderungen von aussen (Ticket 07) ----------
+
+  /**
+   * Übernimmt den Inhalt auf der Festplatte ins Modell, als eigener Schritt im Rückgängig-Verlauf. Ersetzt wird nur der
+   * Teil zwischen gleichem Anfang und gleichem Ende; so bleiben Cursor und Scrollstand, so gut es geht.
+   */
+  const applyDisk = (key: string, entry: ModelEntry, content: Extract<FileContent, { kind: 'text' }>) => {
+    const { model } = entry;
+    const eol = content.lineEnding === 'CRLF' ? monaco.editor.EndOfLineSequence.CRLF : monaco.editor.EndOfLineSequence.LF;
+    if (model.getEndOfLineSequence() !== eol) model.setEOL(eol);
+    const next = content.text.replace(/\r\n|\r|\n/g, model.getEOL());
+    const current = model.getValue();
+    if (next !== current) {
+      let start = 0;
+      while (start < current.length && start < next.length && current[start] === next[start]) start++;
+      let end = 0;
+      while (
+        end < current.length - start &&
+        end < next.length - start &&
+        current[current.length - 1 - end] === next[next.length - 1 - end]
+      ) end++;
+      const from = model.getPositionAt(start);
+      const to = model.getPositionAt(current.length - end);
+      model.pushStackElement();
+      model.pushEditOperations(
+        [],
+        [{ range: new monaco.Range(from.lineNumber, from.column, to.lineNumber, to.column), text: next.slice(start, next.length - end) }],
+        () => null,
+      );
+      model.pushStackElement();
+    }
+    entry.savedVersion = model.getAlternativeVersionId();
+    entry.diskText = model.getValue();
+    if (entry.saveTimer !== null) window.clearTimeout(entry.saveTimer);
+    entry.saveTimer = null;
+    setConflict(key, false);
+    updateDirty(key);
+    setContent(key, { kind: 'text', encoding: content.encoding, lineEnding: content.lineEnding, large: content.large });
+  };
+
+  /**
+   * Eine offene Datei hat sich auf der Festplatte geändert (oder vielleicht, nach verpassten Ereignissen). Ohne
+   * ungespeicherte Eingaben lädt der Tab still neu; mit ihnen erscheint „File changed on disk“, und das automatische
+   * Speichern ruht. Liest die Datei gleich, zählt nur, was sich wirklich unterscheidet (etwa nicht das Echo eines
+   * eigenen Schreibvorgangs).
+   */
+  const reloadFromDisk = async (filePath: string) => {
+    const key = pathKey(filePath);
+    const tab = tabsRef.current.find((t) => pathKey(t.path) === key);
+    if (!tab || tab.content === null || loads.current.has(key)) return;
+    const entry = models.current.get(key);
+    if (!entry) {
+      // Bild, Binärdatei, zu gross: neu lesen, wenn der Tab aktiv ist, sonst beim nächsten Aktivieren.
+      setTabs(tabsRef.current.map((t) => (pathKey(t.path) === key ? { ...t, content: null } : t)));
+      if (activeRef.current !== null && pathKey(activeRef.current) === key) void load(tab.path);
+      return;
+    }
+    // Erst alles Laufende speichern, sonst gälte der eigene, noch nicht geschriebene Stand als fremd.
+    await entry.saving;
+    let content: FileContent;
+    try {
+      content = await api.request('files.read', { path: tab.path });
+    } catch (err) {
+      if (err instanceof CodiumError && err.code === ErrorCode.fileNotFound) return; // Das Löschen meldet sich selbst.
+      console.error('Datei nicht neu gelesen:', err);
+      return;
+    }
+    if (models.current.get(key) !== entry) return;
+    if (content.kind !== 'text') {
+      disposeModel(key);
+      setContent(key, content.kind === 'image' ? { kind: 'image', dataUrl: content.dataUrl, size: content.size } : { kind: content.kind, size: content.size });
+      return;
+    }
+    const sameText = content.text.replace(/\r\n|\r|\n/g, entry.model.getEOL()) === entry.diskText;
+    const shown = tab.content.kind === 'text' ? tab.content : null;
+    if (sameText && shown?.encoding === content.encoding && shown.lineEnding === content.lineEnding) return;
+    if (entry.model.getAlternativeVersionId() !== entry.savedVersion) {
+      if (entry.saveTimer !== null) window.clearTimeout(entry.saveTimer);
+      entry.saveTimer = null;
+      setConflict(key, true);
+      return;
+    }
+    applyDisk(key, entry, content);
+  };
+  const reloadRef = useRef(reloadFromDisk);
+  reloadRef.current = reloadFromDisk;
+
+  useEffect(
+    () =>
+      api.on('files.changed', (event: FilesChangedEvent) => {
+        // Gelöscht heisst: nach dem Bündeln wirklich weg. „Gelöscht und neu angelegt“ kommt als Änderung.
+        const deleted = event.changes.filter((c) => c.kind === 'deleted');
+        const gone = tabsRef.current.filter((t) => deleted.some((c) => isSameOrInside(t.path, c.path))).map((t) => t.path);
+        if (gone.length > 0) closeRef.current(gone, { saveCursor: false });
+        const changed = new Set(event.changes.filter((c) => c.kind !== 'deleted').map((c) => pathKey(c.path)));
+        for (const tab of tabsRef.current) {
+          // Nach verpassten Ereignissen (`rescanned`) werden alle offenen Tabs geprüft.
+          if (event.rescanned || changed.has(pathKey(tab.path))) void reloadRef.current(tab.path);
+        }
+      }),
+    [api],
+  );
+
+  /** „Load from Disk“: die fremde Fassung übernehmen, die eigenen Eingaben verwerfen. */
+  const loadFromDisk = async (filePath: string) => {
+    const key = pathKey(filePath);
+    const entry = models.current.get(key);
+    if (!entry) return;
+    try {
+      const content = await api.request('files.read', { path: filePath });
+      if (models.current.get(key) !== entry) return;
+      if (content.kind === 'text') applyDisk(key, entry, content);
+      else void reloadRef.current(filePath);
+    } catch (err) {
+      callbacks.current.notify({ level: 'error', text: errorText(err) });
+    }
+  };
+
+  /** „Keep Mine“: die eigene Fassung speichern. */
+  const keepMine = (filePath: string) => {
+    const key = pathKey(filePath);
+    setConflict(key, false);
+    void saveNow(key, true);
+  };
 
   // Monaco öffnet andere Dateien (etwa Sprungziele) als Tab von Codium.
   useEffect(() => {
@@ -891,6 +1140,17 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
               <ChevronDownIcon />
             </button>
           )}
+        </div>
+      )}
+      {activeTab && conflicts.has(pathKey(activeTab.path)) && (
+        <div className="editor-conflict" role="alert">
+          <span className="editor-conflict-text">File changed on disk</span>
+          <button type="button" onClick={() => void loadFromDisk(activeTab.path)}>
+            Load from Disk
+          </button>
+          <button type="button" onClick={() => keepMine(activeTab.path)}>
+            Keep Mine
+          </button>
         </div>
       )}
       <div ref={bodyRef} className="editor-body">

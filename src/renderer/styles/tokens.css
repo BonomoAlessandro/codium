@@ -28,6 +28,8 @@
   /* Linie unter den Datei-Tabs */
   --border-subtle: #393b40;
   --bg-tab-hover: #2b2d30;
+  /* Hinweisleiste im Editor (etwa „File changed on disk“) */
+  --bg-warning: #3d3223;
   --scrim: rgba(0, 0, 0, 0.45);
   --shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
 

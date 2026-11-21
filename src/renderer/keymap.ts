@@ -28,7 +28,7 @@ export type EditorCommand =
   | 'editor.undo'
   | 'editor.redo';
 
-export type TabCommand = 'tab.close' | 'tab.recent' | 'tab.recentForward';
+export type TabCommand = 'tab.close' | 'tab.recent' | 'tab.recentForward' | 'file.saveAll';
 
 /** Kürzel für Funktionen späterer Tickets; sie sind schon belegt, damit Monaco sie nicht nimmt. */
 export type ReservedCommand =
@@ -71,6 +71,7 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   binding('Ctrl+F4', 'tab.close', 'window'),
   binding('Ctrl+Tab', 'tab.recent', 'window'),
   binding('Ctrl+Shift+Tab', 'tab.recentForward', 'window'),
+  binding('Ctrl+S', 'file.saveAll', 'window'),
   // Bearbeiten.
   binding('Ctrl+F', 'editor.find', 'editor'),
   binding('Ctrl+R', 'editor.replace', 'editor'),

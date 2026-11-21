@@ -144,8 +144,8 @@ describe('Editor und Tabs', () => {
       await expect.poll(() => activeTab(page)).toBe('Main.java');
       expect(await tabLabels(page)).toEqual(['Main.java', 'README.md']);
 
-      // Tippen ändert das Modell und markiert den Tab „ungespeichert“; Rückgängig hebt beides auf. Gespeichert wird
-      // noch nicht (Ticket 07).
+      // Tippen ändert das Modell und markiert den Tab „ungespeichert“, bis das automatische Speichern (Ticket 07) die
+      // Datei geschrieben hat; Rückgängig wird ebenso gespeichert.
       await expect.poll(() => editorFocused(page)).toBe(true);
       await page.keyboard.press('ArrowDown');
       await page.keyboard.press('End');
@@ -154,11 +154,13 @@ describe('Editor und Tabs', () => {
       await expect.poll(() => statusPosition(page)).toBe('2:21');
       const mainTab = tabList(page).getByRole('tab', { name: 'Main.java', exact: true });
       expect(await mainTab.getAttribute('data-modified')).toBe('true');
-      expect(fs.readFileSync(path.join(alpha, 'src', 'Main.java'), 'utf8')).toBe('class Main {\n  void run() {}\n}\n');
+      await expect.poll(() => mainTab.getAttribute('data-modified'), { timeout: 5000 }).toBeNull();
+      expect(fs.readFileSync(path.join(alpha, 'src', 'Main.java'), 'utf8')).toBe('class Main {\n  void run() {} // x\n}\n');
       // Monaco macht Getipptes wortweise rückgängig; so oft, bis der gelesene Stand wieder da ist.
       for (let i = 0; i < 10 && (await editorText(page)).includes('//'); i++) await page.keyboard.press('Control+Z');
       expect(await editorText(page)).toContain('void run() {}\n}');
-      await expect.poll(() => mainTab.getAttribute('data-modified')).toBeNull();
+      await expect.poll(() => mainTab.getAttribute('data-modified'), { timeout: 5000 }).toBeNull();
+      await expect.poll(() => fs.readFileSync(path.join(alpha, 'src', 'Main.java'), 'utf8'), { timeout: 5000 }).toBe('class Main {\n  void run() {}\n}\n');
 
       // „Select Opened File“ klappt die Ordner bis zur Datei auf und wählt sie aus.
       await page.getByRole('button', { name: 'Collapse All' }).click();

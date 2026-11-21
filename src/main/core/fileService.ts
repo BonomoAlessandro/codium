@@ -22,8 +22,10 @@ import {
   type Events,
   type FileContent,
   type FileEntry,
+  type LineEnding,
+  type TextEncoding,
 } from '../../shared/types';
-import { decodeFileContent } from './fileContent';
+import { countLineEndings, decodeFileContent, encodeText, UnencodableError } from './fileContent';
 import { KnownDirs, OwnChanges, keyOf } from './fileTracking';
 import { FileWatcher } from './fileWatcher';
 import { IoLimiter } from './ioLimiter';
@@ -39,6 +41,14 @@ const IO_CONCURRENCY = 4;
 const MAX_PATHS_PER_COMMAND = 10_000;
 /** Ab dieser Dauer zeigt eine Dateioperation Fortschritt in der Statusleiste. */
 export const PROGRESS_DELAY_MS = 1000;
+const TEXT_ENCODINGS: readonly TextEncoding[] = ['utf-8', 'utf-8-bom', 'utf-16le', 'utf-16be', 'windows-1252'];
+/** Stichprobe für das überwiegende Zeilenende im Projekt: so viele Textdateien, je so viele Bytes vom Anfang. */
+const LINE_ENDING_SAMPLE_FILES = 200;
+const LINE_ENDING_SAMPLE_BYTES = 16 * 1024;
+/** So lange gilt das gezählte Zeilenende des Projekts. */
+const LINE_ENDING_CACHE_MS = 60_000;
+/** Ordner, die beim Zählen der Zeilenenden übersprungen werden (Fremdes oder Erzeugtes). */
+const SKIPPED_FOR_LINE_ENDINGS = new Set(['.git', 'node_modules', 'target', 'build', 'dist', 'out', '.gradle', '.idea']);
 /** So oft wird ein anderer Name versucht, wenn ein gleichzeitiger Vorgang den gewählten schon belegt hat. */
 const COPY_NAME_ATTEMPTS = 5;
 
@@ -198,7 +208,100 @@ export class FileService {
     if (stats.size >= MAX_OPEN_FILE_BYTES) return { kind: 'tooLarge', size: stats.size };
     const data = await this.fileOp(() => fs.promises.readFile(file), file, 'read');
     if (data.length >= MAX_OPEN_FILE_BYTES) return { kind: 'tooLarge', size: data.length };
-    return decodeFileContent(file, data);
+    const content = decodeFileContent(file, data);
+    // Ohne Zeilenumbruch (etwa eine neue, leere Datei) gilt das Zeilenende, das im Projekt überwiegt.
+    if (content.kind === 'text' && !content.text.includes('\n')) return { ...content, lineEnding: await this.projectLineEnding() };
+    return content;
+  }
+
+  /**
+   * Schreibt eine Datei in der angegebenen Kodierung (mit BOM) und mit dem angegebenen Zeilenende; sonst wird nichts
+   * verändert. Die Datei muss es geben. Die Überwachung meldet den eigenen Schreibvorgang nicht als Änderung von aussen;
+   * eine fremde Änderung kurz danach schon.
+   */
+  write(params: CommandParams<'files.write'>): Promise<void> {
+    return this.track(async () => {
+      const file = await this.guard.existing(field(params, 'path'));
+      await this.guard.assertOutsideGit(file, 'follow');
+      const text = field(params, 'text');
+      const encoding = field(params, 'encoding');
+      const lineEnding = field(params, 'lineEnding');
+      if (typeof text !== 'string') throw invalidParams('A text is expected.');
+      if (!TEXT_ENCODINGS.includes(encoding as TextEncoding)) throw invalidParams('An encoding is expected.');
+      if (lineEnding !== 'LF' && lineEnding !== 'CRLF') throw invalidParams('A line ending is expected.');
+      let bytes: Buffer;
+      try {
+        bytes = encodeText(text, encoding as TextEncoding, lineEnding);
+      } catch (err) {
+        if (err instanceof UnencodableError) {
+          throw new CommandError(err.message, ErrorCode.cannotEncode, { path: file, character: err.character });
+        }
+        throw err;
+      }
+      if (bytes.length >= MAX_OPEN_FILE_BYTES) throw invalidParams('The text is too large to save.');
+      const stats = await this.fileOp(() => fs.promises.stat(file), file, 'save');
+      if (stats.isDirectory()) throw new CommandError(`Not a file: ${file}`, ErrorCode.notAFile, { path: file });
+      const own = this.own.expect(file, true, false);
+      try {
+        await this.fileOp(() => fs.promises.writeFile(file, bytes), file, 'save');
+      } catch (err) {
+        own.discard();
+        throw err;
+      }
+      own.settle(await this.stamp(file));
+    });
+  }
+
+  /**
+   * Das im Projekt überwiegende Zeilenende, für neue Dateien (Rückfall LF). Gezählt wird in einer Stichprobe von
+   * Textdateien, ohne `.git` und ohne grosse Ordner mit Fremdem (node_modules, Build-Ausgaben); das Ergebnis gilt eine
+   * Weile.
+   */
+  private projectLineEnding(): Promise<LineEnding> {
+    const now = Date.now();
+    if (this.lineEndingCache && now - this.lineEndingCache.at < LINE_ENDING_CACHE_MS) return this.lineEndingCache.value;
+    const value = this.sampleLineEndings().catch(() => 'LF' as const);
+    this.lineEndingCache = { value, at: now };
+    return value;
+  }
+
+  private lineEndingCache: { value: Promise<LineEnding>; at: number } | null = null;
+
+  private async sampleLineEndings(): Promise<LineEnding> {
+    let crlf = 0;
+    let lf = 0;
+    let files = 0;
+    const queue = [this.host.path];
+    while (queue.length > 0 && files < LINE_ENDING_SAMPLE_FILES) {
+      const dir = queue.shift()!;
+      const dirents = await this.io(() => fs.promises.readdir(dir, { withFileTypes: true })).catch(() => []);
+      for (const dirent of dirents) {
+        if (files >= LINE_ENDING_SAMPLE_FILES) break;
+        const target = path.join(dir, dirent.name);
+        if (dirent.isDirectory()) {
+          if (!SKIPPED_FOR_LINE_ENDINGS.has(dirent.name.toLowerCase())) queue.push(target);
+          continue;
+        }
+        if (!dirent.isFile()) continue;
+        const head = await this.io(async () => {
+          const handle = await fs.promises.open(target, 'r');
+          try {
+            const buffer = Buffer.alloc(LINE_ENDING_SAMPLE_BYTES);
+            const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+            return buffer.subarray(0, bytesRead);
+          } finally {
+            await handle.close();
+          }
+        }).catch(() => null);
+        if (!head || head.includes(0)) continue;
+        const counts = countLineEndings(head.toString('latin1'));
+        if (counts.crlf + counts.lf === 0) continue;
+        files++;
+        crlf += counts.crlf;
+        lf += counts.lf;
+      }
+    }
+    return crlf > lf ? 'CRLF' : 'LF';
   }
 
   /**

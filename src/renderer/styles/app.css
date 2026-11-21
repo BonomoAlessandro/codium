@@ -615,6 +615,26 @@ kbd {
   height: 12px;
 }
 
+/* „File changed on disk“ über dem Editor, wie die gelbe Leiste in IntelliJ. */
+.editor-conflict {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  color: var(--text);
+  background: var(--bg-warning);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.editor-conflict-text {
+  flex: 1;
+}
+
+.editor-conflict button {
+  padding: 2px 10px;
+}
+
 .editor-body {
   position: relative;
   display: grid;

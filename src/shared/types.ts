@@ -237,6 +237,8 @@ export const ErrorCode = {
   fileOperationFailed: 'FILE_OPERATION_FAILED',
   /** Der Pfad ist ein Ordner, der Befehl braucht eine Datei; `data.path` ist der Pfad. */
   notAFile: 'NOT_A_FILE',
+  /** Ein Zeichen lässt sich in der Kodierung der Datei nicht speichern; `data.character` ist das Zeichen. */
+  cannotEncode: 'CANNOT_ENCODE',
 } as const;
 
 export type ErrorCodeValue = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -347,8 +349,17 @@ export interface Commands {
   'files.copyPaths': { params: { paths: string[] }; result: void };
   /** „Open in Explorer“: zeigt die Datei oder den Ordner markiert im Explorer. */
   'files.showInExplorer': { params: { path: string }; result: void };
-  /** Liest eine Datei für einen Tab (siehe `FileContent`). Ein Ordner: `NOT_A_FILE`. */
+  /**
+   * Liest eine Datei für einen Tab (siehe `FileContent`). Ein Ordner: `NOT_A_FILE`. Hat eine Textdatei keinen
+   * Zeilenumbruch (etwa eine neue, leere), ist `lineEnding` das im Projekt überwiegende (Rückfall LF).
+   */
   'files.read': { params: { path: string }; result: FileContent };
+  /**
+   * Speichert den Text einer Datei in der angegebenen Kodierung (mit ihrem BOM) und mit dem angegebenen Zeilenende für
+   * alle Umbrüche; sonst wird nichts verändert. Die Datei muss es geben. Lässt sich ein Zeichen in der Kodierung nicht
+   * schreiben: `CANNOT_ENCODE`. Der eigene Schreibvorgang kommt nicht als `files.changed` zurück.
+   */
+  'files.write': { params: { path: string; text: string; encoding: TextEncoding; lineEnding: LineEnding }; result: void };
 }
 
 /** Alle Ereignisse: Name → Nutzlast. */
