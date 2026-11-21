@@ -17,7 +17,7 @@ import {
 } from '../../shared/types';
 import type { ProjectCore } from './projectCore';
 import { CommandError, type CallContext } from './router';
-import { MAX_CURSORS, MAX_RECENT_FILES, MAX_TABS, parseCursor, type ProjectState } from './schema';
+import { MAX_CURSORS, MAX_RECENT_FILES, MAX_TABS, isMarkdownView, parseCursor, type ProjectState } from './schema';
 
 type RegisterProjectCommand = <K extends CommandName>(
   name: K,
@@ -31,6 +31,19 @@ export function registerEditorCommands(register: RegisterProjectCommand): void {
   register('project.cursor', (project, params) => cursorOf(project, params));
   register('project.setCursor', (project, params) => setCursor(project, params));
   register('project.recentFiles', (project) => recentFiles(project));
+  register('project.markdownView', (project, params) => {
+    const key = relativeKey(relativeOf(project, requireFilePath(project, field(params, 'path'))));
+    return project.state.markdownViews?.[key] ?? null;
+  });
+  register('project.setMarkdownView', (project, params) => {
+    const key = relativeKey(relativeOf(project, requireFilePath(project, field(params, 'path'))));
+    const view = field(params, 'view');
+    if (!isMarkdownView(view)) throw invalidParams('A view (editor, split or preview) is expected.');
+    project.updateState((state) => {
+      const others = Object.entries(state.markdownViews ?? {}).filter(([k]) => k !== key);
+      state.markdownViews = Object.fromEntries([...others, [key, view] as const].slice(-MAX_CURSORS));
+    });
+  });
   register('project.addRecentFile', (project, params) => addRecentFile(project, params));
 }
 
@@ -176,6 +189,14 @@ export function followFileOperation(projectPath: string, state: ProjectState, op
     else delete state.activeTab;
   }
   if (state.recentFiles) state.recentFiles = state.recentFiles.flatMap((r) => move(r) ?? []);
+  if (state.markdownViews) {
+    state.markdownViews = Object.fromEntries(
+      Object.entries(state.markdownViews).flatMap(([key, view]) => {
+        const after = move(key);
+        return after === null ? [] : [[relativeKey(after), view]];
+      }),
+    );
+  }
   if (state.cursors) {
     const entries = Object.entries(state.cursors).flatMap(([key, cursor]): Array<[string, CursorState]> => {
       const after = move(key);

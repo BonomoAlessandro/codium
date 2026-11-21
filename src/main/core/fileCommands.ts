@@ -23,6 +23,7 @@ export function registerFileCommands(register: RegisterProjectCommand): void {
   register('files.copyPaths', (project, params) => project.files.copyPaths(params));
   register('files.showInExplorer', (project, params) => project.files.showInExplorer(params));
   register('files.read', (project, params) => project.files.read(params));
+  register('files.readImage', (project, params) => project.files.readImage(params));
   register('files.write', (project, params) => project.files.write(params));
   register('files.findByName', (project, params) => project.search.findByName(params));
   register('search.start', (project, params) => project.search.startSearch(params));

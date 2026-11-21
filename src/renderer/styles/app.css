@@ -1531,3 +1531,164 @@ kbd {
   white-space: pre-wrap;
   user-select: text;
 }
+
+/* ---------- Markdown-Vorschau (Ticket 23) ---------- */
+
+/* Umschalter „Editor“ / „Split“ / „Preview“ oben rechts im Tab, wie in IntelliJ. */
+.markdown-views {
+  position: absolute;
+  top: 8px;
+  right: 22px;
+  z-index: 5;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-popup);
+  border-radius: 6px;
+}
+
+.markdown-views button {
+  padding: 2px 10px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+}
+
+.markdown-views button.active {
+  color: var(--text);
+  background: var(--bg-selected);
+}
+
+.markdown-splitter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 4;
+  width: 5px;
+  margin-left: -2px;
+  cursor: col-resize;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.markdown-preview-host {
+  position: absolute;
+  inset: 0;
+}
+
+.markdown-preview {
+  box-sizing: border-box;
+  height: 100%;
+  padding: 16px 32px 48px;
+  overflow: auto;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+  background: var(--bg);
+  user-select: text;
+}
+
+.markdown-preview h1,
+.markdown-preview h2 {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.markdown-preview a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.markdown-preview a:hover {
+  text-decoration: underline;
+}
+
+.markdown-preview code {
+  padding: 1px 4px;
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--bg-panel);
+  border-radius: 3px;
+}
+
+.markdown-preview pre.md-code {
+  padding: 10px 12px;
+  overflow: auto;
+  background: var(--bg-panel);
+  border-radius: 6px;
+}
+
+.markdown-preview pre.md-code code {
+  padding: 0;
+  background: none;
+}
+
+.markdown-preview blockquote {
+  margin: 0;
+  padding: 0 12px;
+  color: var(--text-muted);
+  border-left: 3px solid var(--border);
+}
+
+.markdown-preview table {
+  border-collapse: collapse;
+}
+
+.markdown-preview th,
+.markdown-preview td {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+}
+
+.markdown-preview th {
+  background: var(--bg-panel);
+}
+
+.markdown-preview img {
+  max-width: 100%;
+}
+
+.markdown-preview li.md-task-item {
+  list-style: none;
+}
+
+/* Aufgabenliste: ein Kästchen, angehakt mit Häkchen. */
+.md-task {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin: 0 6px 0 -18px;
+  vertical-align: -1px;
+  border: 1px solid var(--text-muted);
+  border-radius: 3px;
+}
+
+.md-task.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.md-image-alt {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.md-mermaid {
+  margin: 12px 0;
+  white-space: pre;
+  font-family: var(--font-mono);
+}
+
+.md-mermaid svg {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.md-mermaid-error {
+  padding: 8px 10px;
+  color: var(--error);
+  white-space: pre-wrap;
+  background: var(--bg-panel);
+  border-radius: 6px;
+}

@@ -12,6 +12,7 @@ import {
   TOOL_WINDOW_SIDES,
   isToolWindowId,
   type AppSettings,
+  type MarkdownView,
   type CursorState,
   type ToolWindowLayout,
   type ToolWindowSide,
@@ -77,6 +78,8 @@ export interface ProjectState {
   pinnedTabs?: number;
   /** Zuletzt geöffnete Dateien (Ctrl + E), neueste zuerst, relativ wie `tabs`; höchstens `MAX_RECENT_FILES`. */
   recentFiles?: string[];
+  /** Gemerkte Ansicht je Markdown-Datei, Schlüssel wie bei `cursors`; höchstens `MAX_CURSORS`. */
+  markdownViews?: Record<string, MarkdownView>;
   /**
    * Cursor und Scrollstand je Datei, Schlüssel wie bei `tabs` (unter Windows klein geschrieben, damit eine andere
    * Schreibweise derselben Datei keinen zweiten Eintrag anlegt). Die zuletzt geänderten stehen am Ende; es bleiben
@@ -100,6 +103,11 @@ export function appSettings(settings: Settings): AppSettings {
 /** Ob eine Schriftgrösse gültig ist: eine ganze Zahl von `MIN_FONT_SIZE` bis `MAX_FONT_SIZE`. */
 export function isFontSize(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= MIN_FONT_SIZE && value <= MAX_FONT_SIZE;
+}
+
+/** Ob ein Wert eine Ansicht einer Markdown-Datei ist. */
+export function isMarkdownView(value: unknown): value is MarkdownView {
+  return value === 'editor' || value === 'split' || value === 'preview';
 }
 
 /** Ob ein JDK-Ordner als Einstellung taugt: ein absoluter Windows-Pfad. */
@@ -221,6 +229,13 @@ export function normalizeProjectState(projectPath: string, raw: Record<string, u
       ? Math.min(raw.pinnedTabs, tabs.length)
       : undefined;
   const cursors = normalizeCursors(raw.cursors);
+  const markdownViews = isRecord(raw.markdownViews)
+    ? Object.fromEntries(
+        Object.entries(raw.markdownViews)
+          .filter((entry): entry is [string, MarkdownView] => entry[0] !== '' && isRelativeFolder(entry[0]) && isMarkdownView(entry[1]))
+          .slice(-MAX_CURSORS),
+      )
+    : undefined;
   const seenRecent = new Set<string>();
   const recentFiles = Array.isArray(raw.recentFiles)
     ? stringArray(raw.recentFiles)
@@ -243,6 +258,7 @@ export function normalizeProjectState(projectPath: string, raw: Record<string, u
     ...(pinnedTabs !== undefined ? { pinnedTabs } : {}),
     ...(cursors ? { cursors } : {}),
     ...(recentFiles ? { recentFiles } : {}),
+    ...(markdownViews ? { markdownViews } : {}),
   };
 }
 

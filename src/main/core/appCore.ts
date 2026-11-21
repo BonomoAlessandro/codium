@@ -472,6 +472,14 @@ export class AppCore {
     this.router.register('app.cancelClone', async (ctx) => {
       await Promise.all([...this.clones].filter(([, c]) => c.windowId === ctx.windowId).map(([job]) => job.cancel()));
     });
+    this.router.register('app.openExternal', async (_ctx, params) => {
+      const url = (params as { url?: unknown } | undefined)?.url;
+      // Nur Web- und Mail-Adressen; alles andere (etwa file:) wäre ein Weg, beliebige Programme zu starten.
+      if (typeof url !== 'string' || !/^(https?:\/\/|mailto:)/i.test(url) || url.length > 8000) {
+        throw new CommandError('Only web addresses (http, https) and mail addresses can be opened.', ErrorCode.invalidParams);
+      }
+      await this.ports.shell.openExternal(url);
+    });
     this.router.register('app.readme', () => {
       const text = this.options.readmePath ? this.ports.system.readTextFile(this.options.readmePath) : null;
       if (text === null) throw new CommandError('The README that comes with Codium was not found.', ErrorCode.fileNotFound);

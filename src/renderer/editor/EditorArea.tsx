@@ -24,6 +24,7 @@ import {
   type CursorState,
   type FileOperation,
   type LineEnding,
+  type MarkdownView,
   type ProjectInfo,
   type TextEncoding,
 } from '../../shared/types';
@@ -34,6 +35,8 @@ import type { Notify } from '../Notices';
 import { useAsk } from '../popup/Dialogs';
 import { Menu, type MenuAnchor, type MenuEntry } from '../popup/Menu';
 import { isSameOrInside, movedPath, pathKey, relativeLabel } from '../project/filePaths';
+import { MarkdownPreview } from '../markdown/MarkdownPreview';
+import { isMarkdownFile } from '../markdown/markdown';
 import { EDITOR_ACTIONS } from './editorActions';
 import { EDITOR_FONT_FAMILY, editorFontReady, languageOf, monaco } from './monaco';
 import { pinTab, recentOrder, tabLabels, tabsToClose, unpinTab, withTab, withoutTab } from './tabs';
@@ -399,6 +402,13 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
         // Der Kern merkt sich `large` (ab 5 MB): Sprach-Dienst (Ticket 12) und Änderungsbalken (Ticket 17) bleiben für
         // solche Tabs aus.
         setContent(key, { kind: 'text', encoding: content.encoding, lineEnding: content.lineEnding, large: content.large });
+        // Markdown: die gemerkte Ansicht („Split“ ohne gemerkte); ab 5 MB nur der Editor (Ticket 23).
+        if (isMarkdownFile(current) && !content.large) {
+          void api.request('project.markdownView', { path: current }).then(
+            (view) => setMarkdownView(key, view ?? 'split', false),
+            () => setMarkdownView(key, 'split', false),
+          );
+        }
       } catch (err) {
         if (loads.current.get(key) !== id) return;
         loads.current.delete(key);
@@ -445,6 +455,56 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     },
     [entryOfModel, load, persistTabs, saveCursorNow, setActive],
   );
+
+  // ---------- Markdown-Vorschau (Ticket 23) ----------
+
+  /** Ansicht je Markdown-Tab (Schlüssel); fehlt sie, ist es keine Markdown-Datei mit Vorschau. */
+  const [markdownViews, setMarkdownViews] = useState<ReadonlyMap<string, MarkdownView>>(() => new Map());
+  /** Breite des Editors in der geteilten Ansicht in Prozent. */
+  const [splitPercent, setSplitPercent] = useState(50);
+  /** Oberste sichtbare Editorzeile, für das synchrone Scrollen. */
+  const [topLine, setTopLine] = useState(1);
+  const topLineFrame = useRef<number | null>(null);
+
+  const setMarkdownView = useCallback(
+    (key: string, view: MarkdownView, persist: boolean) => {
+      setMarkdownViews((current) => new Map(current).set(key, view));
+      const tabPathValue = tabsRef.current.find((t) => pathKey(t.path) === key)?.path;
+      if (persist && tabPathValue) {
+        void api.request('project.setMarkdownView', { path: tabPathValue, view }).catch(() => {});
+      }
+    },
+    [api],
+  );
+
+  /** Meldet die oberste sichtbare Zeile, höchstens einmal je Bild. */
+  const reportTopLine = () => {
+    if (topLineFrame.current !== null) return;
+    topLineFrame.current = window.requestAnimationFrame(() => {
+      topLineFrame.current = null;
+      const range = editorRef.current?.getVisibleRanges()[0];
+      if (range) setTopLine(range.startLineNumber);
+    });
+  };
+
+  /** Ziehen an der Trennlinie zwischen Editor und Vorschau. */
+  const startSplitDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const body = bodyRef.current;
+    if (e.button !== 0 || !body) return;
+    e.preventDefault();
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+    const rect = body.getBoundingClientRect();
+    const move = (ev: PointerEvent) => setSplitPercent(Math.min(85, Math.max(15, ((ev.clientX - rect.left) / rect.width) * 100)));
+    const end = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', end);
+      handle.removeEventListener('pointercancel', end);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  };
 
   /** Ziele für Tabs, deren Modell es noch nicht gibt. */
   const pendingTargets = useRef(new Map<string, EditorTarget>());
@@ -793,6 +853,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
           reportStatus();
           scheduleCursorSave();
         }),
+        editor.onDidScrollChange(() => reportTopLine()),
         editor.onDidScrollChange((e) => {
           if (e.scrollTopChanged) scheduleCursorSave();
         }),
@@ -984,6 +1045,15 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       disposeModel(oldKey);
       const newKey = pathKey(newPath);
       addModel(newKey, model, wasDirty ? -1 : model.getAlternativeVersionId(), { viewState, diskText: entry.diskText, diskStamp: entry.diskStamp });
+      // Die Ansicht einer Markdown-Datei wandert mit (solange es eine bleibt).
+      setMarkdownViews((current) => {
+        const view = current.get(oldKey);
+        if (view === undefined) return current;
+        const next = new Map(current);
+        next.delete(oldKey);
+        if (isMarkdownFile(newPath)) next.set(newKey, view);
+        return next;
+      });
       // Ungespeicherte Eingaben werden unter dem neuen Namen gespeichert, ein offener Konflikt bleibt.
       if (inConflict) setConflict(newKey, true);
       else if (wasDirty) scheduleSave(newKey);
@@ -1167,6 +1237,9 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     isDocumentTab(tabPath) ? `${tabPath.slice(DOCUMENT_PREFIX.length)} – comes with Codium (read-only)` : relativeLabel(project.path, tabPath);
   const activeTab = active === null ? undefined : tabs.find((t) => pathKey(t.path) === pathKey(active));
   const showEditor = activeTab?.content?.kind === 'text';
+  const activeKey = activeTab ? pathKey(activeTab.path) : null;
+  const activeView = activeKey !== null && showEditor ? markdownViews.get(activeKey) : undefined;
+  const activeModel = activeKey !== null && activeView !== undefined && activeView !== 'editor' ? models.current.get(activeKey)?.model : undefined;
 
   const tabLabel = (tab: Tab) => labels.get(pathKey(tab.path)) ?? { name: tab.path };
   /** Nach einem Menü geht der Fokus in den Editor zurück, wenn er etwas zeigt. */
@@ -1272,7 +1345,56 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
         </div>
       )}
       <div ref={bodyRef} className="editor-body">
-        <div ref={hostRef} className="editor-host" style={showEditor ? undefined : { display: 'none' }} />
+        <div
+          ref={hostRef}
+          className="editor-host"
+          style={
+            !showEditor || activeView === 'preview'
+              ? { display: 'none' }
+              : activeView === 'split'
+                ? { right: `${100 - splitPercent}%` }
+                : undefined
+          }
+        />
+        {activeView !== undefined && activeTab && (
+          <>
+            <div className="markdown-views" role="group" aria-label="Markdown View">
+              {(['editor', 'split', 'preview'] as const).map((view) => (
+                <button
+                  key={view}
+                  type="button"
+                  className={activeView === view ? 'active' : undefined}
+                  aria-pressed={activeView === view}
+                  onClick={() => setMarkdownView(pathKey(activeTab.path), view, true)}
+                >
+                  {view === 'editor' ? 'Editor' : view === 'split' ? 'Split' : 'Preview'}
+                </button>
+              ))}
+            </div>
+            {activeView === 'split' && (
+              <div
+                className="markdown-splitter"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize Preview"
+                style={{ left: `${splitPercent}%` }}
+                onPointerDown={startSplitDrag}
+              />
+            )}
+            {activeModel && (
+              <div className="markdown-preview-host" style={activeView === 'split' ? { left: `${splitPercent}%` } : undefined}>
+                <MarkdownPreview
+                  key={activeKey}
+                  api={api}
+                  model={activeModel}
+                  filePath={activeTab.path}
+                  projectPath={project.path}
+                  topLine={activeView === 'split' ? topLine : null}
+                />
+              </div>
+            )}
+          </>
+        )}
         {!hasTabs && empty}
         {activeTab && !showEditor && <TabNotice tab={activeTab} />}
       </div>

@@ -17,6 +17,7 @@ import { copyName, fileNameProblem, GIT_FOLDER_PROBLEM, isGitFolderName, splitNe
 import {
   ErrorCode,
   MAX_OPEN_FILE_BYTES,
+  MAX_PREVIEW_IMAGE_BYTES,
   type CommandParams,
   type EventName,
   type Events,
@@ -31,6 +32,7 @@ import {
   decodeText,
   encodeExact,
   encodeText,
+  imageType,
   stampOf,
   UnencodableError,
   withPreservedLineEndings,
@@ -325,6 +327,24 @@ export class FileService {
       }
     }
     return crlf > lf ? 'CRLF' : 'LF';
+  }
+
+  /**
+   * Ein Bild für die Markdown-Vorschau als data-URL: nur Bilder (nach der Endung, dazu SVG), höchstens
+   * `MAX_PREVIEW_IMAGE_BYTES`. SVG kommt als Bild, nicht als Text: In einem `<img>` laufen keine Skripte.
+   */
+  async readImage(params: CommandParams<'files.readImage'>): Promise<{ dataUrl: string; size: number }> {
+    const file = await this.guard.existing(field(params, 'path'));
+    const mime = imageType(file) ?? (path.extname(file).toLowerCase() === '.svg' ? 'image/svg+xml' : undefined);
+    if (!mime) throw invalidParams(`Not an image: ${file}`);
+    const stats = await this.fileOp(() => fs.promises.stat(file), file, 'read');
+    if (stats.isDirectory()) throw new CommandError(`Not a file: ${file}`, ErrorCode.notAFile, { path: file });
+    const tooLarge = () =>
+      new CommandError(`“${path.basename(file)}” is larger than 10 MB.`, ErrorCode.fileTooLarge, { path: file });
+    if (stats.size > MAX_PREVIEW_IMAGE_BYTES) throw tooLarge();
+    const data = await this.fileOp(() => fs.promises.readFile(file), file, 'read');
+    if (data.length > MAX_PREVIEW_IMAGE_BYTES) throw tooLarge();
+    return { dataUrl: `data:${mime};base64,${data.toString('base64')}`, size: data.length };
   }
 
   /**

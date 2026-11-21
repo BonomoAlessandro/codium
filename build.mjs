@@ -69,6 +69,13 @@ await Promise.all([
   }),
   build({
     ...browser,
+    // Mermaid für die Markdown-Vorschau: eine eigene Datei, die erst bei Bedarf geladen wird.
+    entryPoints: ['src/renderer/markdown/mermaidEntry.ts'],
+    outfile: 'dist/renderer/mermaid.js',
+    format: 'iife',
+  }),
+  build({
+    ...browser,
     // Monacos allgemeiner Editor-Worker (Unterschiede, Verknüpfungen, Wortgrenzen), geladen aus den eigenen Dateien.
     entryPoints: ['node_modules/monaco-editor/esm/vs/editor/editor.worker.js'],
     outfile: 'dist/renderer/editor.worker.js',

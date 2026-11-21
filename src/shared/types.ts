@@ -243,6 +243,12 @@ export const DEFAULT_FONT_SIZE = 13;
 export const MIN_FONT_SIZE = 6;
 export const MAX_FONT_SIZE = 72;
 
+/** Ansicht einer Markdown-Datei: nur Editor, geteilt mit Vorschau, nur Vorschau. */
+export type MarkdownView = 'editor' | 'split' | 'preview';
+
+/** Höchstgrösse eines Bildes in der Markdown-Vorschau. */
+export const MAX_PREVIEW_IMAGE_BYTES = 10 * 1024 * 1024;
+
 /** Cursor und Scrollstand eines Editors: Zeile und Spalte ab 1, Scrollstand in Pixeln von oben. */
 export interface CursorState {
   line: number;
@@ -292,6 +298,8 @@ export const ErrorCode = {
   fileOperationFailed: 'FILE_OPERATION_FAILED',
   /** Der Pfad ist ein Ordner, der Befehl braucht eine Datei; `data.path` ist der Pfad. */
   notAFile: 'NOT_A_FILE',
+  /** Eine Datei ist für den Zweck zu gross (etwa ein Bild über 10 MB in der Vorschau); `data.path` ist der Pfad. */
+  fileTooLarge: 'FILE_TOO_LARGE',
   /** Ein Zeichen lässt sich in der Kodierung der Datei nicht speichern; `data.character` ist das Zeichen. */
   cannotEncode: 'CANNOT_ENCODE',
   /** Die Datei hat sich seit dem erwarteten Stand geändert (etwa von aussen); `data.path` ist der Pfad. */
@@ -371,6 +379,11 @@ export interface Commands {
   'app.clone': { params: { url: string; directory: string }; result: ProjectInfo };
   /** Bricht die laufenden Klone des anfragenden Fensters ab (Git samt Kindprozessen wird beendet). */
   'app.cancelClone': { params: void; result: void };
+  /**
+   * Öffnet eine Web-Adresse (http, https, mailto) im Standardbrowser bzw. Mailprogramm, über den Port „Shell-Aktionen“
+   * (im Testmodus nur aufgezeichnet). Andere Adressen: `INVALID_PARAMS`.
+   */
+  'app.openExternal': { params: { url: string }; result: void };
   /** Das mit Codium mitgelieferte README (Markdown), für „Open README“. */
   'app.readme': { params: void; result: { text: string } };
   /**
@@ -385,6 +398,10 @@ export interface Commands {
   'search.start': { params: SearchOptions; result: { searchId: number } };
   /** Bricht eine laufende Projektsuche ab. */
   'search.cancel': { params: { searchId: number }; result: void };
+  /** Die gemerkte Ansicht einer Markdown-Datei; `null` ohne gemerkte (dann gilt „Split“). */
+  'project.markdownView': { params: { path: string }; result: MarkdownView | null };
+  /** Merkt die Ansicht einer Markdown-Datei; sie folgt Umbenennungen in Codium und entfällt beim Löschen. */
+  'project.setMarkdownView': { params: { path: string; view: MarkdownView }; result: void };
   /** Die zuletzt geöffneten Dateien des Projekts, neueste zuerst; Dateien, die es nicht mehr gibt, fehlen. */
   'project.recentFiles': { params: void; result: string[] };
   /** Merkt eine Datei als zuletzt geöffnet (höchstens 50 im Projekt-Zustand). */
@@ -450,6 +467,12 @@ export interface Commands {
   'files.copyPaths': { params: { paths: string[] }; result: void };
   /** „Open in Explorer“: zeigt die Datei oder den Ordner markiert im Explorer. */
   'files.showInExplorer': { params: { path: string }; result: void };
+  /**
+   * Ein Bild für die Markdown-Vorschau als data-URL (PNG, JPEG, GIF, WebP, BMP, ICO, SVG). Pfade ausserhalb des Projekts
+   * lehnt der Kern ab wie überall; ein Bild über 10 MB: `FILE_TOO_LARGE`; eine Datei, die kein Bild ist:
+   * `INVALID_PARAMS`.
+   */
+  'files.readImage': { params: { path: string }; result: { dataUrl: string; size: number } };
   /**
    * Liest eine Datei für einen Tab (siehe `FileContent`). Ein Ordner: `NOT_A_FILE`. Hat eine Textdatei keinen
    * Zeilenumbruch (etwa eine neue, leere), ist `lineEnding` das im Projekt überwiegende (Rückfall LF).
