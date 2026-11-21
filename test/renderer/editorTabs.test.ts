@@ -24,11 +24,11 @@ describe('Beschriftung der Tabs', () => {
       { name: 'index.ts', hint: 'b' },
       { name: 'Other.ts' },
     ]);
-    // Gleicher letzter Ordner: einer mehr.
+    // Gleicher letzter Ordner: einer mehr; über dem obersten Ordner steht der Name des Projekts.
     expect(labelsOf(['x/lib/index.ts', 'y/lib/index.ts', 'lib/index.ts'])).toEqual([
       { name: 'index.ts', hint: 'x/lib' },
       { name: 'index.ts', hint: 'y/lib' },
-      { name: 'index.ts', hint: 'lib' },
+      { name: 'index.ts', hint: 'Alpha/lib' },
     ]);
   });
 
@@ -36,6 +36,11 @@ describe('Beschriftung der Tabs', () => {
     expect(labelsOf(['index.ts', 'src/INDEX.ts'])).toEqual([
       { name: 'index.ts', hint: 'Alpha' },
       { name: 'INDEX.ts', hint: 'src' },
+    ]);
+    // Ein Unterordner mit dem Namen des Projekts bleibt unterscheidbar.
+    expect(labelsOf(['index.ts', 'Alpha/index.ts'])).toEqual([
+      { name: 'index.ts', hint: 'Alpha' },
+      { name: 'index.ts', hint: 'Alpha/Alpha' },
     ]);
   });
 });

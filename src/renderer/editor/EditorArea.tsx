@@ -192,34 +192,52 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     [setTabs],
   );
 
+  /**
+   * Laufende Lesevorgänge je Tab (Schlüssel → Kennung). Ein Ergebnis zählt nur, solange seine Kennung noch gilt:
+   * Schliessen, Umbenennen und erneutes Lesen machen sie ungültig (Review von Ticket 05).
+   */
+  const loads = useRef(new Map<string, number>());
+  const loadCounter = useRef(0);
+
   /** Liest die Datei eines Tabs und legt bei Text ihr Modell an. */
   const load = useCallback(
     async (filePath: string) => {
       const key = pathKey(filePath);
+      const id = ++loadCounter.current;
+      loads.current.set(key, id);
       setContent(key, { kind: 'loading' });
       try {
         const [content, cursor] = await Promise.all([
           api.request('files.read', { path: filePath }),
           api.request('project.cursor', { path: filePath }),
         ]);
-        // Während des Lesens geschlossen oder umbenannt: nichts mehr anlegen.
+        if (loads.current.get(key) !== id) return;
+        loads.current.delete(key);
         const current = tabPath(key);
         if (current === undefined) return;
         if (content.kind !== 'text') {
           setContent(key, content.kind === 'image' ? { kind: 'image', dataUrl: content.dataUrl, size: content.size } : { kind: content.kind, size: content.size });
           return;
         }
-        const model = monaco.editor.createModel(content.text, languageOf(current), monaco.Uri.file(current));
+        // Ein Modell pro Datei: Gibt es (wider Erwarten) schon eines unter dieser Adresse, weicht es dem neuen.
+        const uri = monaco.Uri.file(current);
+        disposeModel(key);
+        monaco.editor.getModel(uri)?.dispose();
+        const model = monaco.editor.createModel(content.text, languageOf(current), uri);
         model.setEOL(content.lineEnding === 'CRLF' ? monaco.editor.EndOfLineSequence.CRLF : monaco.editor.EndOfLineSequence.LF);
         addModel(key, model, model.getAlternativeVersionId(), { initialCursor: cursor });
+        // Der Kern merkt sich `large` (ab 5 MB): Sprach-Dienst (Ticket 12) und Änderungsbalken (Ticket 17) bleiben für
+        // solche Tabs aus.
         setContent(key, { kind: 'text', encoding: content.encoding, lineEnding: content.lineEnding, large: content.large });
       } catch (err) {
+        if (loads.current.get(key) !== id) return;
+        loads.current.delete(key);
         // Die Datei lässt sich nicht lesen (etwa inzwischen gelöscht): Der Tab schliesst, die Meldung sagt warum.
         callbacks.current.notify({ level: 'error', text: errorText(err) });
-        closeRef.current(filePath);
+        closeRef.current([filePath], { saveCursor: false });
       }
     },
-    [addModel, api, setContent],
+    [addModel, api, disposeModel, setContent],
   );
 
   /** Macht einen Tab aktiv; vorher merkt sich der Editor den Stand des bisherigen. */
@@ -272,18 +290,30 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     [activate, persistTabs, setTabs],
   );
 
-  const close = useCallback(
-    (filePath: string) => {
-      const key = pathKey(filePath);
-      if (editorRef.current && entryOfModel(editorRef.current.getModel())?.[0] === key) saveCursorNow();
-      const result = withoutTab(
-        tabsRef.current.map((t) => t.path),
-        activeRef.current,
-        filePath,
-      );
-      disposeModel(key);
-      pendingTargets.current.delete(key);
-      setTabs(tabsRef.current.filter((t) => pathKey(t.path) !== key));
+  /**
+   * Schliesst Tabs auf einmal; erst danach wird ein neuer aktiver Tab bestimmt (und nur er gelesen). Mit
+   * `saveCursor: false` (etwa weil die Datei gelöscht ist) wird der Cursor nicht mehr gesichert.
+   */
+  const closeTabs = useCallback(
+    (paths: readonly string[], { saveCursor = true }: { saveCursor?: boolean } = {}) => {
+      const keys = new Set(paths.map(pathKey).filter((k) => tabsRef.current.some((t) => pathKey(t.path) === k)));
+      if (keys.size === 0) return;
+      const shownKey = entryOfModel(editorRef.current?.getModel() ?? null)?.[0];
+      if (shownKey !== undefined && keys.has(shownKey)) {
+        if (saveCursor) saveCursorNow();
+        else if (cursorTimer.current !== null) {
+          window.clearTimeout(cursorTimer.current);
+          cursorTimer.current = null;
+        }
+      }
+      let result = { tabs: tabsRef.current.map((t) => t.path), active: activeRef.current };
+      for (const t of tabsRef.current) if (keys.has(pathKey(t.path))) result = withoutTab(result.tabs, result.active, t.path);
+      for (const key of keys) {
+        disposeModel(key);
+        pendingTargets.current.delete(key);
+        loads.current.delete(key);
+      }
+      setTabs(tabsRef.current.filter((t) => !keys.has(pathKey(t.path))));
       if (result.active === null) setActive(null);
       else if (activeRef.current === null || pathKey(result.active) !== pathKey(activeRef.current)) {
         activeRef.current = null;
@@ -293,8 +323,9 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     },
     [activate, disposeModel, entryOfModel, persistTabs, saveCursorNow, setActive, setTabs],
   );
-  const closeRef = useRef(close);
-  closeRef.current = close;
+  const closeRef = useRef(closeTabs);
+  closeRef.current = closeTabs;
+  const close = useCallback((filePath: string) => closeTabs([filePath]), [closeTabs]);
 
   useImperativeHandle(ref, () => ({ open }), [open]);
 
@@ -343,8 +374,15 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       );
       setEditorReady(true);
     });
+    // Schliesst das Fenster oder endet Codium, wird eine noch verzögerte Cursorbewegung sofort gesichert.
+    const flushCursor = () => {
+      if (cursorTimer.current !== null) saveCursorRef.current();
+    };
+    window.addEventListener('pagehide', flushCursor);
     return () => {
       disposed = true;
+      window.removeEventListener('pagehide', flushCursor);
+      flushCursor();
       for (const listener of listeners) listener.dispose();
       editor?.dispose();
       editorRef.current = null;
@@ -484,7 +522,11 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   const onOperation = useRef<(op: FileOperation) => void>(() => {});
   onOperation.current = (op) => {
     if (op.kind === 'deleted') {
-      for (const tab of tabsRef.current.filter((t) => isSameOrInside(t.path, op.path))) close(tab.path);
+      // Alle auf einmal und ohne den Cursor zu sichern: Der Kern hat ihn mit der Datei schon vergessen.
+      closeTabs(
+        tabsRef.current.filter((t) => isSameOrInside(t.path, op.path)).map((t) => t.path),
+        { saveCursor: false },
+      );
       return;
     }
     if (op.kind !== 'renamed') return;
@@ -506,9 +548,19 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       disposeModel(oldKey);
       addModel(pathKey(newPath), model, wasDirty ? -1 : model.getAlternativeVersionId(), { viewState });
     }
-    const renamed = tabsRef.current.map((t) => (isSameOrInside(t.path, op.from) ? { ...t, path: movedPath(t.path, op.from, op.to) } : t));
+    // Tabs, die gerade lesen, lesen unter dem neuen Pfad neu (der alte Lesevorgang zählt nicht mehr).
+    const interrupted = new Set(affected.map((t) => pathKey(t.path)).filter((key) => loads.current.delete(key)));
+    const renamed = tabsRef.current.map((t) => {
+      if (!isSameOrInside(t.path, op.from)) return t;
+      const moved = movedPath(t.path, op.from, op.to);
+      return interrupted.has(pathKey(t.path)) ? { path: moved, content: null } : { ...t, path: moved };
+    });
     setTabs(renamed);
-    if (activeRef.current !== null && isSameOrInside(activeRef.current, op.from)) setActive(movedPath(activeRef.current, op.from, op.to));
+    if (activeRef.current !== null && isSameOrInside(activeRef.current, op.from)) {
+      const activePath = movedPath(activeRef.current, op.from, op.to);
+      setActive(activePath);
+      if (renamed.find((t) => pathKey(t.path) === pathKey(activePath))?.content === null) void load(activePath);
+    }
     persistTabs();
   };
   useEffect(() => api.on('files.operation', (op) => onOperation.current(op)), [api]);

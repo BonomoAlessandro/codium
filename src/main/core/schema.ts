@@ -185,8 +185,18 @@ export function normalizeProjectState(projectPath: string, raw: Record<string, u
   const expandedFolders = Array.isArray(raw.expandedFolders)
     ? stringArray(raw.expandedFolders).filter(isRelativeFolder).slice(0, MAX_EXPANDED_FOLDERS)
     : undefined;
+  // Ohne Doppelte (unter Windows auch ohne solche, die sich nur in der Schreibweise unterscheiden); sonst lehnte der
+  // Kern jedes spätere Speichern der Tabs ab (Review von Ticket 05).
+  const seenTabs = new Set<string>();
   const tabs = Array.isArray(raw.tabs)
-    ? stringArray(raw.tabs).filter((t) => t !== '' && isRelativeFolder(t)).slice(0, MAX_TABS)
+    ? stringArray(raw.tabs)
+        .filter((t) => {
+          const key = process.platform === 'win32' ? t.toLowerCase() : t;
+          if (t === '' || !isRelativeFolder(t) || seenTabs.has(key)) return false;
+          seenTabs.add(key);
+          return true;
+        })
+        .slice(0, MAX_TABS)
     : undefined;
   const activeTab = typeof raw.activeTab === 'string' && tabs?.includes(raw.activeTab) ? raw.activeTab : undefined;
   const cursors = normalizeCursors(raw.cursors);

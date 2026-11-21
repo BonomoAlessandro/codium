@@ -14,7 +14,7 @@ import {
   type CommandName,
   type CommandResult,
 } from '../../src/shared/types';
-import { createTestCore, restart, type TestCore } from '../support/core';
+import { createTestCore, quitApp, restart, type TestCore } from '../support/core';
 import { useTempDirs } from '../support/tempDir';
 
 const WELCOME = 'Welcome to Codium';
@@ -310,6 +310,24 @@ describe('Editor im Kern', () => {
       await invalid('project.setCursor', { path: at('a.txt'), cursor: { line: 1, column: 1, scrollTop: -1 } });
       await invalid('project.setCursor', { path: path.join(root, 'x.txt'), cursor: { line: 1, column: 1, scrollTop: 0 } });
       expect(await call(test, windowId, 'project.tabs')).toEqual({ tabs: [], active: null });
+    });
+
+    it('übergeht doppelte Tabs in einer beschädigten Zustandsdatei, damit sich die Tabs weiter speichern lassen', async () => {
+      const { test: first, windowId: firstWindow, at, root } = await openAlpha({ 'a.txt': 'a', 'b.txt': 'b' });
+      await call(first, firstWindow, 'project.setTabs', { tabs: [at('a.txt')], active: at('a.txt') });
+      await quitApp(first);
+      // Von Hand bearbeitet: a.txt doppelt, einmal in anderer Schreibweise.
+      const stateDir = path.join(root, 'data', 'projects');
+      const [stateFile] = fs.readdirSync(stateDir).map((name) => path.join(stateDir, name));
+      const state = JSON.parse(fs.readFileSync(stateFile, 'utf8')) as Record<string, unknown>;
+      fs.writeFileSync(stateFile, JSON.stringify({ ...state, tabs: ['a.txt', 'b.txt', 'A.TXT'], activeTab: 'b.txt' }));
+
+      const test = createTestCore(path.join(root, 'data'));
+      await test.core.start();
+      const windowId = test.ports.windows.windowTitled(title('Alpha'));
+      const tabs = await call(test, windowId, 'project.tabs');
+      expect(tabs).toEqual({ tabs: [at('a.txt'), at('b.txt')], active: at('b.txt') });
+      await expect(call(test, windowId, 'project.setTabs', tabs)).resolves.toBeUndefined();
     });
 
     it('merkt sich die Cursor der zuletzt benutzten 500 Dateien', async () => {

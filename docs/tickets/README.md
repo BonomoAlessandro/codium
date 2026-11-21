@@ -69,7 +69,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 | 02 | [Projektfenster, Willkommensfenster, Beenden und Wiederöffnen](02-projektfenster.md) | AFK | 01 | 1 | erledigt |
 | 03 | [Layout: Kopfzeile, Werkzeugfenster, Statusleiste, Meldungen, Rückfragen](03-layout.md) | AFK | 02 | 1 | erledigt |
 | 04 | [Datei-Dienst und Dateibaum](04-dateibaum.md) | AFK | 03 | 1 | erledigt |
-| 05 | [Monaco und Tabs](05-editor-und-tabs.md) | AFK | 04 | 1 | offen |
+| 05 | [Monaco und Tabs](05-editor-und-tabs.md) | AFK | 04 | 1 | erledigt |
 | 06 | [Tab-Menü, Tastenbelegung und Schriftgrösse](06-tab-menue-und-tastenkuerzel.md) | AFK | 05 | 1 | offen |
 | 07 | [Automatisches Speichern, Kodierung und Änderungen von aussen](07-speichern.md) | AFK | 05 | 1 | offen |
 | 08 | [Dateisuche, zuletzt geöffnete Dateien, Projektsuche und „Find“](08-suche.md) | AFK | 05 | 1 | offen |

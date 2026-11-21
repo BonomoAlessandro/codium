@@ -272,6 +272,57 @@ describe('Editor und Tabs', () => {
       expect(await editorText(page)).not.toContain('line 1\n');
     });
   });
+
+  it('bleibt stabil, wenn ein Tab während des Lesens schliesst, umbenannt oder mit seinem Ordner gelöscht wird', async () => {
+    // Grosse Dateien, damit das Lesen dauert (Review von Ticket 05).
+    const big = `${'x'.repeat(99)}\n`.repeat(300_000);
+    const { alpha, dataRoot } = setup({ 'big.txt': big, 'big2.txt': big, 'x/a.txt': 'a\nb\nc\n', 'x/b.txt': 'b', 'other.txt': 'o' });
+    const at = (...parts: string[]) => path.join(alpha, ...parts);
+    const errors = (page: Page) => page.locator('.notice[role="alert"]').allInnerTexts();
+    const first = await launchAlpha(dataRoot);
+    await withApp(first.codium, async () => {
+      const { page } = first;
+      // Schliessen und gleich wieder öffnen, während noch gelesen wird: Am Ende ist der Tab offen, ohne Fehler.
+      await item(page, 'big.txt').dblclick();
+      await page.getByRole('button', { name: 'Close big.txt' }).click();
+      await item(page, 'big.txt').dblclick();
+      await expect.poll(() => editorText(page), { timeout: 30_000 }).toContain('xxxx');
+      expect(await tabLabels(page)).toEqual(['big.txt']);
+      expect(await errors(page)).toEqual([]);
+
+      // Umbenennen während des Lesens: Der Tab liest unter dem neuen Namen und bleibt nicht beim Laden hängen.
+      await item(page, 'big2.txt').dblclick();
+      await invoke(page, 'files.rename', { path: at('big2.txt'), newName: 'big3.txt' });
+      await expect.poll(() => tabLabels(page)).toEqual(['big.txt', 'big3.txt']);
+      await expect.poll(() => page.locator('[aria-busy="true"]').count(), { timeout: 30_000 }).toBe(0);
+      await expect.poll(() => page.locator('.editor-host').isVisible()).toBe(true);
+      expect(await errors(page)).toEqual([]);
+
+      // Für den nächsten Fall: Tabs im Ordner x, der aktive mit Cursor; nach dem Neustart ist nur er gelesen.
+      await tabList(page).getByRole('tab', { name: 'big.txt', exact: true }).hover();
+      await page.getByRole('button', { name: 'Close big.txt' }).click();
+      await page.getByRole('button', { name: 'Close big3.txt' }).click();
+      await invoke(page, 'project.setTabs', { tabs: [at('x', 'a.txt'), at('x', 'b.txt'), at('other.txt')], active: at('x', 'a.txt') });
+      await invoke(page, 'project.setCursor', { path: at('x', 'a.txt'), cursor: { line: 3, column: 1, scrollTop: 0 } });
+      await page.getByRole('button', { name: 'Alpha', exact: true }).click();
+      await page.getByRole('menuitem', { name: 'Exit' }).click();
+      await first.codium.exited();
+    });
+
+    const second = await launchAlpha(dataRoot);
+    await withApp(second.codium, async () => {
+      const { page } = second;
+      await expect.poll(() => statusPosition(page)).toBe('3:1');
+      // Den Ordner löschen: Beide Tabs schliessen auf einmal, der ungelesene meldet keinen Fehler, und der Cursor der
+      // gelöschten Datei bleibt nicht im Projekt-Zustand.
+      await invoke(page, 'files.delete', { paths: [at('x')] });
+      await expect.poll(() => tabLabels(page)).toEqual(['other.txt']);
+      await expect.poll(() => editorText(page)).toContain('o');
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(await errors(page)).toEqual([]);
+      expect(await invoke(page, 'project.cursor', { path: at('x', 'a.txt') })).toBeNull();
+    });
+  });
 });
 
 /** Die Adressen aller Zugriffe der Seiten seit dem Start, aus der Aufzeichnung des Testmodus. */

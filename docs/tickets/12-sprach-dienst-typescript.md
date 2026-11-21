@@ -29,6 +29,8 @@ Der Sprach-Dienst mit seinem ersten Sprachserver. Vervollständigung, semantisch
   - Kürzel in der zentralen Tastenbelegung.
 - **Auslieferung:** die TypeScript-Sprachserver (TypeScript 7 als Laufzeit-Bestandteil, typescript-language-server, gegebenenfalls TypeScript 6 als Rückfall) ausserhalb des App-Archivs, wo nötig. Die Entwicklungsabhängigkeit TypeScript des Projekts selbst bleibt davon getrennt.
 
+- **Hinweis aus Ticket 05:** Tabs ab 5 MB tragen im Inhalt `large: true` (aus `files.read`); für sie meldet die Oberfläche dem Sprach-Dienst nichts.
+
 ## Akzeptanzkriterien
 
 - [ ] Die Spezifikation enthält das Ergebnis der Klärung zum nativen Sprachserver und die daraus folgende Wahl des Rückfalls.

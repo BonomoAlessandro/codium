@@ -25,6 +25,8 @@ Spezifikation: „Git“ (Änderungsblöcke für die Änderungsbalken, Vergleich
   - Klick auf einen Balken zeigt den alten Stand dieses Blocks und bietet „Rollback Lines“; das ersetzt die Zeilen im Editor, danach greift das automatische Speichern.
   - Keine Balken für nicht versionierte Dateien und Dateien ab 5 MB.
 
+- **Hinweis aus Ticket 05:** Tabs ab 5 MB tragen im Inhalt `large: true` (aus `files.read`); sie bekommen keine Änderungsbalken.
+
 ## Akzeptanzkriterien
 
 - [ ] Kern-Tests:

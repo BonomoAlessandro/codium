@@ -39,13 +39,16 @@ export function tabLabels(paths: readonly string[], projectPath: string): Map<st
   return labels;
 }
 
-/** Die Ordner einer Datei relativ zum Projekt; direkt im Projektordner der Name des Projekts. */
+/**
+ * Die Ordner einer Datei ab dem Projektordner selbst (sein Name zuerst). So ist auch eine Datei direkt im Projekt von
+ * einer in einem gleichnamigen Unterordner unterscheidbar: „Alpha“ gegen „Alpha/Alpha“ (Review von Ticket 05).
+ */
 function folderSegments(filePath: string, projectPath: string): string[] {
   const folder = parentPath(filePath);
   if (pathKey(folder) === pathKey(projectPath)) return [baseName(projectPath)];
   const inside = pathKey(folder).startsWith(`${pathKey(projectPath)}\\`);
-  const relative = inside ? folder.slice(projectPath.length + 1) : folder;
-  return relative.split('\\').filter((s) => s !== '');
+  if (!inside) return folder.split('\\').filter((s) => s !== '');
+  return [baseName(projectPath), ...folder.slice(projectPath.length + 1).split('\\').filter((s) => s !== '')];
 }
 
 /** Ob die letzten `count` Ordner von `own` dieselben sind wie in `other` (dort ebenso von hinten gezählt). */
