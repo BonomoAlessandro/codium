@@ -1,6 +1,6 @@
 # 03 – Layout: Kopfzeile, Werkzeugfenster, Statusleiste, Meldungen, Rückfragen
 
-Status: `ready-for-agent` · Typ: AFK
+Status: `erledigt` (2026-11-21, Abnahme von Hand am Schluss in Ticket 22) · Typ: AFK
 Blockiert durch: 02
 User Stories: 7 (Menügerüst mit „Exit“), 13, 15–17, 19–22 (ohne Inhalte von Terminal, Git, Find), 24, 174–176
 Spezifikation: „Oberfläche“, „Einstellungen, Meldungen und Voraussetzungen“ (Fortschritt), „Präzisierungen beim Schreiben“ Punkt 29
@@ -29,10 +29,10 @@ Spezifikation: „Oberfläche“, „Einstellungen, Meldungen und Voraussetzunge
 
 ## Akzeptanzkriterien
 
-- [ ] Kern-Tests:
+- [x] Kern-Tests:
   - Der Layout-Zustand eines Projekts übersteht einen Neustart.
   - Fortschritt (Beginn, Stand, Ende) und Meldungen erreichen nur das Fenster ihres Projekts.
-- [ ] Playwright-Tests:
+- [x] Playwright-Tests:
   - Werkzeugfenster per Klick öffnen, schliessen und wechseln, auch über die Alt-Kürzel.
   - Grösse eines Werkzeugfensters per Ziehen ändern; über die Höchstgrösse hinaus geht es nicht. Nach einem Neustart sind Zustand und Grösse wieder da.
   - Eine Information verschwindet von selbst, eine Fehlermeldung bleibt, bis sie geschlossen wird.
