@@ -4,7 +4,7 @@
 // Fundstelle; „Open in Find Window“ legt die Liste im Werkzeugfenster „Find“ ab.
 
 import { useEffect, useRef, useState } from 'react';
-import type { CodiumApi, ProjectInfo, SearchMatch, SearchOptions } from '../../shared/types';
+import type { CodiumApi, Events, ProjectInfo, SearchMatch, SearchOptions } from '../../shared/types';
 import { errorText } from '../errors';
 import { EDITOR_FONT_FAMILY, languageOf, monaco } from '../editor/monaco';
 import { baseName } from '../project/filePaths';
@@ -42,23 +42,47 @@ export function FindInFilesPopup({ api, project, initial, fontSize, onOptions, o
     error: null,
   });
   const [selected, setSelected] = useState(0);
+  /** Kennung der aktuellen Suche im Kern; `null`, solange keine läuft oder ihre Antwort noch aussteht. */
   const searchId = useRef<number | null>(null);
+  /** Nummer der letzten Anfrage; nur deren Antwort zählt (Review von Ticket 08). */
+  const requestSeq = useRef(0);
+  /** Treffer, die vor der Antwort mit ihrer Kennung ankamen. */
+  const early = useRef(new Map<number, Array<Events['search.results']>>());
+  const closed = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Beim Öffnen ist der letzte Suchtext ausgewählt, wie in IntelliJ: Tippen ersetzt ihn.
+  useEffect(() => inputRef.current?.select(), []);
 
   const setOptions = (next: SearchOptions) => {
     setOptionsState(next);
     onOptions(next);
   };
 
-  // Treffer der laufenden Suche einsammeln.
+  /** Übernimmt Treffer der aktuellen Suche. */
+  const apply = (event: { matches: SearchMatch[]; done: boolean; limitReached?: true; error?: string }) => {
+    if (event.matches.length > 0) setMatches((current) => [...current, ...event.matches]);
+    if (event.done) {
+      setState({ running: false, limitReached: event.limitReached === true, error: event.error ?? null });
+      searchId.current = null;
+    }
+  };
+  const applyRef = useRef(apply);
+  applyRef.current = apply;
+
+  // Treffer der laufenden Suche einsammeln; Treffer vor der Antwort mit der Kennung werden aufgehoben.
   useEffect(
     () =>
       api.on('search.results', (event) => {
-        if (event.searchId !== searchId.current) return;
-        if (event.matches.length > 0) setMatches((current) => [...current, ...event.matches]);
-        if (event.done) {
-          setState({ running: false, limitReached: event.limitReached === true, error: event.error ?? null });
-          searchId.current = null;
+        if (event.searchId === searchId.current) {
+          applyRef.current(event);
+          return;
+        }
+        if (searchId.current === null && requestSeq.current > 0) {
+          const list = early.current.get(event.searchId) ?? [];
+          list.push(event);
+          early.current.set(event.searchId, list);
         }
       }),
     [api],
@@ -69,28 +93,40 @@ export function FindInFilesPopup({ api, project, initial, fontSize, onOptions, o
     const timer = window.setTimeout(() => {
       setMatches([]);
       setSelected(0);
+      const seq = ++requestSeq.current;
+      searchId.current = null;
+      early.current.clear();
       if (options.query === '') {
-        searchId.current = null;
         setState({ running: false, limitReached: false, error: null });
         return;
       }
       setState({ running: true, limitReached: false, error: null });
-      searchId.current = -1;
       api.request('search.start', options).then(
         (result) => {
-          if (searchId.current === -1) searchId.current = result.searchId;
+          if (closed.current) {
+            // Das Fenster ist zu: Die Suche braucht niemand mehr.
+            void api.request('search.cancel', { searchId: result.searchId }).catch(() => {});
+            return;
+          }
+          if (seq !== requestSeq.current) return;
+          searchId.current = result.searchId;
+          for (const event of early.current.get(result.searchId) ?? []) applyRef.current(event);
+          early.current.clear();
         },
-        (err: unknown) => setState({ running: false, limitReached: false, error: errorText(err) }),
+        (err: unknown) => {
+          if (seq === requestSeq.current) setState({ running: false, limitReached: false, error: errorText(err) });
+        },
       );
     }, 120);
     return () => window.clearTimeout(timer);
   }, [api, options]);
 
-  // Beim Schliessen die laufende Suche abbrechen.
+  // Beim Schliessen die laufende Suche abbrechen (auch eine, deren Antwort noch aussteht, siehe oben).
   useEffect(
     () => () => {
+      closed.current = true;
       const id = searchId.current;
-      if (id !== null && id >= 0) void api.request('search.cancel', { searchId: id }).catch(() => {});
+      if (id !== null) void api.request('search.cancel', { searchId: id }).catch(() => {});
     },
     [api],
   );
@@ -153,6 +189,7 @@ export function FindInFilesPopup({ api, project, initial, fontSize, onOptions, o
       <div className="find-popup-query">
         <input
           className="quick-popup-input"
+          ref={inputRef}
           aria-label="Search text"
           placeholder="Search text"
           value={options.query}
@@ -203,7 +240,8 @@ export function FindInFilesPopup({ api, project, initial, fontSize, onOptions, o
         </span>
         <button
           type="button"
-          disabled={matches.length === 0}
+          disabled={matches.length === 0 || state.running}
+          title={state.running ? 'Available when the search is complete' : undefined}
           onClick={() => {
             onClose();
             onOpenInFindWindow({ options, matches, limitReached: state.limitReached });

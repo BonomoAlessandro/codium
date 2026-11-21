@@ -72,7 +72,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 | 05 | [Monaco und Tabs](05-editor-und-tabs.md) | AFK | 04 | 1 | erledigt |
 | 06 | [Tab-Menü, Tastenbelegung und Schriftgrösse](06-tab-menue-und-tastenkuerzel.md) | AFK | 05 | 1 | erledigt |
 | 07 | [Automatisches Speichern, Kodierung und Änderungen von aussen](07-speichern.md) | AFK | 05 | 1 | erledigt |
-| 08 | [Dateisuche, zuletzt geöffnete Dateien, Projektsuche und „Find“](08-suche.md) | AFK | 05 | 1 | offen |
+| 08 | [Dateisuche, zuletzt geöffnete Dateien, Projektsuche und „Find“](08-suche.md) | AFK | 05 | 1 | erledigt |
 | 09 | [Einstellungen, JDK-Erkennung, Voraussetzungen und README](09-einstellungen-und-voraussetzungen.md) | AFK | 05 | 1 | offen |
 | 10 | [Repository klonen](10-klonen.md) | AFK | 09 | 1 | offen |
 | 11 | [Terminal](11-terminal.md) | AFK | 06, 09 | 2 | offen |

@@ -200,6 +200,82 @@ describe('Suche', () => {
     });
   });
 
+  describe('Befunde aus dem Review von Ticket 08', () => {
+    it('rechnet eine minifizierte Zeile mit Zehntausenden Treffern schnell um und hält am Limit', async () => {
+      const { test, windowId } = await openProject({ 'bundle.min.js': 'return a;'.repeat(120_000) });
+      const started = Date.now();
+      const result = await search(test, windowId, { query: 'return' });
+      expect(result.matches).toHaveLength(SEARCH_MATCH_LIMIT);
+      expect(result.limitReached).toBe(true);
+      expect(result.matches[1]).toMatchObject({ line: 1, column: 10, length: 6 });
+      expect(Date.now() - started).toBeLessThan(5000);
+    });
+
+    it('findet Treffer in Windows-1252-Zeilen, mit Spalten wie im Editor', async () => {
+      const root = tempDir();
+      const project = path.join(root, 'Alpha');
+      fs.mkdirSync(project);
+      fs.writeFileSync(path.join(project, 'cp1252.txt'), Buffer.from([0x47, 0x72, 0xfc, 0x73, 0x73, 0x65, 0x20, 0x6e, 0x65, 0x65, 0x64, 0x6c, 0x65, 0x0a]));
+      const test = createTestCore(path.join(root, 'data'));
+      await test.core.start();
+      await call(test, test.ports.windows.windowTitled(WELCOME), 'app.openProject', { path: project });
+      const windowId = test.ports.windows.windowTitled(title('Alpha'));
+      const { matches } = await search(test, windowId, { query: 'needle' });
+      expect(matches).toMatchObject([{ line: 1, column: 8, length: 6, lineText: 'Grüsse needle' }]);
+    });
+
+    it('durchsucht .git nie, auch nicht mit einer Maske wie „*“; Masken ohne Gross-/Kleinschreibung', async () => {
+      const { test, windowId, project } = await openProject({ 'A.java': 'needle\n' }, { git: true });
+      fs.writeFileSync(path.join(project, '.git', 'needle.txt'), 'needle\n');
+      for (const fileMask of ['*', '**']) {
+        expect(where((await search(test, windowId, { query: 'needle', fileMask })).matches, project), fileMask).toEqual(['A.java:1:1']);
+      }
+      // „.*“ meint versteckte Dateien; .git gehört nicht dazu.
+      expect(where((await search(test, windowId, { query: 'needle', fileMask: '.*' })).matches, project)).toEqual([]);
+      expect(where((await search(test, windowId, { query: 'ref', fileMask: '*', includeIgnored: true })).matches, project)).toEqual([]);
+      expect(where((await search(test, windowId, { query: 'needle', fileMask: '*.JAVA' })).matches, project)).toEqual(['A.java:1:1']);
+    });
+
+    it('lässt .gitignore über einem Projekt ohne Repository aus, wie Git', async () => {
+      const root = tempDir();
+      fs.writeFileSync(path.join(root, '.gitignore'), '*.txt\n');
+      const project = path.join(root, 'Alpha');
+      fs.mkdirSync(project);
+      fs.writeFileSync(path.join(project, 'notes.txt'), 'needle\n');
+      const test = createTestCore(path.join(root, 'data'));
+      await test.core.start();
+      await call(test, test.ports.windows.windowTitled(WELCOME), 'app.openProject', { path: project });
+      const windowId = test.ports.windows.windowTitled(title('Alpha'));
+      expect(await names(test, windowId, 'notes')).toEqual(['notes.txt']);
+      expect((await search(test, windowId, { query: 'needle' })).matches).toHaveLength(1);
+    });
+
+    it('meldet bei einem ungültigen regulären Ausdruck die Ursache', async () => {
+      const { test, windowId } = await openProject({ 'a.txt': 'x\n' });
+      const { error } = await search(test, windowId, { query: 'foo(', regex: true });
+      expect(error).toMatch(/^regex parse error: .*unclosed group/i);
+    });
+
+    it('bricht eine laufende Suche wirklich ab, wenn eine neue beginnt', async () => {
+      // Viele grosse Dateien ohne Treffer: Eine volle Suche dauert spürbar.
+      const block = `${'lorem ipsum dolor sit amet '.repeat(40)}\n`.repeat(4000);
+      const files = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`big${i}.txt`, block]));
+      const { test, windowId } = await openProject(files);
+      const fullStart = Date.now();
+      await search(test, windowId, { query: 'q[0-9]{7}z', regex: true });
+      const full = Date.now() - fullStart;
+
+      const first = await call(test, windowId, 'search.start', { query: 'q[0-9]{7}z', regex: true, matchCase: false, wholeWord: false, fileMask: '', includeIgnored: false });
+      const cancelAt = Date.now();
+      await search(test, windowId, { query: 'nothing', fileMask: 'none.xyz' });
+      const doneOfFirst = () =>
+        test.events.sent.some((e) => e.name === 'search.results' && (e.payload as Events['search.results']).searchId === first.searchId && (e.payload as Events['search.results']).done);
+      await expect.poll(doneOfFirst, { timeout: 10_000 }).toBe(true);
+      // Die abgebrochene Suche endet weit vor der Dauer einer vollen.
+      expect(Date.now() - cancelAt).toBeLessThan(Math.max(300, full / 2));
+    });
+  });
+
   describe('Zuletzt geöffnete Dateien', () => {
     it('überstehen einen Neustart, neueste zuerst, ohne Doppelte und ohne gelöschte', async () => {
       const { test: first, windowId: firstWindow, at } = await openProject({ 'a.txt': '', 'b.txt': '', 'c.txt': '' });
@@ -229,6 +305,22 @@ describe('Unscharfer Vergleich', () => {
       'FooBar.java',
       'a/foobar.txt',
     ]);
+  });
+
+  it('stellt einen Präfix vor verstreute CamelCase-Treffer, wie IntelliJ (Review von Ticket 08)', () => {
+    const rank = (query: string, names: string[]) => rankFiles(query, names.map((relative) => ({ relative })), 10).map((f) => f.relative);
+    expect(rank('app', ['ApiPathParser.ts', 'AppPanelPresenter.ts', 'app.ts'])[0]).toBe('app.ts');
+    expect(rank('ind', ['isNaN.d.ts', 'index.js'])[0]).toBe('index.js');
+    expect(rank('date', ['DataTypeEditor.ts', 'date.ts'])[0]).toBe('date.ts');
+  });
+
+  it('bewertet 100 000 Pfade schnell genug für jeden Tastendruck', () => {
+    const files = Array.from({ length: 100_000 }, (_, i) => ({ relative: `src/module${i % 300}/feature${i % 97}/Component${i}Service.ts` }));
+    for (const query of ['u', 'us', 'UsrSrv', 'compserv']) {
+      const started = performance.now();
+      rankFiles(query, files, 100);
+      expect(performance.now() - started, query).toBeLessThan(1500);
+    }
   });
 });
 

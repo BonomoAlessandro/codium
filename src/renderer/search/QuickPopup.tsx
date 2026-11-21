@@ -14,6 +14,19 @@ interface QuickPopupProps {
 
 export function QuickPopup({ label, className, onClose, children }: QuickPopupProps) {
   const previousFocus = useRef<Element | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  // Escape schliesst auch, wenn der Fokus nicht mehr im Fenster liegt (etwa nach einem Klick in den Editor darunter).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      onCloseRef.current();
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, []);
   useEffect(() => {
     previousFocus.current = document.activeElement;
     return () => {

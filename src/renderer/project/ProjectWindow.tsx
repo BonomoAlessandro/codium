@@ -119,6 +119,8 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
   // ---------- Suchen (Ticket 08) ----------
 
   const [popup, setPopup] = useState<SearchPopup>(null);
+  const popupRef = useRef(popup);
+  popupRef.current = popup;
   /** Die Optionen der letzten Projektsuche; sie bleiben über das Schliessen des Suchfensters hinweg. */
   const [searchOptions, setSearchOptions] = useState<SearchOptions>(INITIAL_SEARCH);
   /** Abgelegte Trefferlisten im Werkzeugfenster „Find“; ohne sie gibt es das Werkzeugfenster nicht. */
@@ -257,6 +259,13 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
     const onKeyDown = (e: KeyboardEvent) => {
       const command = commandForKey(e);
       if (!command || isDialogOpen()) return;
+      // Bei offenem Suchfenster gehören Werkzeugfenster- und Tab-Kürzel nicht dem Fenster darunter (Review von
+      // Ticket 08); Bearbeitungs-Kürzel gehen an das Eingabefeld (etwa Ctrl + Z).
+      if (popupRef.current !== null && (command.startsWith('toolWindow.') || command.startsWith('tab.') || command === 'file.saveAll')) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       if (command === 'file.gotoFile' || command === 'file.recent' || command === 'find.inFiles') {
         e.preventDefault();
         e.stopPropagation();

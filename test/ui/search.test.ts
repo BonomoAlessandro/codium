@@ -132,20 +132,24 @@ describe('Suchen', () => {
       const results = popup.getByRole('listbox', { name: 'Search Results' }).getByRole('option');
       await expect.poll(() => results.count()).toBe(2);
       expect(await popup.getByRole('status').innerText()).toBe('2 matches');
-      // Die Vorschau zeigt die Fundstelle mit Farben.
+      // Die Vorschau zeigt die Fundstelle, mit Farben nach Wortarten (Monacos Token-Klassen).
       await expect.poll(() => popup.locator('.find-popup-preview .view-lines').innerText()).toContain('needle');
+      expect(await popup.locator('.find-popup-preview .view-lines span[class^="mtk"]').evaluateAll((els) => new Set(els.map((e) => e.className)).size)).toBeGreaterThan(1);
 
       const appMatch = results.filter({ hasText: 'needleFunction' });
       await appMatch.dblclick();
       await expect.poll(() => activeTab(page)).toBe('App.ts');
-      // Der Cursor steht auf der Fundstelle (Zeile 3, Spalte 17, der Treffer ist ausgewählt).
+      // Der Treffer (Zeile 3, Spalte 17 bis 23) ist ausgewählt; der Cursor steht an seinem Ende.
       await expect.poll(() => statusPosition(page)).toBe('3:23');
       expect(await popup.count()).toBe(0);
 
       // Erneut öffnen: Die letzte Suche ist noch da. „Open in Find Window“ legt sie ab.
       await page.keyboard.press('Control+Shift+F');
       await popup.waitFor();
-      expect(await popup.getByRole('textbox', { name: 'Search text' }).inputValue()).toBe('needle');
+      // Der letzte Suchtext ist ausgewählt: Tippen ersetzt ihn (Review von Ticket 08).
+      const query = popup.getByRole('textbox', { name: 'Search text' });
+      expect(await query.inputValue()).toBe('needle');
+      expect(await query.evaluate((el) => [(el as HTMLInputElement).selectionStart, (el as HTMLInputElement).selectionEnd])).toEqual([0, 6]);
       await expect.poll(() => results.count()).toBe(2);
       await popup.getByRole('button', { name: 'Open in Find Window' }).click();
       const find = page.getByRole('region', { name: 'Find' });
@@ -161,6 +165,28 @@ describe('Suchen', () => {
       await find.getByRole('button', { name: 'Close needle' }).click();
       await expect.poll(() => stripeButton(page, 'Find').count()).toBe(0);
       expect(await page.getByRole('region', { name: 'Find' }).isVisible()).toBe(false);
+    });
+  });
+
+  it('lässt bei offenem Suchfenster die Kürzel des Fensters darunter ruhen; Escape schliesst immer (Review von Ticket 08)', async () => {
+    const { dataRoot } = setup({ 'a.txt': 'a\n', 'b.txt': 'b\n' });
+    const { codium, page } = await launchAlpha(dataRoot);
+    await withApp(codium, async () => {
+      await item(page, 'a.txt').dblclick();
+      await expect.poll(() => activeTab(page)).toBe('a.txt');
+      await page.keyboard.press('Control+Shift+N');
+      const popup = page.getByRole('dialog', { name: 'Go to File' });
+      await popup.waitFor();
+      // Ctrl + F4 schliesst nicht den Tab darunter, Alt + 1 bewegt den Fokus nicht in den Dateibaum.
+      await page.keyboard.press('Control+F4');
+      await page.keyboard.press('Alt+1');
+      expect(await activeTab(page)).toBe('a.txt');
+      expect(await popup.getByRole('textbox').evaluate((el) => el === document.activeElement)).toBe(true);
+      // Liegt der Fokus doch woanders (Klick in den Dateibaum ist durch die Fläche darunter nicht möglich, also per
+      // Skript), schliesst Escape trotzdem.
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      await page.keyboard.press('Escape');
+      await expect.poll(() => popup.count()).toBe(0);
     });
   });
 });
