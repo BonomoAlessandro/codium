@@ -1,6 +1,6 @@
 # 04 – Datei-Dienst und Dateibaum
 
-Status: `ready-for-agent` · Typ: AFK
+Status: `erledigt` (2026-11-21, Abnahme von Hand am Schluss in Ticket 22) · Typ: AFK
 Blockiert durch: 03
 User Stories: 12, 25, 27 (sichtbar, ohne Graufärbung bis Ticket 16), 28–30, 31 (ohne Tab und Git), 32–35, 36
 Spezifikation: „Dateien, Dateiüberwachung und Suche“ (Dateibaum, Dateiüberwachung, Dateioperationen)
@@ -32,7 +32,7 @@ Spezifikation: „Dateien, Dateiüberwachung und Suche“ (Dateibaum, Dateiüber
 
 ## Akzeptanzkriterien
 
-- [ ] Kern-Tests im Temp-Ordner:
+- [x] Kern-Tests im Temp-Ordner:
   - Ordnerinhalt mit Sortierung und ohne `.git`.
   - Dateioperationen inklusive Namenskonflikt beim Einfügen und Löschen in den nachgemachten Papierkorb.
   - Eine von aussen angelegte, geänderte, umbenannte oder gelöschte Datei erzeugt ein gebündeltes Ereignis.
@@ -41,7 +41,7 @@ Spezifikation: „Dateien, Dateiüberwachung und Suche“ (Dateibaum, Dateiüber
   - Nach dem Abbau des Projekt-Kerns kommen keine Ereignisse mehr.
   - Aufgeklappte Ordner überstehen einen Neustart.
   - Pfade ausserhalb des Projekts (mit `..`, absolut, über eine Junction nach draussen) werden bei jedem Befehl abgelehnt.
-- [ ] Playwright-Tests: Ordner aufklappen, neue Datei über das Rechtsklick-Menü anlegen, umbenennen, löschen mit Rückfrage (landet im Papierkorb-Ordner des Testmodus). Eine von aussen angelegte Datei erscheint im Baum.
+- [x] Playwright-Tests: Ordner aufklappen, neue Datei über das Rechtsklick-Menü anlegen, umbenennen, löschen mit Rückfrage (landet im Papierkorb-Ordner des Testmodus). Eine von aussen angelegte Datei erscheint im Baum.
 
 ## Abnahme von Hand
 
