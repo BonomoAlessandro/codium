@@ -73,7 +73,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 | 06 | [Tab-Menü, Tastenbelegung und Schriftgrösse](06-tab-menue-und-tastenkuerzel.md) | AFK | 05 | 1 | erledigt |
 | 07 | [Automatisches Speichern, Kodierung und Änderungen von aussen](07-speichern.md) | AFK | 05 | 1 | erledigt |
 | 08 | [Dateisuche, zuletzt geöffnete Dateien, Projektsuche und „Find“](08-suche.md) | AFK | 05 | 1 | erledigt |
-| 09 | [Einstellungen, JDK-Erkennung, Voraussetzungen und README](09-einstellungen-und-voraussetzungen.md) | AFK | 05 | 1 | offen |
+| 09 | [Einstellungen, JDK-Erkennung, Voraussetzungen und README](09-einstellungen-und-voraussetzungen.md) | AFK | 05 | 1 | erledigt |
 | 10 | [Repository klonen](10-klonen.md) | AFK | 09 | 1 | offen |
 | 11 | [Terminal](11-terminal.md) | AFK | 06, 09 | 2 | offen |
 | 12 | [Sprach-Dienst mit TypeScript: Definition, Verwendungen, Hover, Fehler](12-sprach-dienst-typescript.md) | AFK | 06, 07, 08 | 3 | offen |

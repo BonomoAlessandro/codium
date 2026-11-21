@@ -50,7 +50,8 @@ export class NodeSystem implements SystemPort {
     try {
       return fs
         .readdirSync(dir, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
+        // Auch Junctions und symbolische Links auf Ordner (etwa ein verlinktes JDK; Review von Ticket 09).
+        .filter((entry) => entry.isDirectory() || (entry.isSymbolicLink() && isDirectory(path.join(dir, entry.name))))
         .map((entry) => entry.name);
     } catch {
       return [];
@@ -67,6 +68,14 @@ export class NodeSystem implements SystemPort {
     } catch {
       return null;
     }
+  }
+}
+
+function isDirectory(candidate: string): boolean {
+  try {
+    return fs.statSync(candidate).isDirectory();
+  } catch {
+    return false;
   }
 }
 

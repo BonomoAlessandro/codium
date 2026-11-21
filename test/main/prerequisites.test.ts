@@ -80,13 +80,39 @@ describe('Einstellungen und Voraussetzungen', () => {
     expect(jdks[0].vendor).toBe('Eclipse Adoptium');
     expect(forLanguageServer?.path).toBe(m.jdk25);
 
-    // Ein eingestelltes JDK ab 25 gilt, eines unter 25 oder ein fehlendes nicht.
+    // Ein eingestelltes JDK ab 25 gilt; eines unter 25 oder ein fehlendes lässt sich nicht einstellen.
     await call(test, welcome, 'app.updateSettings', { jdk: m.jdk25old });
     expect((await call(test, welcome, 'app.jdks')).forLanguageServer?.path).toBe(m.jdk25old);
-    await call(test, welcome, 'app.updateSettings', { jdk: m.jdk21 });
-    expect((await call(test, welcome, 'app.jdks')).forLanguageServer?.path).toBe(m.jdk25);
-    await call(test, welcome, 'app.updateSettings', { jdk: path.join(root, 'gone') });
-    expect((await call(test, welcome, 'app.jdks')).forLanguageServer?.path).toBe(m.jdk25);
+    for (const jdk of [m.jdk21, path.join(root, 'gone')]) {
+      await expect(call(test, welcome, 'app.updateSettings', { jdk })).rejects.toMatchObject({ code: ErrorCode.invalidParams });
+    }
+    expect(await call(test, welcome, 'app.settings')).toMatchObject({ jdk: m.jdk25old });
+    // Eine andere Schreibweise desselben JDK wird in der Schreibweise der Erkennung gespeichert.
+    expect(await call(test, welcome, 'app.updateSettings', { jdk: `${m.jdk25.toUpperCase().replaceAll('\\', '/')}/` })).toMatchObject({ jdk: m.jdk25 });
+  });
+
+  it('findet ein JDK nur über JAVA_HOME, auch mit Anführungszeichen und „/“ (Review von Ticket 09)', async () => {
+    const root = tempDir();
+    const tools = makeJdk(path.join(root, 'tools', 'jdk-25'), '25.0.1');
+    for (const javaHome of [tools, `"${tools}"`, ` ${tools.replaceAll('\\', '/')}/ `]) {
+      const { test, welcome } = await start({ system: { env: { JAVA_HOME: javaHome }, home: path.join(root, 'home') } }, tempDir());
+      const { jdks, forLanguageServer } = await call(test, welcome, 'app.jdks');
+      expect(jdks.map((j) => j.path), javaHome).toEqual([tools]);
+      expect(forLanguageServer?.path).toBe(tools);
+    }
+  });
+
+  it('findet ein als Junction verlinktes JDK und nimmt kein Early-Access-Build, wenn es ein fertiges gibt', async () => {
+    const root = tempDir();
+    const home = path.join(root, 'home');
+    const elsewhere = makeJdk(path.join(root, 'elsewhere', 'jdk-25'), '25.0.2');
+    const ea = makeJdk(path.join(home, '.jdks', 'jdk-26-ea'), '26-ea');
+    fs.symlinkSync(elsewhere, path.join(home, '.jdks', 'linked-25'), 'junction');
+    const { test, welcome } = await start({ system: { env: {}, home } }, root);
+    const { jdks, forLanguageServer } = await call(test, welcome, 'app.jdks');
+    expect(jdks.map((j) => j.version)).toEqual(['26-ea', '25.0.2']);
+    expect(forLanguageServer?.path).toBe(path.join(home, '.jdks', 'linked-25'));
+    void ea;
   });
 
   it('speichert die Einstellungen über einen Neustart und schickt Änderungen an alle offenen Fenster', async () => {

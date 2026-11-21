@@ -30,7 +30,7 @@ import { ProgressReporter } from './progress';
 import { DEFAULT_CLEANUP_TIMEOUT_MS, ProjectCore } from './projectCore';
 import { FolderQueries, type FolderStatus } from './folderQueries';
 import { registerEditorCommands } from './editorCommands';
-import { detectJdks, hasJavaMarkers, jdkForLanguageServer } from './jdks';
+import { JDTLS_MIN_JAVA, detectJdks, hasJavaMarkers, jdkForLanguageServer, sameJdkPath } from './jdks';
 import { registerFileCommands } from './fileCommands';
 import {
   isAbsoluteCommandPath,
@@ -482,6 +482,16 @@ export class AppCore {
     }
     if ('jdk' in changes && changes.jdk !== null && !isJdkPath(changes.jdk)) {
       throw new CommandError('The JDK must be a folder (absolute path) or “Newest detected”.', ErrorCode.invalidParams);
+    }
+    // Wählbar sind nur erkannte JDKs ab 25; gespeichert wird ihr Pfad in der Schreibweise der Erkennung (Review von
+    // Ticket 09). Ein früher gewähltes, inzwischen fehlendes bleibt im Zustand stehen, bis der Nutzer etwas anderes wählt.
+    if (typeof changes.jdk === 'string') {
+      const wanted = changes.jdk;
+      const detected = detectJdks(this.ports.system).find((j) => j.major >= JDTLS_MIN_JAVA && sameJdkPath(j.path, wanted));
+      if (!detected) {
+        throw new CommandError(`The JDK must be one of the detected JDKs ${JDTLS_MIN_JAVA} or newer.`, ErrorCode.invalidParams);
+      }
+      changes.jdk = detected.path;
     }
     if ('fontSize' in changes && !isFontSize(changes.fontSize)) {
       throw new CommandError(

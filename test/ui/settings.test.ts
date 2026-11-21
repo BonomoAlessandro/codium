@@ -81,6 +81,25 @@ describe('Einstellungen und Voraussetzungen', () => {
       await page.keyboard.press('Escape');
       await expect.poll(() => dialog.count()).toBe(0);
       expect(await fontSize(page)).toBe(16);
+
+      // Enter auf „Cancel“ speichert nicht; Tab bleibt im Dialog (Review von Ticket 09).
+      await page.keyboard.press('Control+Alt+s');
+      await dialog.waitFor();
+      await dialog.getByLabel('Editor font size').fill('18');
+      await dialog.getByRole('button', { name: 'Cancel' }).focus();
+      await page.keyboard.press('Enter');
+      await expect.poll(() => dialog.count()).toBe(0);
+      expect(await fontSize(page)).toBe(16);
+      await page.keyboard.press('Control+Alt+s');
+      await dialog.waitFor();
+      for (let i = 0; i < 6; i++) {
+        await page.keyboard.press('Tab');
+        expect(await page.evaluate(() => document.activeElement?.closest('[role="dialog"]') != null), `Tab ${i + 1}`).toBe(true);
+      }
+      // Auch ohne Fokus im Dialog schliesst Escape ihn.
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      await page.keyboard.press('Escape');
+      await expect.poll(() => dialog.count()).toBe(0);
     });
   });
 
@@ -93,6 +112,7 @@ describe('Einstellungen und Voraussetzungen', () => {
       await notice.waitFor();
       await notice.getByRole('button', { name: 'Open README' }).click();
       await expect.poll(() => activeTab(page)).toBe('README.md');
+      expect(await tabList(page).getByRole('tab', { name: 'README.md' }).getAttribute('title')).toBe('README.md – comes with Codium (read-only)');
       // Die erste sichtbare Zeile ist die Überschrift des Abschnitts (oder sie ist zu sehen), der Cursor steht darauf.
       await expect.poll(() => editorText(page)).toContain('## Voraussetzungen');
       const readme = fs.readFileSync(path.resolve(__dirname, '..', '..', 'README.md'), 'utf8').split(/\r?\n/);

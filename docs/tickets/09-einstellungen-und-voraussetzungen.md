@@ -1,6 +1,6 @@
 # 09 – Einstellungen, JDK-Erkennung, Voraussetzungen und README
 
-Status: `ready-for-agent` · Typ: AFK
+Status: `erledigt` (2026-11-22, Abnahme von Hand am Schluss in Ticket 22) · Typ: AFK
 Blockiert durch: 05
 User Stories: 7 („Settings“), 172, 173, 177–181
 Spezifikation: „Einstellungen, Meldungen und Voraussetzungen“, „Sprachverständnis“ (Laufzeiten, JDK-Erkennung), „Auslieferung und Abhängigkeiten“ (README), „Präzisierungen beim Schreiben“ Punkte 14, 18, 27
@@ -20,18 +20,45 @@ Spezifikation: „Einstellungen, Meldungen und Voraussetzungen“, „Sprachvers
 
 ## Akzeptanzkriterien
 
-- [ ] Kern-Tests mit nachgemachtem System:
+- [x] Kern-Tests mit nachgemachtem System:
   - Einstellungen überstehen einen Neustart; eine Änderung erreicht alle offenen Fenster.
   - JDK-Erkennung findet JDKs in vorgegebenen Ordnern samt Version und erkennt JAVA_HOME. „Newest detected“ wählt das neueste JDK ab 25, auch wenn JAVA_HOME auf JDK 21 zeigt.
   - Ohne Git → Hinweis in jedem Projektfenster.
   - Ohne JDK 25: kein Hinweis bei einem Projekt ohne Java-Kennzeichen, Hinweis bei einem Maven- und einem Gradle-Projekt.
   - JDK 21 und 25 installiert, JAVA_HOME auf 21 → kein Hinweis.
-- [ ] Playwright-Tests:
+- [x] Playwright-Tests:
   - Ctrl + Alt + S öffnet den Dialog; eine geänderte Schriftgrösse wirkt sofort im Editor.
   - Start mit `CODIUM_TEST_NO_GIT=1` zeigt „Git not found“. „Open README“ öffnet einen schreibgeschützten Tab am Abschnitt „Voraussetzungen“.
-- [ ] Das README enthält den Abschnitt „Voraussetzungen“ mit beiden Teilen.
-- [ ] `npm run test:packaged` findet das README im ungepackten Paket.
+- [x] Das README enthält den Abschnitt „Voraussetzungen“ mit beiden Teilen.
+- [x] `npm run test:packaged` findet das README im ungepackten Paket.
 
 ## Abnahme von Hand
 
 - [ ] Der Einstellungsdialog listet die auf dem Rechner installierten JDKs ab 25.
+- [ ] Ohne Git (etwa Git kurz aus dem PATH nehmen): Jedes Projektfenster zeigt „Git not found“, „Open README“ öffnet das README am Abschnitt „Voraussetzungen“, im installierten Codium aus dem Installationsordner.
+- [ ] Ein Maven-Projekt auf einem Rechner ohne JDK 25 zeigt den Hinweis; mit JDK 25 nicht.
+
+## Umsetzung
+
+- **Einstellungen:** `AppSettings` hat jetzt `jdk` (`null` heisst „Newest detected“). Der Dialog (`SettingsDialog.tsx`) schickt beim Bestätigen Schriftgrösse und, nur wenn geändert, das JDK an `app.updateSettings`.
+- **JDK-Erkennung** im Kern (`jdks.ts`) über den Port „System“: JAVA_HOME, die Herstellerordner unter „Program Files“ und `%LOCALAPPDATA%\Programs` (Oracle/Java, Eclipse Adoptium, Temurin, Microsoft, Amazon Corretto, Zulu, BellSoft, OpenJDK) und `~\.jdks` von IntelliJ. Ein JDK ist ein Ordner mit `bin\java.exe` und `release`. Mehr als verlangt: BellSoft, OpenJDK und `%LOCALAPPDATA%\Programs` (dort liegen die Temurin-JDKs dieses Rechners).
+- **Voraussetzungen:** Der App-Kern sucht Git beim Start (`AppCore.gitPath` für Ticket 15) und meldet beim Anlegen jedes Projekt-Kerns ein fehlendes Git bzw. bei Projekten mit Maven- oder Gradle-Baudatei ein fehlendes JDK ab 25, jeweils als Fehlerhinweis mit „Open README“ (`NoticeActions['readme.open']`). Ein Fehlerhinweis bleibt stehen, damit der Knopf nicht mit einer Information verschwindet.
+- **„Open README“:** `app.readme` liefert das mitgelieferte README; der Code-Bereich zeigt es in einem schreibgeschützten Dokument-Tab (`openDocument`), der weder gespeichert noch als Datei-Tab gesichert noch nach einem Neustart wiederhergestellt wird. Im Paket liegt das README unter `resources\README.md` (`extraResources`).
+- **README:** Abschnitt „Voraussetzungen“ mit „Zum Benutzen“ und „Zum Entwickeln“; der C++-Compiler ist als „wird mit Ticket 11 geprüft“ vermerkt. Die „Offenen Punkte“ ersetzt Ticket 22.
+
+## Review
+
+Unabhängiges Review durch einen zweiten Agenten am 2026-11-22. Der schreibgeschützte README-Tab (nie gespeichert, nie gesichert, kein Cursor, keine zuletzt geöffneten Dateien, schreibgeschützt auch nach Tabwechseln), die Hinweise (einmal je Projektfenster, nicht im Willkommensfenster, JDK nur bei Java-Kennzeichen), Erkennung und Laufzeit, Kürzel unter dem Dialog, README und Paketierung in Ordnung. Eingearbeitet:
+
+- **Enter auf „Cancel“ speicherte** (nachgewiesen): Enter bestätigt nur noch in einem Feld.
+- **Kein Fokusfang, Escape ging verloren** (nachgewiesen): Tab bleibt im Dialog (`keepFocusInside` aus den Rückfragen, jetzt mit `select`), Escape wirkt über das Fenster.
+- **JAVA_HOME war ungetestet** (Mutation blieb grün): Ein Test findet ein JDK nur über JAVA_HOME.
+- **JAVA_HOME mit Anführungszeichen oder „/“** (nachgewiesen): wird bereinigt; alle Pfade kommen in einer Schreibweise, die Einstellung wird in dieser gespeichert, der Dialog vergleicht unabhängig von der Schreibweise.
+- **Der Kern nahm jedes absolute JDK an** (nachgewiesen, auch JDK 21 und `Z:\nope`): Einstellen lässt sich nur ein erkanntes JDK ab 25 (sonst `INVALID_PARAMS`); ein früher eingestelltes, inzwischen fehlendes bleibt stehen, bis der Nutzer etwas anderes wählt.
+- **Junctions in den Suchordnern** (nachgewiesen): Der Port „System“ listet auch Links auf Ordner.
+- **Early-Access-Builds** gewannen „Newest detected“ (nachgewiesen): Ein EA-Build zählt nur, wenn es kein fertiges JDK ab 25 gibt.
+- **Tooltip des README-Tabs leer, Hinweis „codium:“:** Dokument-Tabs haben einen eigenen Tooltip („… – comes with Codium (read-only)“) und bei gleichem Namen wie eine Datei den Zusatz „Codium“.
+- **Dokument-Tab beim Neueinlesen** nach verpassten Ereignissen: übersprungen.
+- **Anzeige während der Suche nach JDKs:** „Newest detected“ ohne Zusatz, das eingestellte JDK als Option; scheitert die Suche, sagt der Hinweis das.
+
+Verworfen: nichts.

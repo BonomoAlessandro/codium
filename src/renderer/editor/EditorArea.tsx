@@ -1103,6 +1103,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
         const changed = new Set(event.changes.filter((c) => c.kind !== 'deleted').map((c) => pathKey(c.path)));
         for (const tab of tabsRef.current) {
           // Nach verpassten Ereignissen (`rescanned`) werden alle offenen Tabs geprüft.
+          if (isDocumentTab(tab.path)) continue;
           if (event.rescanned || changed.has(pathKey(tab.path))) void reloadRef.current(tab.path);
         }
       }),
@@ -1146,7 +1147,24 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     return () => opener.dispose();
   }, [entryOfModel, open]);
 
-  const labels = useMemo(() => tabLabels(tabs.map((t) => t.path), project.path), [tabs, project.path]);
+  // Dokument-Tabs (etwa das README von Codium) sind keine Dateien des Projekts: Sie heissen nach dem Dokument, bei
+  // gleichem Namen wie eine Datei mit dem Zusatz „Codium“ (Review von Ticket 09).
+  const labels = useMemo(() => {
+    const fileLabels = tabLabels(
+      tabs.map((t) => t.path).filter((p) => !isDocumentTab(p)),
+      project.path,
+    );
+    for (const tab of tabs) {
+      if (!isDocumentTab(tab.path)) continue;
+      const name = tab.path.slice(DOCUMENT_PREFIX.length);
+      const clash = tabs.some((t) => !isDocumentTab(t.path) && fileLabels.get(pathKey(t.path))?.name.toLowerCase() === name.toLowerCase());
+      fileLabels.set(pathKey(tab.path), clash ? { name, hint: 'Codium' } : { name });
+    }
+    return fileLabels;
+  }, [tabs, project.path]);
+  /** Tooltip und Detail eines Tabs: der Pfad im Projekt, bei Dokumenten ein Hinweis. */
+  const tabDescription = (tabPath: string) =>
+    isDocumentTab(tabPath) ? `${tabPath.slice(DOCUMENT_PREFIX.length)} – comes with Codium (read-only)` : relativeLabel(project.path, tabPath);
   const activeTab = active === null ? undefined : tabs.find((t) => pathKey(t.path) === pathKey(active));
   const showEditor = activeTab?.content?.kind === 'text';
 
@@ -1178,7 +1196,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
                   aria-label={label.hint ? `${label.name} – ${label.hint}` : label.name}
                   data-modified={dirty.has(key) ? 'true' : undefined}
                   data-pinned={tab.pinned ? 'true' : undefined}
-                  title={relativeLabel(project.path, tab.path)}
+                  title={tabDescription(tab.path)}
                   tabIndex={-1}
                   onMouseDown={(e) => {
                     if (e.button === 0) activate(tab.path, { focus: true });
@@ -1267,7 +1285,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
             return {
               kind: 'item',
               label: label.name,
-              detail: label.hint ?? relativeLabel(project.path, tab.path),
+              detail: label.hint ?? tabDescription(tab.path),
               run: () => activate(tab.path, { focus: true }),
             };
           })}

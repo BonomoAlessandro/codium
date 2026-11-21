@@ -118,7 +118,7 @@ export function isDialogOpen(): boolean {
 }
 
 /** Was sich in einem Dialog mit Tab erreichen lässt. */
-const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
 function AskDialog({ options, onAnswer }: { options: AskOptions; onAnswer: (choice: string | null) => void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -325,7 +325,7 @@ function TextDialog({ options, onAnswer }: { options: AskTextOptions; onAnswer: 
 }
 
 /** Hält Tab und Shift + Tab im Dialog: Am Ende geht es zum Anfang und umgekehrt. */
-function keepFocusInside(e: KeyboardEvent, container: HTMLElement): void {
+export function keepFocusInside(e: KeyboardEvent, container: HTMLElement): void {
   const focusable = [...container.querySelectorAll<HTMLElement>(FOCUSABLE)];
   if (focusable.length === 0) return;
   const first = focusable[0];
