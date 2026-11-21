@@ -370,6 +370,17 @@ describe('Datei-Dienst', () => {
         code: 'PATH_OUTSIDE_PROJECT',
       });
 
+      // Auch nicht durch eine tote Junction, deren Ziel draussen erst entstehen würde.
+      const gone = path.join(outside, 'gone');
+      fs.symlinkSync(gone, at('dead'), 'junction');
+      await expect(call(test, windowId, 'files.createFile', { parent: project, name: 'dead/neu.txt' })).rejects.toMatchObject({
+        code: 'FILE_NOT_FOUND',
+      });
+      await expect(call(test, windowId, 'files.createDirectory', { parent: project, name: 'dead' })).rejects.toMatchObject({
+        code: 'FILE_EXISTS',
+      });
+      expect(fs.existsSync(gone)).toBe(false);
+
       // Draussen und drinnen ist nichts passiert.
       expect(fs.readdirSync(outside)).toEqual(['secret.txt']);
       expect(fs.readFileSync(path.join(outside, 'secret.txt'), 'utf8')).toBe('geheim');
@@ -512,6 +523,26 @@ describe('Datei-Dienst', () => {
       const created = new Set(changes(test, windowId).filter((c) => c.kind === 'created').map((c) => c.path));
       for (const name of names) expect(created.has(at(name)), name).toBe(true);
       expect(changes(test, windowId)).toContainEqual({ path: at('old.txt'), kind: 'deleted' });
+    });
+
+    it('lässt einen gelöschten Projektordner los und überwacht ihn wieder, sobald er zurück ist', async () => {
+      const watchers = () => process.getActiveResourcesInfo().filter((r) => r === 'FSEventWrap').length;
+      await sleep(50);
+      const before = watchers();
+      const { test, windowId, project, at } = await openAlpha({ 'a.txt': '' });
+      await call(test, windowId, 'files.list', { path: project });
+      await untilWatching(test, windowId, project);
+
+      fs.rmSync(project, { recursive: true });
+      await expect.poll(() => changedEvents(test, windowId).some((e) => e.rescanned)).toBe(true);
+      expect(changes(test, windowId)).toContainEqual({ path: project, kind: 'deleted' });
+      // Windows meldet einen gelöschten überwachten Ordner ohne Ende; die Überwachung hat ihn losgelassen.
+      await expect.poll(() => watchers()).toBe(before);
+
+      fs.mkdirSync(project);
+      await untilWatching(test, windowId, project);
+      fs.writeFileSync(at('back.txt'), '');
+      await expect.poll(() => changes(test, windowId)).toContainEqual({ path: at('back.txt'), kind: 'created' });
     });
 
     it('endet beim Abbau des Projekt-Kerns: keine Ereignisse mehr, der Ordner ist freigegeben', async () => {

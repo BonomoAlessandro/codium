@@ -79,7 +79,7 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
 
   // ---------- Zustand: gelesene Ordner, aufgeklappte Ordner, Auswahl ----------
 
-  const [listings, setListings] = useState<ReadonlyMap<string, Listing>>(() => new Map());
+  const [listings, setListingsState] = useState<ReadonlyMap<string, Listing>>(() => new Map());
   /** Aufgeklappte Ordner: Schlüssel → Pfad; `null`, bis der Kern sie geliefert hat. */
   const [expanded, setExpandedState] = useState<ReadonlyMap<string, string> | null>(null);
   const [selection, setSelectionState] = useState<ReadonlySet<string>>(() => new Set());
@@ -88,8 +88,8 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
   const [menu, setMenu] = useState<ContextMenu | null>(null);
   const [viewport, setViewport] = useState({ top: 0, height: 0 });
 
+  // Die Refs halten immer den neuesten Stand, auch bevor React neu gezeichnet hat; Ereignisse des Kerns lesen daraus.
   const listingsRef = useRef(listings);
-  listingsRef.current = listings;
   const expandedRef = useRef(expanded);
   const selectionRef = useRef(selection);
   const leadRef = useRef(lead);
@@ -97,6 +97,8 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
   const clipboard = useRef<string[]>([]);
   const generations = useRef(new Map<string, number>());
   const inFlight = useRef(new Set<string>());
+  /** Ordner, die während ihres Lesens noch einmal einen Anlass bekamen; sie werden danach ein weiteres Mal gelesen. */
+  const dirtyWhileLoading = useRef(new Set<string>());
   const pendingReloads = useRef(new Set<string>());
   const reloadTimer = useRef<number | null>(null);
   /** Ein Pfad, der ausgewählt und ins Bild gebracht werden soll, sobald seine Zeile da ist. */
@@ -111,6 +113,14 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
   const leadIndex = lead === null ? -1 : rows.findIndex((r) => r.key === lead);
+
+  /** Ändert die gelesenen Ordner; der Ref gilt sofort. */
+  const updateListings = useCallback((update: (current: ReadonlyMap<string, Listing>) => ReadonlyMap<string, Listing>) => {
+    const next = update(listingsRef.current);
+    if (next === listingsRef.current) return;
+    listingsRef.current = next;
+    setListingsState(next);
+  }, []);
 
   const setSelection = useCallback((keys: ReadonlySet<string>, newLead: string | null) => {
     selectionRef.current = keys;
@@ -176,19 +186,22 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
         (entries) => {
           if (!isLatest()) return;
           inFlight.current.delete(key);
-          setListings((prev) => new Map(prev).set(key, { path: dir, entries }));
+          updateListings((prev) => new Map(prev).set(key, { path: dir, entries }));
+          // Kam während des Lesens ein neuer Anlass, gleich noch einmal; so ist je Ordner höchstens ein Lesen unterwegs.
+          if (dirtyWhileLoading.current.delete(key)) load(dir);
         },
         (err: unknown) => {
           if (!isLatest()) return;
           inFlight.current.delete(key);
+          dirtyWhileLoading.current.delete(key);
           // Der Ordner ist weg oder lässt sich nicht lesen (etwa eine Junction nach ausserhalb des Projekts): zuklappen.
-          setListings((prev) => (hasKeyWithin(prev, dir) ? withoutSubtree(prev, dir) : prev));
+          updateListings((prev) => (hasKeyWithin(prev, dir) ? withoutSubtree(prev, dir) : prev));
           setExpanded((current) => (hasKeyWithin(current, dir) ? withoutSubtree(current, dir) : current));
           if (!(err instanceof CodiumError && err.code === ErrorCode.fileNotFound)) notify({ level: 'error', text: errorText(err) });
         },
       );
     },
-    [api, notify, setExpanded],
+    [api, notify, setExpanded, updateListings],
   );
 
   // Aufgeklappte, sichtbare Ordner ohne Inhalt lesen.
@@ -196,11 +209,17 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
     for (const row of rows) if (row.loading && !inFlight.current.has(row.key)) load(row.path);
   }, [rows, load]);
 
-  /** Liest einen schon gelesenen Ordner kurz darauf neu; mehrere Anlässe kurz nacheinander ergeben ein Lesen. */
+  /**
+   * Liest einen schon gelesenen Ordner kurz darauf neu; mehrere Anlässe kurz nacheinander ergeben ein Lesen. Wird er
+   * gerade zum ersten Mal gelesen, folgt ein zweites Lesen, denn das erste kann die Änderung verpasst haben.
+   */
   const scheduleReload = useCallback(
     (dir: string) => {
       const key = pathKey(dir);
-      if (!listingsRef.current.has(key)) return;
+      if (!listingsRef.current.has(key)) {
+        if (inFlight.current.has(key)) dirtyWhileLoading.current.add(key);
+        return;
+      }
       pendingReloads.current.add(key);
       if (reloadTimer.current !== null) return;
       reloadTimer.current = window.setTimeout(() => {
@@ -209,7 +228,9 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
         pendingReloads.current.clear();
         for (const k of keys) {
           const listing = listingsRef.current.get(k);
-          if (listing) load(listing.path);
+          if (!listing) continue;
+          if (inFlight.current.has(k)) dirtyWhileLoading.current.add(k);
+          else load(listing.path);
         }
       }, 30);
     },
@@ -226,7 +247,14 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
   /** Vergisst einen gelöschten Pfad mit allem darunter: Inhalt, aufgeklappte Ordner, Auswahl. */
   const forget = useCallback(
     (target: string) => {
-      setListings((prev) => (hasKeyWithin(prev, target) ? withoutSubtree(prev, target) : prev));
+      // Ein Lesen, das noch unterwegs ist, zählt nicht mehr; sonst käme der gelöschte Inhalt zurück.
+      for (const key of generations.current.keys()) {
+        if (!isSameOrInside(key, target)) continue;
+        generations.current.set(key, (generations.current.get(key) ?? 0) + 1);
+        inFlight.current.delete(key);
+        dirtyWhileLoading.current.delete(key);
+      }
+      updateListings((prev) => (hasKeyWithin(prev, target) ? withoutSubtree(prev, target) : prev));
       setExpanded((current) => (hasKeyWithin(current, target) ? withoutSubtree(current, target) : current));
       const selected = [...selectionRef.current];
       if (selected.some((k) => isSameOrInside(k, target)) || (leadRef.current && isSameOrInside(leadRef.current, target))) {
@@ -235,13 +263,19 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
         setSelection(remaining.size > 0 || newLead === null ? remaining : new Set([newLead]), newLead);
       }
     },
-    [setExpanded, setSelection],
+    [setExpanded, setSelection, updateListings],
   );
 
   /** Nach dem Umbenennen: Inhalt, aufgeklappte Ordner und Auswahl wandern mit. */
   const relocate = useCallback(
     (from: string, to: string) => {
-      setListings((prev) =>
+      for (const key of generations.current.keys()) {
+        if (!isSameOrInside(key, from)) continue;
+        generations.current.set(key, (generations.current.get(key) ?? 0) + 1);
+        inFlight.current.delete(key);
+        dirtyWhileLoading.current.delete(key);
+      }
+      updateListings((prev) =>
         hasKeyWithin(prev, from)
           ? moveSubtree(prev, from, to, (listing, move) => ({
               path: move(listing.path),
@@ -257,7 +291,7 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile }: Projec
         if (anchorRef.current) anchorRef.current = move(anchorRef.current);
       }
     },
-    [setExpanded, setSelection],
+    [setExpanded, setSelection, updateListings],
   );
 
   // ---------- Ereignisse des Kerns ----------

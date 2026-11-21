@@ -106,6 +106,7 @@ export class OwnChanges {
   /** Meldet an, dass Codium einen Pfad gleich anlegt bzw. entfernt, wahlweise mit allem darunter. */
   expect(target: string, exists: boolean, subtree: boolean): OwnChange {
     const expectation: Expectation = { key: keyOf(target), exists, subtree, until: Number.POSITIVE_INFINITY };
+    this.prune();
     this.expectations.push(expectation);
     return {
       settle: (stat) => {
@@ -121,8 +122,7 @@ export class OwnChanges {
    * eine fremde Änderung kurz danach nicht verloren.
    */
   isOwn(change: { path: string; kind: 'created' | 'changed' | 'deleted' }, stat?: fs.Stats | null): boolean {
-    const now = this.now();
-    this.expectations = this.expectations.filter((e) => e.until > now);
+    this.prune();
     const key = keyOf(change.path);
     const match = this.expectations.findLast((e) => e.key === key || (e.subtree && isKeyWithin(key, e.key)));
     if (!match) return false;
@@ -130,5 +130,11 @@ export class OwnChanges {
     if (!match.exists) return false;
     if (change.kind === 'created' || match.key !== key || !match.stamp) return true;
     return !!stat && stat.mtimeMs === match.stamp.mtimeMs && stat.size === match.stamp.size;
+  }
+
+  /** Vergisst Anmeldungen, deren Frist abgelaufen ist. */
+  private prune(): void {
+    const now = this.now();
+    this.expectations = this.expectations.filter((e) => e.until > now);
   }
 }

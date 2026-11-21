@@ -269,14 +269,16 @@ export class FileService {
     let current = parent;
     for (const [i, segment] of segments.entries()) {
       const next = path.join(current, segment);
-      const stat = await this.io(() => fs.promises.stat(next)).catch((err: unknown) => {
+      // lstat: Auch ein toter Link gilt als vorhanden; durch ihn hindurch wird nichts angelegt.
+      const own = await this.io(() => fs.promises.lstat(next)).catch((err: unknown) => {
         if (isMissingError(err)) return null;
         throw fileError(err, next, 'create');
       });
-      if (!stat) return next;
+      if (!own) return next;
       if (i === segments.length - 1) return null;
+      if (own.isSymbolicLink()) await this.guard.existing(next);
+      const stat = own.isSymbolicLink() ? await this.fileOp(() => fs.promises.stat(next), next, 'create') : own;
       if (!stat.isDirectory()) throw alreadyExists(next);
-      await this.guard.existing(next);
       current = next;
     }
     return null;
