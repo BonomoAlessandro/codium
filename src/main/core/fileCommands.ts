@@ -24,6 +24,9 @@ export function registerFileCommands(register: RegisterProjectCommand): void {
   register('files.showInExplorer', (project, params) => project.files.showInExplorer(params));
   register('files.read', (project, params) => project.files.read(params));
   register('files.write', (project, params) => project.files.write(params));
+  register('files.findByName', (project, params) => project.search.findByName(params));
+  register('search.start', (project, params) => project.search.startSearch(params));
+  register('search.cancel', (project, params) => project.search.cancelSearch(params));
   register('project.expandedFolders', (project) => expandedFolders(project));
   register('project.setExpandedFolders', (project, params) => setExpandedFolders(project, params));
 }

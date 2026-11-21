@@ -71,6 +71,8 @@ export interface ProjectState {
   activeTab?: string;
   /** Wie viele der ersten `tabs` angeheftet sind; ohne Angabe keiner. */
   pinnedTabs?: number;
+  /** Zuletzt geöffnete Dateien (Ctrl + E), neueste zuerst, relativ wie `tabs`; höchstens `MAX_RECENT_FILES`. */
+  recentFiles?: string[];
   /**
    * Cursor und Scrollstand je Datei, Schlüssel wie bei `tabs` (unter Windows klein geschrieben, damit eine andere
    * Schreibweise derselben Datei keinen zweiten Eintrag anlegt). Die zuletzt geänderten stehen am Ende; es bleiben
@@ -83,6 +85,8 @@ export interface ProjectState {
 export const MAX_TABS = 1000;
 /** Höchstzahl Dateien, deren Cursor sich der Projekt-Zustand merkt. */
 export const MAX_CURSORS = 500;
+/** Höchstzahl zuletzt geöffneter Dateien im Projekt-Zustand. */
+export const MAX_RECENT_FILES = 50;
 
 /** Die Einstellungen für die Oberfläche: gespeicherte Werte, sonst die Standardwerte. */
 export function appSettings(settings: Settings): AppSettings {
@@ -206,6 +210,17 @@ export function normalizeProjectState(projectPath: string, raw: Record<string, u
       ? Math.min(raw.pinnedTabs, tabs.length)
       : undefined;
   const cursors = normalizeCursors(raw.cursors);
+  const seenRecent = new Set<string>();
+  const recentFiles = Array.isArray(raw.recentFiles)
+    ? stringArray(raw.recentFiles)
+        .filter((r) => {
+          const key = process.platform === 'win32' ? r.toLowerCase() : r;
+          if (r === '' || !isRelativeFolder(r) || seenRecent.has(key)) return false;
+          seenRecent.add(key);
+          return true;
+        })
+        .slice(0, MAX_RECENT_FILES)
+    : undefined;
   return {
     schemaVersion: 1,
     path: projectPath,
@@ -216,6 +231,7 @@ export function normalizeProjectState(projectPath: string, raw: Record<string, u
     ...(activeTab !== undefined ? { activeTab } : {}),
     ...(pinnedTabs !== undefined ? { pinnedTabs } : {}),
     ...(cursors ? { cursors } : {}),
+    ...(recentFiles ? { recentFiles } : {}),
   };
 }
 

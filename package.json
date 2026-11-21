@@ -34,21 +34,25 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false
-    }
+    },
+    "asarUnpack": [
+      "node_modules/@vscode/ripgrep-win32-x64/**"
+    ]
   },
   "dependencies": {
-    "@fontsource/jetbrains-mono": "^5.3.0",
-    "monaco-editor": "^0.57.0",
+    "@vscode/ripgrep": "^1.18.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@fontsource/jetbrains-mono": "^5.3.0",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "electron": "^45.4.1",
     "electron-builder": "^26.18.0",
     "esbuild": "^0.28.2",
+    "monaco-editor": "^0.57.0",
     "playwright-core": "^1.65.1",
     "typescript": "^7.0.2",
     "vitest": "^5.1.1"

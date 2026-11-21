@@ -17,7 +17,7 @@ import {
 } from '../../shared/types';
 import type { ProjectCore } from './projectCore';
 import { CommandError, type CallContext } from './router';
-import { MAX_CURSORS, MAX_TABS, parseCursor, type ProjectState } from './schema';
+import { MAX_CURSORS, MAX_RECENT_FILES, MAX_TABS, parseCursor, type ProjectState } from './schema';
 
 type RegisterProjectCommand = <K extends CommandName>(
   name: K,
@@ -30,6 +30,24 @@ export function registerEditorCommands(register: RegisterProjectCommand): void {
   register('project.setTabs', (project, params) => setTabs(project, params));
   register('project.cursor', (project, params) => cursorOf(project, params));
   register('project.setCursor', (project, params) => setCursor(project, params));
+  register('project.recentFiles', (project) => recentFiles(project));
+  register('project.addRecentFile', (project, params) => addRecentFile(project, params));
+}
+
+/** Die zuletzt geöffneten Dateien als absolute Pfade, ohne die, die es nicht mehr gibt. */
+async function recentFiles(project: ProjectCore): Promise<string[]> {
+  const absolute = (project.state.recentFiles ?? []).map((relative) => absoluteOf(project, relative));
+  const exists = await project.files.existingFiles(absolute);
+  return absolute.filter((_, i) => exists[i]);
+}
+
+function addRecentFile(project: ProjectCore, params: unknown): void {
+  const relative = relativeOf(project, requireFilePath(project, field(params, 'path')));
+  const key = relativeKey(relative);
+  project.updateState((state) => {
+    const others = (state.recentFiles ?? []).filter((r) => relativeKey(r) !== key);
+    state.recentFiles = [relative, ...others].slice(0, MAX_RECENT_FILES);
+  });
 }
 
 /** Der Schlüssel eines relativen Pfads für Vergleiche und für `cursors`: unter Windows klein geschrieben. */
@@ -157,6 +175,7 @@ export function followFileOperation(projectPath: string, state: ProjectState, op
     if (activeAfter) state.activeTab = activeAfter;
     else delete state.activeTab;
   }
+  if (state.recentFiles) state.recentFiles = state.recentFiles.flatMap((r) => move(r) ?? []);
   if (state.cursors) {
     const entries = Object.entries(state.cursors).flatMap(([key, cursor]): Array<[string, CursorState]> => {
       const after = move(key);

@@ -8,6 +8,7 @@ import type { EventName, Events, Notice, ProjectInfo } from '../../shared/types'
 import { followFileOperation } from './editorCommands';
 import { expandedFolderPaths } from './fileCommands';
 import { FileService } from './fileService';
+import { SearchService } from './searchService';
 import type { EventSink, ShellActionsPort } from './ports';
 import { ProgressReporter } from './progress';
 import { projectName } from './projectPath';
@@ -37,6 +38,8 @@ export interface ProjectCoreOptions {
   watchMaxDelayMs?: number;
   /** Ab dieser Dauer zeigt eine Dateioperation Fortschritt, für Tests. */
   progressDelayMs?: number;
+  /** Pfad zu ripgrep (mitgeliefert); für Dateiliste, Suche nach Namen und Projektsuche. */
+  ripgrepPath: string;
 }
 
 export class ProjectCore {
@@ -59,6 +62,8 @@ export class ProjectCore {
   readonly progress = new ProgressReporter((event) => this.emit('app.progress', event));
   /** Datei-Dienst: Dateibaum, Dateioperationen, Dateiüberwachung. */
   readonly files: FileService;
+  /** Such-Dienst: Dateiliste, Suche nach Namen, Projektsuche (über ripgrep). */
+  readonly search: SearchService;
 
   constructor(options: ProjectCoreOptions) {
     this.path = options.path;
@@ -76,6 +81,7 @@ export class ProjectCore {
       watchMaxDelayMs: options.watchMaxDelayMs,
       progressDelayMs: options.progressDelayMs,
     });
+    this.search = new SearchService(this, options.ripgrepPath, this.log);
     // Tabs und Cursor im Zustand folgen Umbenennungen und Löschungen in Codium.
     this.subscribe('files.operation', (op) => {
       if (op.kind === 'renamed' || op.kind === 'deleted') this.updateState((state) => followFileOperation(this.path, state, op));

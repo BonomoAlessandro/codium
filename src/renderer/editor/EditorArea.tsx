@@ -863,17 +863,19 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     showTarget(entry);
     if (focusPending.current) {
       focusPending.current = false;
-      editor.focus();
+      // Hat inzwischen ein Dialog oder Suchfenster den Fokus (der Nutzer war schneller), bleibt er dort.
+      if (!document.activeElement?.closest('[role="dialog"]')) editor.focus();
     }
     reportStatus();
     // `tabs` gehört dazu: Erst wenn der Inhalt gelesen ist, gibt es das Modell.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, tabs, editorReady]);
 
-  // Den aktiven Datei-Tab melden (für „Select Opened File“).
+  // Den aktiven Datei-Tab melden (für „Select Opened File“) und als zuletzt geöffnet merken (Ctrl + E).
   useEffect(() => {
     callbacks.current.onActiveFileChange(active);
-  }, [active]);
+    if (active !== null) void api.request('project.addRecentFile', { path: active }).catch(() => {});
+  }, [active, api]);
 
   // Die gespeicherten Tabs laden; gelesen wird nur der aktive.
   useEffect(() => {

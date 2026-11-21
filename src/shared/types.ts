@@ -180,6 +180,43 @@ export type FileContent =
   | { kind: 'binary'; size: number }
   | { kind: 'tooLarge'; size: number };
 
+/** Ein Treffer der Suche nach Namen. */
+export interface FileNameMatch {
+  path: string;
+  /** Pfad relativ zum Projekt mit „/“. */
+  relative: string;
+  /** Stellen im relativen Pfad, die die Eingabe getroffen hat (zum Hervorheben). */
+  positions: number[];
+  /** Die Datei ist von `.gitignore` ausgenommen (nur mit „include ignored“). */
+  ignored?: true;
+}
+
+/** Optionen der Projektsuche. */
+export interface SearchOptions {
+  query: string;
+  matchCase: boolean;
+  wholeWord: boolean;
+  regex: boolean;
+  /** Dateimaske wie in IntelliJ, mehrere durch Komma getrennt, etwa „*.java, !*Test.java“; leer heisst alle. */
+  fileMask: string;
+  includeIgnored: boolean;
+}
+
+/** Ein Treffer der Projektsuche: Zeile und Spalte ab 1, Länge in Zeichen (UTF-16 wie im Editor). */
+export interface SearchMatch {
+  path: string;
+  line: number;
+  column: number;
+  length: number;
+  /** Die Zeile (bei sehr langen Zeilen ein Ausschnitt um den Treffer). */
+  lineText: string;
+  /** Wo `lineText` in der Zeile beginnt (0 ohne Kürzung). */
+  lineOffset: number;
+}
+
+/** So viele Treffer liefert die Projektsuche höchstens; danach meldet sie „more results“. */
+export const SEARCH_MATCH_LIMIT = 2000;
+
 /** Einstellungen, die für alle Projekte gelten (im App-Zustand). Felder kommen mit den Tickets, die sie brauchen. */
 export interface AppSettings {
   /** Schriftgrösse aller Editoren, wie Monaco sie zählt. */
@@ -294,6 +331,22 @@ export interface Commands {
   'project.setExpandedFolders': { params: { paths: string[] }; result: void };
   /** Die Einstellungen; ohne gespeicherte die Standardwerte. */
   'app.settings': { params: void; result: AppSettings };
+  /**
+   * Suche nach Namen (Ctrl + Shift + N): die besten Treffer (höchstens 100) unter allen Dateien des Projekts,
+   * versteckte eingeschlossen, ohne `.git`; von `.gitignore` ausgenommene nur mit `includeIgnored`.
+   */
+  'files.findByName': { params: { query: string; includeIgnored?: boolean }; result: { matches: FileNameMatch[] } };
+  /**
+   * Startet eine Projektsuche (Ctrl + Shift + F); eine laufende des Fensters bricht ab. Die Treffer kommen als
+   * `search.results` mit der gelieferten Kennung.
+   */
+  'search.start': { params: SearchOptions; result: { searchId: number } };
+  /** Bricht eine laufende Projektsuche ab. */
+  'search.cancel': { params: { searchId: number }; result: void };
+  /** Die zuletzt geöffneten Dateien des Projekts, neueste zuerst; Dateien, die es nicht mehr gibt, fehlen. */
+  'project.recentFiles': { params: void; result: string[] };
+  /** Merkt eine Datei als zuletzt geöffnet (höchstens 50 im Projekt-Zustand). */
+  'project.addRecentFile': { params: { path: string }; result: void };
   /** Antwort auf `editor.flushRequest`: Alle Tabs des Fensters sind gespeichert (oder liessen sich nicht speichern). */
   'editor.flushed': { params: { requestId: number }; result: void };
   /**
@@ -389,6 +442,11 @@ export interface Events {
    * `editor.flushed` und derselben Kennung. Der Kern wartet darauf höchstens einige Sekunden.
    */
   'editor.flushRequest': { requestId: number };
+  /**
+   * Treffer einer Projektsuche, gesammelt. Zuletzt kommt eines mit `done`; mit `limitReached` gibt es mehr Treffer, als
+   * gemeldet wurden, mit `error` ist die Suche gescheitert (etwa ein ungültiger regulärer Ausdruck).
+   */
+  'search.results': { searchId: number; matches: SearchMatch[]; done: boolean; limitReached?: true; error?: string };
   /** Dateien des Projekts wurden von aussen angelegt, geändert oder gelöscht (gebündelt). */
   'files.changed': FilesChangedEvent;
   /** Codium hat eine Dateioperation ausgeführt. */

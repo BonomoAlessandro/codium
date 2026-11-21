@@ -174,7 +174,6 @@ describe('Tastenbelegung und Tabs', () => {
       // Ctrl + K ist bei Monaco der Auftakt für Zweierkürzel; hier nicht: Der nächste Buchstabe wird getippt.
       await page.keyboard.press('Control+k');
       await page.keyboard.type('x');
-      await page.keyboard.press('Control+e');
       await page.keyboard.press('Control+b');
       await expect.poll(() => editorText(page)).toContain('xfoo foo foo\nbar');
 

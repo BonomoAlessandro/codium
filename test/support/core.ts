@@ -1,6 +1,7 @@
 // Kern mit nachgemachten Ports für Teststelle 1, samt Neustart-Simulation.
 
 import * as path from 'node:path';
+import { ripgrepPath } from '../../src/main/ripgrepPath';
 import { AppCore } from '../../src/main/core/appCore';
 import { createFakePorts, FakeEventSink, type FakePorts, type FakeSystemOptions } from './fakePorts';
 import { beforeTempDirRemoval } from './tempDir';
@@ -45,6 +46,7 @@ export function createTestCore(dataDir: string, options: TestCoreOptions = {}): 
     cleanupTimeoutMs: options.cleanupTimeoutMs ?? 200,
     fileProgressDelayMs: options.fileProgressDelayMs,
     flushTimeoutMs: options.flushTimeoutMs ?? 0,
+    ripgrepPath: ripgrepPath(path.resolve(__dirname, '..', '..'), false),
     folderQueryTimeoutMs: options.folderQueryTimeoutMs,
     log: (message) => logs.push(message),
   });

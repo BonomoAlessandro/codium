@@ -91,6 +91,8 @@ export interface AppCoreOptions {
   watchMaxDelayMs?: number;
   /** Ab dieser Dauer zeigt eine Dateioperation Fortschritt (siehe fileService.ts). */
   fileProgressDelayMs?: number;
+  /** Pfad zu ripgrep (mitgeliefert, im Paket ausserhalb des App-Archivs). */
+  ripgrepPath: string;
   log?: (message: string) => void;
 }
 
@@ -716,6 +718,7 @@ export class AppCore {
       watchDebounceMs: this.options.watchDebounceMs,
       watchMaxDelayMs: this.options.watchMaxDelayMs,
       progressDelayMs: this.options.fileProgressDelayMs,
+      ripgrepPath: this.options.ripgrepPath,
     });
     this.projects.set(windowId, core);
     return core;

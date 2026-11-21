@@ -30,16 +30,13 @@ export type EditorCommand =
 
 export type TabCommand = 'tab.close' | 'tab.recent' | 'tab.recentForward' | 'file.saveAll';
 
-/** Kürzel für Funktionen späterer Tickets; sie sind schon belegt, damit Monaco sie nicht nimmt. */
-export type ReservedCommand =
-  | 'settings.open'
-  | 'vcs.commit'
-  | 'vcs.push'
-  | 'vcs.pull'
-  | 'file.recent'
-  | 'navigate.declaration';
+/** Suchfenster über dem Editor (Ticket 08); das Projektfenster öffnet sie. */
+export type SearchCommand = 'file.gotoFile' | 'file.recent' | 'find.inFiles';
 
-export type KeyCommand = ToolWindowCommand | EditorCommand | TabCommand | ReservedCommand;
+/** Kürzel für Funktionen späterer Tickets; sie sind schon belegt, damit Monaco sie nicht nimmt. */
+export type ReservedCommand = 'settings.open' | 'vcs.commit' | 'vcs.push' | 'vcs.pull' | 'navigate.declaration';
+
+export type KeyCommand = ToolWindowCommand | EditorCommand | TabCommand | SearchCommand | ReservedCommand;
 
 export interface KeyBinding {
   /** Kürzel in der Schreibweise von `shortcutOf`, etwa „Alt+1“ oder „Ctrl+Shift+K“. */
@@ -85,11 +82,14 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   binding('Alt+Shift+ArrowDown', 'editor.moveLineDown', 'editor'),
   binding('Ctrl+Z', 'editor.undo', 'editor'),
   binding('Ctrl+Shift+Z', 'editor.redo', 'editor'),
-  // Spätere Tickets: Git (15, 16, 18), zuletzt geöffnete Dateien (08), Definition (12).
+  // Suchen (Ticket 08).
+  binding('Ctrl+Shift+N', 'file.gotoFile', 'window'),
+  binding('Ctrl+E', 'file.recent', 'window'),
+  binding('Ctrl+Shift+F', 'find.inFiles', 'window'),
+  // Spätere Tickets: Git (15, 16, 18), Definition (12).
   binding('Ctrl+K', 'vcs.commit', 'window'),
   binding('Ctrl+Shift+K', 'vcs.push', 'window'),
   binding('Ctrl+T', 'vcs.pull', 'window'),
-  binding('Ctrl+E', 'file.recent', 'window'),
   binding('Ctrl+B', 'navigate.declaration', 'editor'),
 ];
 

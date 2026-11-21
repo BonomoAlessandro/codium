@@ -1197,3 +1197,267 @@ kbd {
   margin: 0;
   color: var(--text-muted);
 }
+
+/* ---------- Suchfenster über dem Editor (Ticket 08) ---------- */
+
+.quick-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: calc(var(--header-height) + 40px);
+}
+
+.quick-popup {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, calc(100vw - 80px));
+  max-height: calc(100vh - var(--header-height) - 100px);
+  color: var(--text);
+  background: var(--bg-popup);
+  border: 1px solid var(--border-popup);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.find-popup {
+  width: min(900px, calc(100vw - 80px));
+  height: min(680px, calc(100vh - var(--header-height) - 100px));
+}
+
+.quick-popup-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px 4px;
+}
+
+.quick-popup-title {
+  flex: 1;
+  font-weight: 600;
+}
+
+.quick-popup-option {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.quick-popup-input,
+.find-popup-mask {
+  box-sizing: border-box;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  outline: none;
+}
+
+.quick-popup-input {
+  flex: 1;
+  margin: 4px 12px 8px;
+  padding: 6px 8px;
+}
+
+.quick-popup-input:focus,
+.find-popup-mask:focus {
+  border-color: var(--focus);
+}
+
+.find-popup-mask {
+  width: 180px;
+  padding: 3px 6px;
+}
+
+.find-popup-query {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 12px;
+}
+
+.find-popup-query .quick-popup-input {
+  margin-right: 6px;
+}
+
+.quick-popup-toggle {
+  min-width: 28px;
+  padding: 3px 6px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.quick-popup-toggle.active {
+  color: var(--text);
+  background: var(--bg-selection);
+  border-color: var(--accent);
+}
+
+.quick-popup-list {
+  flex: 1;
+  min-height: 0;
+  max-height: 420px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-popup);
+}
+
+.find-popup-list {
+  flex: none;
+  height: 34%;
+  max-height: none;
+}
+
+.quick-popup-empty {
+  margin: 10px 14px;
+  color: var(--text-muted);
+}
+
+.quick-popup-item,
+.find-popup-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 12px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.quick-popup-item.selected,
+.find-popup-item.selected,
+.find-match-row.selected {
+  background: var(--bg-selection);
+}
+
+.quick-popup-item.muted .quick-popup-name {
+  color: var(--text-muted);
+}
+
+.quick-popup-name {
+  flex: none;
+}
+
+.quick-popup-detail {
+  flex: none;
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+}
+
+.quick-popup mark,
+.find-results mark {
+  color: inherit;
+  background: none;
+  font-weight: 700;
+}
+
+.find-popup-line {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+}
+
+.find-popup-line mark {
+  background: rgba(53, 116, 240, 0.35);
+  border-radius: 2px;
+}
+
+.find-popup-preview {
+  flex: 1;
+  min-height: 0;
+  border-top: 1px solid var(--border-popup);
+}
+
+.find-preview-match {
+  background: rgba(53, 116, 240, 0.45);
+  border-radius: 2px;
+}
+
+.find-popup-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border-popup);
+}
+
+.find-popup-status {
+  flex: 1;
+  color: var(--text-muted);
+}
+
+/* ---------- Werkzeugfenster „Find“ ---------- */
+
+.find-tabs {
+  display: flex;
+  gap: 2px;
+  margin-right: auto;
+}
+
+.find-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  color: var(--text-muted);
+  border-radius: 4px;
+  cursor: default;
+}
+
+.find-tab.active {
+  color: var(--text);
+  background: var(--bg-selected);
+}
+
+.find-tab-close {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.find-body {
+  overflow: auto;
+}
+
+.find-results {
+  outline: none;
+}
+
+.find-summary {
+  margin: 4px 12px;
+  color: var(--text-muted);
+}
+
+.find-file-row,
+.find-match-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.find-match-row {
+  padding-left: 36px;
+}
+
+.find-match-position {
+  min-width: 36px;
+  color: var(--text-muted);
+  text-align: right;
+}

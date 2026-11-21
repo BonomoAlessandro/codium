@@ -11,12 +11,17 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { EditorArea, type EditorAreaHandle, type EditorStatus } from '../editor/EditorArea';
+import { FindInFilesPopup, type SearchOutcome } from '../search/FindInFilesPopup';
+import { GotoFilePopup, RecentFilesPopup } from '../search/FilePopups';
+import { FindToolWindow, type FindTab } from '../search/FindToolWindow';
 import { useSettings } from '../settings';
 import { flushSync } from 'react-dom';
 import {
   TOOL_WINDOW_SIDE,
   type CodiumApi,
   type ProjectInfo,
+  type SearchMatch,
+  type SearchOptions,
   type ToolWindowId,
   type ToolWindowLayout,
   type ToolWindowSide,
@@ -63,11 +68,18 @@ function focusToolWindow(section: HTMLElement | undefined): void {
   (section?.querySelector<HTMLElement>('[data-autofocus]') ?? section)?.focus({ preventScroll: true });
 }
 
-/**
- * Welche Werkzeugfenster verfügbar sind. „Find“ hat erst mit Ticket 08 Inhalt (abgelegte Projektsuchen,
- * Verwendungen) und erscheint bis dahin nie.
- */
-const available: Availability = (id) => id !== 'find';
+/** Optionen der Projektsuche beim ersten Öffnen. */
+const INITIAL_SEARCH: SearchOptions = {
+  query: '',
+  matchCase: false,
+  wholeWord: false,
+  regex: false,
+  fileMask: '',
+  includeIgnored: false,
+};
+
+/** Welches Suchfenster über dem Editor offen ist. */
+type SearchPopup = 'gotoFile' | 'recentFiles' | 'findInFiles' | null;
 
 /** Layout, falls der Kern keines liefert (das Fenster schliesst sich gerade): alle Seiten zu. */
 const CLOSED_LAYOUT: ToolWindowLayout = {
@@ -103,6 +115,28 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
 
   /** „Datei öffnen“ aus dem Dateibaum (Doppelklick, Enter, neue Datei): ein Tab mit dem Fokus im Editor. */
   const openFile = useCallback((path: string) => editorRef.current?.open(path, { focus: true }), []);
+
+  // ---------- Suchen (Ticket 08) ----------
+
+  const [popup, setPopup] = useState<SearchPopup>(null);
+  /** Die Optionen der letzten Projektsuche; sie bleiben über das Schliessen des Suchfensters hinweg. */
+  const [searchOptions, setSearchOptions] = useState<SearchOptions>(INITIAL_SEARCH);
+  /** Abgelegte Trefferlisten im Werkzeugfenster „Find“; ohne sie gibt es das Werkzeugfenster nicht. */
+  const [findTabs, setFindTabs] = useState<FindTab[]>([]);
+  const [activeFindTab, setActiveFindTab] = useState<number | null>(null);
+  const findTabCounter = useRef(0);
+  const findAvailable = useRef(false);
+  findAvailable.current = findTabs.length > 0;
+  /** Welche Werkzeugfenster verfügbar sind: „Find“ nur, solange es Trefferlisten gibt. */
+  const available = useCallback<Availability>((id) => id !== 'find' || findAvailable.current, []);
+
+  /** Öffnet eine Fundstelle in einem Tab, mit Auswahl des Treffers und dem Fokus im Editor. */
+  const openMatch = useCallback((match: SearchMatch) => {
+    editorRef.current?.open(match.path, {
+      focus: true,
+      target: { startLineNumber: match.line, startColumn: match.column, endLineNumber: match.line, endColumn: match.column + match.length },
+    });
+  }, []);
   const areaRef = useRef<HTMLDivElement>(null);
   const area = useElementSize(areaRef);
   const areaValue = useRef<LayoutArea | null>(null);
@@ -124,7 +158,7 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
   const shownLayout = useCallback((): ToolWindowLayout | null => {
     const current = layoutRef.current;
     return current ? visibleLayout(current, available) : null;
-  }, [layoutRef]);
+  }, [available, layoutRef]);
 
   /** Beendet ein laufendes Ziehen und speichert, was bis dahin gezogen wurde. */
   const stopDrag = useCallback(() => {
@@ -159,6 +193,33 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
       focusToolWindow(sections.current.get(id));
     },
     [change],
+  );
+
+  /** „Open in Find Window“: legt die Trefferliste als Reiter ab und zeigt das Werkzeugfenster „Find“. */
+  const openInFindWindow = useCallback(
+    (outcome: SearchOutcome) => {
+      const id = ++findTabCounter.current;
+      const tab: FindTab = { id, title: outcome.options.query, matches: outcome.matches, limitReached: outcome.limitReached };
+      flushSync(() => {
+        setFindTabs((tabs) => [...tabs, tab]);
+        setActiveFindTab(id);
+      });
+      findAvailable.current = true;
+      const current = shownLayout();
+      if (current) showAndFocus(current, 'find');
+    },
+    [showAndFocus, shownLayout],
+  );
+
+  /** Schliesst einen Reiter im Werkzeugfenster „Find“; mit dem letzten verschwindet das Werkzeugfenster. */
+  const closeFindTab = useCallback(
+    (id: number) => {
+      const remaining = findTabs.filter((t) => t.id !== id);
+      if (remaining.length === 0) moveFocusOutOf('bottom');
+      setFindTabs(remaining);
+      if (activeFindTab === id) setActiveFindTab(remaining.at(-1)?.id ?? null);
+    },
+    [activeFindTab, findTabs, moveFocusOutOf],
   );
 
   /** Klick auf ein Symbol der Symbolleiste: schliesst das sichtbare Werkzeugfenster, sonst zeigt es dieses. */
@@ -196,6 +257,15 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
     const onKeyDown = (e: KeyboardEvent) => {
       const command = commandForKey(e);
       if (!command || isDialogOpen()) return;
+      if (command === 'file.gotoFile' || command === 'file.recent' || command === 'find.inFiles') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.repeat) return;
+        closeOpenMenus();
+        stopDrag();
+        setPopup(command === 'file.gotoFile' ? 'gotoFile' : command === 'file.recent' ? 'recentFiles' : 'findInFiles');
+        return;
+      }
       if (!command.startsWith('toolWindow.')) {
         if (editorRef.current?.handleCommand(command as Exclude<KeyCommand, ToolWindowCommand>, e.repeat)) {
           e.preventDefault();
@@ -307,6 +377,16 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
                 onOpenFile={openFile}
                 openedFile={activeFile}
               />
+            ) : id === 'find' ? (
+              <FindToolWindow
+                project={project}
+                tabs={findTabs}
+                activeId={activeFindTab}
+                onSelect={setActiveFindTab}
+                onCloseTab={closeFindTab}
+                onOpenMatch={openMatch}
+                onHide={() => hide(s)}
+              />
             ) : (
               <>
                 <ToolWindowHeader title={TOOL_WINDOWS[id].title} onHide={() => hide(s)} />
@@ -334,7 +414,7 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
     <div className="project-window">
       <Header project={project} actions={actions} onExit={() => void api.request('app.exit')} />
       <div className="workbench">
-        <Stripe side="left" groups={[STRIPES.left.top, STRIPES.left.bottom]} layout={shown} onToggle={toggle} />
+        <Stripe side="left" groups={[STRIPES.left.top, STRIPES.left.bottom]} layout={shown} available={available} onToggle={toggle} />
         <div className="tool-area" ref={areaRef}>
           <div className="tool-area-row">
             {side('left')}
@@ -354,9 +434,23 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
           </div>
           {side('bottom')}
         </div>
-        <Stripe side="right" groups={[STRIPES.right.top, []]} layout={shown} onToggle={toggle} />
+        <Stripe side="right" groups={[STRIPES.right.top, []]} layout={shown} available={available} onToggle={toggle} />
       </div>
       <StatusBar work={work} editor={status} />
+      {popup === 'gotoFile' && <GotoFilePopup api={api} project={project} onOpen={openFile} onClose={() => setPopup(null)} />}
+      {popup === 'recentFiles' && <RecentFilesPopup api={api} project={project} onOpen={openFile} onClose={() => setPopup(null)} />}
+      {popup === 'findInFiles' && (
+        <FindInFilesPopup
+          api={api}
+          project={project}
+          initial={searchOptions}
+          fontSize={settings.fontSize}
+          onOptions={setSearchOptions}
+          onOpenMatch={openMatch}
+          onOpenInFindWindow={openInFindWindow}
+          onClose={() => setPopup(null)}
+        />
+      )}
     </div>
   );
 }
@@ -418,6 +512,8 @@ function useElementSize(ref: RefObject<HTMLElement | null>): LayoutArea | null {
 }
 
 interface StripeProps {
+  /** Welche Werkzeugfenster es gerade gibt („Find“ nur mit Trefferlisten). */
+  available: Availability;
   side: 'left' | 'right';
   /** Obere und untere Gruppe der Symbolleiste. */
   groups: [ToolWindowId[], ToolWindowId[]];
@@ -425,7 +521,7 @@ interface StripeProps {
   onToggle: (id: ToolWindowId) => void;
 }
 
-function Stripe({ side, groups, layout, onToggle }: StripeProps) {
+function Stripe({ side, groups, layout, available, onToggle }: StripeProps) {
   return (
     <nav className={`stripe stripe-${side}`} aria-label={side === 'left' ? 'Left Tool Windows' : 'Right Tool Windows'}>
       {groups.map((ids, i) => (

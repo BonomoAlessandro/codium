@@ -9,6 +9,7 @@ import { dataFolder } from './dataFolder';
 import { DEV_MENU } from './devMenu';
 import { ElectronFolderPicker, ElectronSecrets, ElectronShellActions } from './electron/otherPorts';
 import { ElectronWindowPort } from './electron/windowPort';
+import { ripgrepPath } from './ripgrepPath';
 import { NodeSystem } from './system/nodeSystem';
 import { readTestMode, TEST_HOOKS_GLOBAL, TEST_RECORDER_GLOBAL, TestRecorder, type TestHooks } from './testMode';
 
@@ -77,6 +78,7 @@ async function startCore(): Promise<void> {
     dataDir,
     events,
     appInfo: { name: app.getName(), version: app.getVersion() },
+    ripgrepPath: ripgrepPath(app.getAppPath(), app.isPackaged),
     ports: {
       windows: new ElectronWindowPort({
         preloadFile: path.join(__dirname, '..', 'preload', 'preload.js'),

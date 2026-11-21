@@ -58,6 +58,18 @@ if (existsSync(exe)) {
   check(actual === expected, `das Paket startet mit Electron ${expected} (gemeldet: ${actual})`);
 }
 
+// ripgrep liegt ausserhalb des App-Archivs und lässt sich starten (Dateiliste und Suchen, Ticket 08). Der Pfad muss zu
+// src/main/ripgrepPath.ts passen.
+const ripgrep = path.join(unpacked, 'resources', 'app.asar.unpacked', 'node_modules', '@vscode', 'ripgrep-win32-x64', 'bin', 'rg.exe');
+check(existsSync(ripgrep), 'ripgrep liegt ausserhalb des App-Archivs');
+if (existsSync(ripgrep)) {
+  const version = execFileSync(ripgrep, ['--version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 });
+  check(/^ripgrep \d+\.\d+/.test(version), `ripgrep startet (${version.split(/\r?\n/)[0]})`);
+}
+// Was esbuild bündelt (Monaco, Schrift), gehört nicht noch einmal ins Paket.
+const bundledTwice = ['monaco-editor', '@fontsource'].filter((name) => existsSync(path.join(unpacked, 'resources', 'app.asar.unpacked', 'node_modules', name)));
+check(bundledTwice.length === 0, 'Monaco und die Schrift liegen nur gebündelt im Paket');
+
 if (failures.length > 0) {
   console.error(`\n${failures.length} Prüfung(en) am Paket fehlgeschlagen.`);
   process.exit(1);
