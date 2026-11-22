@@ -70,6 +70,31 @@ if (existsSync(ripgrep)) {
 const readme = path.join(unpacked, 'resources', 'README.md');
 check(existsSync(readme), 'das README liegt ausserhalb des App-Archivs');
 if (existsSync(readme)) check(/^## Voraussetzungen\s*$/m.test(readFileSync(readme, 'utf8')), 'das README hat den Abschnitt „Voraussetzungen“');
+// node-pty liegt ausserhalb des App-Archivs und startet im Paket eine Shell (Terminal, Ticket 11). Geladen wird es wie
+// im Hauptprozess über das Archiv; Electron leitet die nativen Teile nach app.asar.unpacked um.
+const ptyDir = path.join(unpacked, 'resources', 'app.asar.unpacked', 'node_modules', 'node-pty');
+check(existsSync(path.join(ptyDir, 'prebuilds', 'win32-x64', 'pty.node')), 'node-pty liegt ausserhalb des App-Archivs');
+if (existsSync(exe)) {
+  const probe = [
+    `const pty = require(${JSON.stringify(path.join(unpacked, 'resources', 'app.asar', 'node_modules', 'node-pty'))});`,
+    `const p = pty.spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'echo CODIUM_PTY_OK'], { cols: 80, rows: 10, useConpty: true, useConptyDll: true });`,
+    `let out = ''; p.onData((d) => { out += d; });`,
+    `p.onExit(() => { process.stdout.write(out.includes('CODIUM_PTY_OK') ? 'ok' : 'no output: ' + JSON.stringify(out)); process.exit(0); });`,
+    `setTimeout(() => { process.stdout.write('timeout'); process.exit(1); }, 20000);`,
+  ].join('\n');
+  let result;
+  try {
+    result = execFileSync(exe, ['-e', probe], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 60_000,
+    }).trim();
+  } catch (err) {
+    result = String(err.stdout ?? err.message).trim();
+  }
+  check(result === 'ok', `node-pty startet im Paket eine Shell (${result})`);
+}
 // Was esbuild bündelt (Monaco, Schrift), gehört nicht noch einmal ins Paket.
 const bundledTwice = ['monaco-editor', '@fontsource'].filter((name) => existsSync(path.join(unpacked, 'resources', 'app.asar.unpacked', 'node_modules', name)));
 check(bundledTwice.length === 0, 'Monaco und die Schrift liegen nur gebündelt im Paket');

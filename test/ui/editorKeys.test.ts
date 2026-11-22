@@ -307,7 +307,7 @@ describe('Tastenbelegung und Tabs', () => {
       await page.mouse.wheel(0, 100);
       await page.keyboard.up('Control');
       await expect.poll(() => fontSize(page)).toBe(14);
-      await expect.poll(() => invoke<AppSettings>(page, 'app.settings')).toEqual({ fontSize: 14, jdk: null });
+      await expect.poll(() => invoke<AppSettings>(page, 'app.settings')).toEqual({ fontSize: 14, jdk: null, terminalShell: 'cmd' });
       await exit(page, first.codium);
     });
 

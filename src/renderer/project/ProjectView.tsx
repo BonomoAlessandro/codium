@@ -78,6 +78,8 @@ interface ProjectViewProps {
   onOpenFile: (path: string) => void;
   /** Die Datei des aktiven Tabs, für „Select Opened File“; `null` ohne Datei-Tab. */
   openedFile: string | null;
+  /** „Open in Terminal“: ein Terminal im Ordner (bzw. im Ordner der Datei). */
+  onOpenInTerminal: (path: string) => void;
 }
 
 interface ContextMenu {
@@ -86,7 +88,7 @@ interface ContextMenu {
   viaKeyboard: boolean;
 }
 
-export function ProjectView({ api, project, notify, onHide, onOpenFile, openedFile }: ProjectViewProps) {
+export function ProjectView({ api, project, notify, onHide, onOpenFile, openedFile, onOpenInTerminal }: ProjectViewProps) {
   const root = project.path;
   const rootKey = pathKey(root);
   const ask = useAsk();
@@ -786,8 +788,7 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile, openedFi
       },
       { kind: 'separator' },
       { kind: 'item', label: 'Open in Explorer', disabled: !leadRow, run: showInExplorer },
-      // Kommt mit dem Terminal (Ticket 11).
-      { kind: 'item', label: 'Open in Terminal', disabled: true, run: () => {} },
+      { kind: 'item', label: 'Open in Terminal', disabled: !leadRow, run: () => leadRow && onOpenInTerminal(leadRow.path) },
     ];
   };
 

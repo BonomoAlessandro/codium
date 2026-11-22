@@ -1694,3 +1694,44 @@ kbd {
   background: var(--bg-panel);
   border-radius: 6px;
 }
+
+/* ---------- Terminal (Ticket 11) ---------- */
+
+.terminal-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.terminal-tab-rename {
+  width: 120px;
+  padding: 0 4px;
+  color: var(--text);
+  font: inherit;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  outline: none;
+}
+
+.terminal-body {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.terminal-view {
+  position: absolute;
+  inset: 4px 4px 2px 10px;
+}
+
+.terminal-view[hidden] {
+  display: none;
+}
+
+.terminal-view .xterm-viewport {
+  background: var(--bg) !important;
+}

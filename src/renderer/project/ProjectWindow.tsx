@@ -29,7 +29,7 @@ import {
   type ToolWindowSide,
 } from '../../shared/types';
 import { TOOL_WINDOW_ICONS } from '../icons';
-import { commandForKey, shortcutLabel, type KeyCommand, type ToolWindowCommand } from '../keymap';
+import { bindingForKey, commandForKey, shortcutLabel, type KeyCommand, type ToolWindowCommand } from '../keymap';
 import type { Notify } from '../Notices';
 import { isDialogOpen } from '../popup/Dialogs';
 import { closeOpenMenus } from '../popup/Menu';
@@ -37,6 +37,7 @@ import type { RunningWork } from '../progress';
 import type { ProjectActions } from '../RecentProjects';
 import { Header } from './Header';
 import { ProjectView } from './ProjectView';
+import { TerminalToolWindow, type TerminalToolWindowHandle } from '../terminal/TerminalToolWindow';
 import { StatusBar } from './StatusBar';
 import { ToolWindowHeader } from './ToolWindowHeader';
 import {
@@ -109,6 +110,7 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
   const { layout, layoutRef, change } = useToolWindowLayout(api);
   const settings = useSettings(api);
   const editorRef = useRef<EditorAreaHandle>(null);
+  const terminalRef = useRef<TerminalToolWindowHandle>(null);
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [status, setStatus] = useState<EditorStatus | null>(null);
   // Schliesst sich das Fenster oder endet Codium, speichert der Code-Bereich zuerst alle Tabs; der Kern wartet darauf.
@@ -223,6 +225,17 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
     [change],
   );
 
+  /** „Open in Terminal“ aus dem Dateibaum: ein weiteres Terminal im Ordner, das Werkzeugfenster mit dem Fokus darin. */
+  const openInTerminal = useCallback(
+    (path: string) => {
+      // Erst den Tab anlegen: So startet das Zeigen des leeren Werkzeugfensters kein zweites Terminal.
+      flushSync(() => terminalRef.current?.open(path));
+      const current = shownLayout();
+      if (current) showAndFocus(current, 'terminal');
+    },
+    [showAndFocus, shownLayout],
+  );
+
   /** „Open in Find Window“: legt die Trefferliste als Reiter ab und zeigt das Werkzeugfenster „Find“. */
   const openInFindWindow = useCallback(
     (outcome: SearchOutcome) => {
@@ -285,6 +298,8 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
     const onKeyDown = (e: KeyboardEvent) => {
       const command = commandForKey(e);
       if (!command || isDialogOpen()) return;
+      // Im Terminal gehören alle Tasten der Shell, ausser den Kürzeln für Werkzeugfenster und Einstellungen (Ticket 11).
+      if (!bindingForKey(e)?.global && e.target instanceof Element && e.target.closest('.terminal-view')) return;
       // Bei offenem Suchfenster gehören Werkzeugfenster- und Tab-Kürzel nicht dem Fenster darunter (Review von
       // Ticket 08); Bearbeitungs-Kürzel gehen an das Eingabefeld (etwa Ctrl + Z).
       if (popupRef.current !== null && (command.startsWith('toolWindow.') || command.startsWith('tab.') || command === 'file.saveAll')) {
@@ -421,6 +436,16 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
                 onHide={() => hide(s)}
                 onOpenFile={openFile}
                 openedFile={activeFile}
+                onOpenInTerminal={openInTerminal}
+              />
+            ) : id === 'terminal' ? (
+              <TerminalToolWindow
+                ref={terminalRef}
+                api={api}
+                visible={open && active === id}
+                fontSize={settings.fontSize}
+                onHide={() => hide(s)}
+                notify={notify}
               />
             ) : id === 'find' ? (
               <FindToolWindow

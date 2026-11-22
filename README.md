@@ -2,7 +2,7 @@
 
 Eine kleine eigene IDE im Stil von IntelliJ, als Desktop-App für Windows.
 
-> Stand: im Aufbau nach der [Spezifikation](docs/specs/codium-v1.md) und den [Tickets](docs/tickets/README.md). Projekte öffnen in eigenen Fenstern mit Kopfzeile, Werkzeugfenstern, Statusleiste, Meldungen und Rückfragen. Das Werkzeugfenster „Project“ zeigt den Dateibaum mit Dateioperationen und Dateiüberwachung. Dateien öffnen in Tabs mit Monaco (Farben nach IntelliJ „Dark“, JetBrains Mono), Bilder als Bild; Eingaben werden automatisch gespeichert, mit Erhalt von Kodierung und Zeilenende, und von aussen geänderte Dateien laden neu. Dateien lassen sich nach Namen und im ganzen Projekt suchen (ripgrep). Die übrigen Werkzeugfenster sind noch ohne Inhalt.
+> Stand: im Aufbau nach der [Spezifikation](docs/specs/codium-v1.md) und den [Tickets](docs/tickets/README.md). Projekte öffnen in eigenen Fenstern mit Kopfzeile, Werkzeugfenstern, Statusleiste, Meldungen und Rückfragen. Das Werkzeugfenster „Project“ zeigt den Dateibaum mit Dateioperationen und Dateiüberwachung. Dateien öffnen in Tabs mit Monaco (Farben nach IntelliJ „Dark“, JetBrains Mono), Bilder als Bild; Eingaben werden automatisch gespeichert, mit Erhalt von Kodierung und Zeilenende, und von aussen geänderte Dateien laden neu. Dateien lassen sich nach Namen und im ganzen Projekt suchen (ripgrep). Markdown-Dateien zeigen eine Vorschau mit Mermaid-Diagrammen. Repositories lassen sich klonen. Das Werkzeugfenster „Terminal“ zeigt Shells in Tabs (node-pty und xterm.js). Die übrigen Werkzeugfenster sind noch ohne Inhalt.
 
 ## Voraussetzungen
 
@@ -19,7 +19,7 @@ Eine kleine eigene IDE im Stil von IntelliJ, als Desktop-App für Windows.
 - Node.js 22 oder neuer mit npm
 - Git
 - Netzzugang beim ersten Bauen und für einzelne langsame Tests (npm-Pakete, später jdtls, Maven Central und die Gradle-Verteilung)
-- Ob ein C++-Compiler nötig ist, wird mit dem Terminal (Ticket 11) geprüft und hier eingetragen.
+- **Kein C++-Compiler nötig:** node-pty (Terminal) bringt fertige Binärdateien für Windows x64 und arm64 mit; `npm ci` kompiliert nichts. Nur wenn `npm_config_build_from_source=true` gesetzt ist oder eine andere Plattform benutzt wird, baut node-pty selbst und braucht dann Python und die C++-Build-Tools von Visual Studio.
 
 ## Stack
 

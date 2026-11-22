@@ -44,7 +44,8 @@ await Promise.all([
     platform: 'node',
     format: 'cjs',
     target: 'node22',
-    external: ['electron'],
+    // node-pty ist ein natives Modul und wird zur Laufzeit aus node_modules geladen (im Paket ausserhalb des Archivs).
+    external: ['electron', 'node-pty'],
   }),
   build({
     ...common,

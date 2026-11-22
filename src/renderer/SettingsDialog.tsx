@@ -1,13 +1,13 @@
 // Einstellungsdialog (Ctrl + Alt + S, „Settings…“ im Projektmenü): Schriftgrösse der Editoren und JDK für den
 // Java-Sprachserver. Die Einstellungen gelten für alle Projekte; „OK“ speichert sie im Kern, der sie an alle Fenster
-// schickt. Das Feld „Terminal shell“ kommt mit Ticket 11.
+// schickt. Das Feld „Terminal shell“ zeigt die gefundenen Shells (Ticket 11).
 //
 // Wie die Rückfragen (popup/Dialogs.tsx): Der Fokus bleibt im Dialog, Escape schliesst auch ohne Fokus darin, Enter in
 // einem Feld bestätigt (auf einem Knopf wirkt der Knopf selbst).
 
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { MAX_FONT_SIZE, MIN_FONT_SIZE, type AppSettings, type CodiumApi, type JdkInfo } from '../shared/types';
+import { MAX_FONT_SIZE, MIN_FONT_SIZE, type AppSettings, type CodiumApi, type JdkInfo, type ShellId, type ShellInfo } from '../shared/types';
 import { errorText } from './errors';
 import { keepFocusInside } from './popup/Dialogs';
 
@@ -35,6 +35,8 @@ export function SettingsDialog({ api, settings, onClose }: SettingsDialogProps) 
   const [fontSize, setFontSize] = useState(String(settings.fontSize));
   const [jdk, setJdk] = useState(settings.jdk ?? NEWEST);
   const [jdks, setJdks] = useState<JdkState>({ status: 'loading' });
+  const [shell, setShell] = useState<string>(settings.terminalShell ?? DEFAULT_SHELL);
+  const [shells, setShells] = useState<{ shells: ShellInfo[]; standard: ShellId | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const previousFocus = useRef<Element | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -47,6 +49,12 @@ export function SettingsDialog({ api, settings, onClose }: SettingsDialogProps) 
     previousFocus.current = document.activeElement;
     firstField.current?.select();
     let live = true;
+    api.request('app.shells').then(
+      (result) => {
+        if (live) setShells(result);
+      },
+      () => {},
+    );
     api.request('app.jdks').then(
       (result) => {
         if (live) setJdks({ status: 'ready', jdks: result.jdks });
@@ -88,7 +96,13 @@ export function SettingsDialog({ api, settings, onClose }: SettingsDialogProps) 
     try {
       // Das JDK nur, wenn es geändert wurde: Ein eingestelltes, inzwischen fehlendes JDK lehnte der Kern sonst ab.
       const chosen = jdk === NEWEST ? null : jdk;
-      await api.request('app.updateSettings', { fontSize: size, ...(chosen !== settings.jdk ? { jdk: chosen } : {}) });
+      // Ebenso die Shell: nur, wenn sie geändert wurde.
+      const chosenShell = shell === DEFAULT_SHELL ? null : (shell as ShellId);
+      await api.request('app.updateSettings', {
+        fontSize: size,
+        ...(chosen !== settings.jdk ? { jdk: chosen } : {}),
+        ...(chosenShell !== settings.terminalShell ? { terminalShell: chosenShell } : {}),
+      });
       onClose();
     } catch (err) {
       setError(errorText(err));
@@ -141,6 +155,19 @@ export function SettingsDialog({ api, settings, onClose }: SettingsDialogProps) 
             />
             {!sizeValid && <p className="settings-error">{`A whole number from ${MIN_FONT_SIZE} to ${MAX_FONT_SIZE}.`}</p>}
           </div>
+          <label htmlFor={`${id}-shell`}>Terminal shell</label>
+          <div>
+            <select id={`${id}-shell`} className="settings-input" value={shell} onChange={(e) => setShell(e.target.value)}>
+              <option value={DEFAULT_SHELL}>{defaultShellLabel(shells)}</option>
+              {shells?.shells.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {`${s.name} – ${s.path}`}
+                </option>
+              ))}
+              {shells && shell !== DEFAULT_SHELL && !shells.shells.some((s) => s.id === shell) && <option value={shell}>{`${shell} (not found)`}</option>}
+            </select>
+            <p className="settings-hint">New terminals use this shell; open terminals keep theirs.</p>
+          </div>
           <label htmlFor={`${id}-jdk`}>JDK for Java language server</label>
           <div>
             <select id={`${id}-jdk`} className="settings-input" value={jdk} onChange={(e) => setJdk(e.target.value)}>
@@ -174,6 +201,15 @@ export function SettingsDialog({ api, settings, onClose }: SettingsDialogProps) 
     </div>,
     document.body,
   );
+}
+
+/** Wert der Auswahl für „Default“ (PowerShell 7, sonst Windows PowerShell). */
+const DEFAULT_SHELL = '';
+
+function defaultShellLabel(shells: { shells: ShellInfo[]; standard: ShellId | null } | null): string {
+  if (!shells) return 'Default';
+  const standard = shells.shells.find((s) => s.id === shells.standard);
+  return standard ? `Default (${standard.name})` : 'Default (none found)';
 }
 
 function jdkLabel(jdk: JdkInfo): string {

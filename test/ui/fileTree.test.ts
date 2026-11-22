@@ -268,11 +268,11 @@ describe('Dateibaum', () => {
       await page.keyboard.press('ArrowUp');
       expect(await selectedNames(page)).toEqual(['main']);
 
-      // Shift + F10 öffnet das Rechtsklick-Menü, „Open in Terminal“ ist bis zum Terminal inaktiv.
+      // Shift + F10 öffnet das Rechtsklick-Menü; „Open in Terminal“ ist aktiv (Ticket 11).
       await page.keyboard.press('Shift+F10');
       const menu = page.getByRole('menu', { name: 'Project Files', exact: true });
       await menu.waitFor();
-      expect(await menu.getByRole('menuitem', { name: 'Open in Terminal' }).getAttribute('aria-disabled')).toBe('true');
+      expect(await menu.getByRole('menuitem', { name: 'Open in Terminal' }).getAttribute('aria-disabled')).not.toBe('true');
       await page.keyboard.press('Escape');
       await menu.waitFor({ state: 'detached' });
     });

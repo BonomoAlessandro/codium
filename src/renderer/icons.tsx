@@ -122,6 +122,13 @@ export const HideIcon = () => (
   </Icon>
 );
 
+/** „+“ für ein weiteres Terminal. */
+export const PlusIcon = () => (
+  <Icon>
+    <path d="M8 3v10M3 8h10" />
+  </Icon>
+);
+
 export const CloseIcon = () => (
   <Icon size={12}>
     <path d="M4 4l8 8M12 4l-8 8" />
