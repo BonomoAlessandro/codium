@@ -1,5 +1,6 @@
 // Bündelt Main-, Preload- und Renderer-Code mit esbuild nach dist/, dazu Monacos allgemeinen Editor-Worker.
 import { build } from 'esbuild';
+import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, rmSync } from 'node:fs';
 
 const dev = process.argv.includes('--dev');
@@ -83,6 +84,9 @@ await Promise.all([
     format: 'iife',
   }),
 ]);
+
+// jdtls und Lombok für den Java-Sprachserver (Ticket 14), mit Prüfsummen; ohne Netz geht das Bauen weiter.
+execFileSync(process.execPath, ['scripts/fetch-java-tools.mjs'], { stdio: 'inherit' });
 
 mkdirSync('dist/renderer', { recursive: true });
 copyFileSync('src/renderer/index.html', 'dist/renderer/index.html');

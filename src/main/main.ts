@@ -12,6 +12,7 @@ import { ElectronWindowPort } from './electron/windowPort';
 import { isAllowedPageRequest } from './pageRequests';
 import { ripgrepPath } from './ripgrepPath';
 import { bundledTypeScript } from './typescriptPaths';
+import { javaTools } from './javaToolsPaths';
 import { NodeSystem } from './system/nodeSystem';
 import { readTestMode, TEST_HOOKS_GLOBAL, TEST_RECORDER_GLOBAL, TestRecorder, type TestHooks } from './testMode';
 
@@ -55,6 +56,11 @@ async function start(): Promise<void> {
   }
 }
 
+function javaToolsFor() {
+  if (testMode.hidden && process.env.CODIUM_TEST_JAVA !== '1') return null;
+  return javaTools(app.getAppPath(), app.isPackaged);
+}
+
 async function startCore(): Promise<void> {
   // Codium ist nur dunkel: Auch was Chromium und Electron selbst zeichnen (Bildlaufleisten, Entwicklerwerkzeuge,
   // Menü der Entwicklungsversion), folgt dem dunklen Design statt dem von Windows.
@@ -84,6 +90,11 @@ async function startCore(): Promise<void> {
     ripgrepPath: ripgrepPath(app.getAppPath(), app.isPackaged),
     // typescript-language-server läuft mit Electron als Node; ein installiertes Node.js ist nicht nötig.
     typescript: bundledTypeScript(app.getAppPath(), app.isPackaged, { execPath: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } }),
+    // jdtls und Lombok (Ticket 14); fehlen sie, gibt es keinen Java-Server. Im Testmodus nur mit CODIUM_TEST_JAVA=1:
+    // jdtls nähme sonst die Maven-Einstellungen des Nutzers und lüde Abhängigkeiten.
+    ...(javaToolsFor() ? { java: javaToolsFor()! } : {}),
+    // Im Testmodus eigene Maven-Einstellungen (Maven Central, lokales Repository im Test-Zwischenspeicher).
+    ...(testMode.hidden && process.env.CODIUM_TEST_MAVEN_SETTINGS ? { mavenUserSettings: process.env.CODIUM_TEST_MAVEN_SETTINGS } : {}),
     // Das README liegt im Paket neben dem App-Archiv (`extraResources`), unpaketiert im Projekt.
     readmePath: app.isPackaged ? path.join(process.resourcesPath, 'README.md') : path.join(app.getAppPath(), 'README.md'),
     ports: {

@@ -37,7 +37,17 @@ import type { Notify } from '../Notices';
 import { isDialogOpen, useAsk } from '../popup/Dialogs';
 import { Menu, type MenuAnchor, type MenuEntry } from '../popup/Menu';
 import { baseName, isSameOrInside, movedPath, pathKey, relativeLabel } from '../project/filePaths';
-import { DocumentSync, hasLanguageServer, isReadOnlyTarget, pathOfUri, registerLanguageFeatures } from '../language/languageClient';
+import {
+  DocumentSync,
+  hasLanguageServer,
+  isJdtPath,
+  isReadOnlyTarget,
+  jdtTitle,
+  languageOfPath,
+  pathOfUri,
+  registerLanguageFeatures,
+  uriOfPath,
+} from '../language/languageClient';
 import { MarkdownPreview } from '../markdown/MarkdownPreview';
 import { isMarkdownFile } from '../markdown/markdown';
 import { EDITOR_ACTIONS } from './editorActions';
@@ -417,10 +427,10 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
           return;
         }
         // Ein Modell pro Datei: Gibt es (wider Erwarten) schon eines unter dieser Adresse, weicht es dem neuen.
-        const uri = monaco.Uri.file(current);
+        const uri = uriOfPath(current);
         disposeModel(key);
         monaco.editor.getModel(uri)?.dispose();
-        const model = monaco.editor.createModel(content.text, languageOf(current), uri);
+        const model = monaco.editor.createModel(content.text, languageOfPath(current), uri);
         model.setEOL(content.lineEnding === 'CRLF' ? monaco.editor.EndOfLineSequence.CRLF : monaco.editor.EndOfLineSequence.LF);
         addModel(key, model, model.getAlternativeVersionId(), { initialCursor: cursor, diskStamp: content.stamp });
         // Der Kern merkt sich `large` (ab 5 MB): Sprach-Dienst (Ticket 12) und Änderungsbalken (Ticket 17) bleiben für
@@ -1366,10 +1376,11 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   useEffect(() => {
     const opener = monaco.editor.registerEditorOpener({
       openCodeEditor: (_source, resource, selectionOrPosition) => {
-        if (resource.scheme !== 'file') return false;
+        // Dateien und Klassendateien von jdtls (Ticket 14); andere Adressen öffnet Monaco nicht.
+        if (resource.scheme !== 'file' && resource.scheme !== 'jdt') return false;
         const model = monaco.editor.getModel(resource);
         const known = entryOfModel(model);
-        const filePath = (known && tabPath(known[0])) ?? windowsPath(resource.fsPath);
+        const filePath = (known && tabPath(known[0])) ?? (resource.scheme === 'jdt' ? pathOfUri(resource) : windowsPath(resource.fsPath));
         open(filePath, { focus: true, ...(selectionOrPosition ? { target: selectionOrPosition } : {}) });
         return true;
       },
@@ -1381,7 +1392,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   // gleichem Namen wie eine Datei mit dem Zusatz „Codium“ (Review von Ticket 09).
   const labels = useMemo(() => {
     const fileLabels = tabLabels(
-      tabs.map((t) => t.path).filter((p) => !isDocumentTab(p)),
+      tabs.map((t) => t.path).filter((p) => !isDocumentTab(p) && !isJdtPath(p)),
       project.path,
     );
     for (const tab of tabs) {
@@ -1390,11 +1401,17 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       const clash = tabs.some((t) => !isDocumentTab(t.path) && fileLabels.get(pathKey(t.path))?.name.toLowerCase() === name.toLowerCase());
       fileLabels.set(pathKey(tab.path), clash ? { name, hint: 'Codium' } : { name });
     }
+    // Klassendateien von jdtls (Ticket 14) heissen nach der Klasse.
+    for (const tab of tabs) if (isJdtPath(tab.path)) fileLabels.set(pathKey(tab.path), { name: jdtTitle(tab.path) });
     return fileLabels;
   }, [tabs, project.path]);
   /** Tooltip und Detail eines Tabs: der Pfad im Projekt, bei Dokumenten ein Hinweis. */
   const tabDescription = (tabPath: string) =>
-    isDocumentTab(tabPath) ? `${tabPath.slice(DOCUMENT_PREFIX.length)} – comes with Codium (read-only)` : relativeLabel(project.path, tabPath);
+    isDocumentTab(tabPath)
+      ? `${tabPath.slice(DOCUMENT_PREFIX.length)} – comes with Codium (read-only)`
+      : isJdtPath(tabPath)
+        ? `${jdtTitle(tabPath)} – library class (read-only)`
+        : relativeLabel(project.path, tabPath);
   const activeTab = active === null ? undefined : tabs.find((t) => pathKey(t.path) === pathKey(active));
   const showEditor = activeTab?.content?.kind === 'text';
   const activeKey = activeTab ? pathKey(activeTab.path) : null;

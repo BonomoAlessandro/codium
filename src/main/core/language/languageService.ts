@@ -1,9 +1,10 @@
-// Sprach-Dienst im Projekt-Kern (Ticket 12): startet Sprachserver, meldet ihnen Dokumente und Dateiänderungen und
-// bietet typisierte Methoden (Definition, Verwendungen, Implementierungen, Hover, Inhalt schreibgeschützter Ziele).
-// Java folgt mit Ticket 14, Vervollständigung und Symbolsuche mit Ticket 13. Lädt nie Electron.
+// Sprach-Dienst im Projekt-Kern (Tickets 12–14): startet Sprachserver (TypeScript/JavaScript, Java), meldet ihnen
+// Dokumente und Dateiänderungen und bietet typisierte Methoden (Definition, Verwendungen, Implementierungen, Hover,
+// Vervollständigung, semantische Token, Symbolsuche, Inhalt schreibgeschützter Ziele). Lädt nie Electron.
 //
-// - Höchstens ein Server je Sprache. Er startet beim Öffnen des Projekts, wenn Kennzeichen da sind (tsconfig.json,
-//   jsconfig.json, package.json), sonst mit dem ersten passenden Dokument.
+// - Höchstens ein Server je Sprache. Er startet beim Öffnen des Projekts, wenn Kennzeichen da sind (TypeScript:
+//   tsconfig.json, jsconfig.json, package.json; Java: Maven- oder Gradle-Baudatei), sonst mit dem ersten passenden
+//   Dokument. Java startet nur mit einem JDK ab 25; ohne gibt es keinen Java-Server (kein Absturz).
 // - Stürzt er ab, startet er neu, höchstens dreimal in drei Minuten; danach erscheint ein Fehlerhinweis.
 // - Beim Abbau beendet der Dienst alle Server samt Kindprozessen.
 
@@ -18,14 +19,17 @@ import {
   SEMANTIC_TOKEN_TYPES,
   type CommandResult,
   type CompletionEntry,
+  type JdkInfo,
   type SymbolMatch,
   type CodeLocation, type CommandParams, type LanguageDiagnostic, type TextRange } from '../../../shared/types';
 import { descendantsOf, isAlive, killProcessTree } from '../processTree';
 import type { Progress } from '../progress';
 import type { ProjectCore } from '../projectCore';
 import { CommandError } from '../router';
+import { JAVA_MARKERS, isJavaFile, javaLaunch, type BundledJava } from './javaServer';
 import { LspConnection } from './lspConnection';
 import { TYPESCRIPT_MARKERS, typescriptLanguageId, typescriptLaunch, type BundledTypeScript, type TypeScriptLaunch } from './typescriptServer';
+export type { BundledJava } from './javaServer';
 
 /** Neustarts nach Abstürzen höchstens so oft im Zeitfenster. */
 export const MAX_RESTARTS = 3;
@@ -40,11 +44,33 @@ export interface LanguageServiceOptions {
   env?: NodeJS.ProcessEnv;
   /** Uhr für die Neustart-Regel (Tests). */
   now?: () => number;
+  /** jdtls und Lombok, das JDK und Arbeitsordner; ohne Angabe gibt es keinen Java-Server. */
+  java?: {
+    bundled: BundledJava;
+    /** Das JDK für jdtls (eingestellt oder das neueste ab 25); `null` ohne passendes. */
+    jdk: () => JdkInfo | null;
+    jdks: () => JdkInfo[];
+    /** Ordner für Arbeitsdaten und Konfiguration von jdtls dieses Projekts. */
+    dataDir: string;
+    mavenUserSettings?: string;
+  };
   log: (message: string) => void;
+}
+
+type ServerId = 'typescript' | 'java';
+
+/** Wie ein Server startet. */
+interface Launch {
+  kind: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  initializationOptions?: unknown;
 }
 
 interface OpenDocument {
   path: string;
+  server: ServerId;
   languageId: string;
   text: string;
   version: number;
@@ -52,9 +78,16 @@ interface OpenDocument {
 
 /** Ein laufender Server einer Sprache. */
 class Server {
+  constructor(
+    readonly id: ServerId,
+    /** Name in Meldungen, etwa „TypeScript“. */
+    readonly label: string,
+  ) {}
   connection: LspConnection | null = null;
   ready: Promise<boolean> | null = null;
-  launch: TypeScriptLaunch | null = null;
+  launch: Launch | null = null;
+  /** Java: „Importing Java project…“ bis jdtls bereit ist. */
+  importing: Progress | null = null;
   pullDiagnostics = false;
   /** Legende der semantischen Token des Servers; `null`, wenn er keine liefert. */
   tokenLegend: { types: string[]; modifiers: string[] } | null = null;
@@ -69,7 +102,10 @@ class Server {
 }
 
 export class LanguageService {
-  private readonly typescript = new Server();
+  private readonly servers: Record<ServerId, Server> = { typescript: new Server('typescript', 'TypeScript'), java: new Server('java', 'Java') };
+  private get typescript(): Server {
+    return this.servers.typescript;
+  }
   private readonly documents = new Map<string, OpenDocument>();
   /** Dokumente, die der Dienst selbst geöffnet hat (Anfragen auf Dateien, die in der Oberfläche nicht offen sind). */
   private readonly implicit = new Set<string>();
@@ -103,6 +139,32 @@ export class LanguageService {
     });
     // Mit Kennzeichen startet der Server gleich.
     if (TYPESCRIPT_MARKERS.some((m) => fs.existsSync(path.join(project.path, m)))) void this.ensure(this.typescript);
+    if (this.hasJavaMarkers()) void this.ensure(this.servers.java);
+  }
+
+  private hasJavaMarkers(): boolean {
+    return JAVA_MARKERS.some((m) => fs.existsSync(path.join(this.project.path, m)));
+  }
+
+  /** Prozessnummer des Java-Servers (Tests); `undefined`, wenn keiner läuft. */
+  get javaPid(): number | undefined {
+    const java = this.servers.java;
+    return java.connection?.running ? java.connection.pid : undefined;
+  }
+
+  /** Ob jdtls fertig importiert hat (Tests). */
+  get javaReady(): boolean {
+    return this.servers.java.connection?.running === true && this.servers.java.importing === null && this.servers.java.initialized;
+  }
+
+  /** Ein anderes JDK in den Einstellungen: laufenden Java-Server neu starten (Ticket 14). */
+  async restartJava(): Promise<void> {
+    const java = this.servers.java;
+    await this.stop(java);
+    java.gaveUp = false;
+    java.crashes = [];
+    if (this.disposed) return;
+    if (this.hasJavaMarkers() || [...this.documents.values()].some((d) => d.server === 'java')) await this.ensure(java);
   }
 
   /** Prozessnummer des TypeScript-Servers (Tests); `undefined`, wenn keiner läuft. */
@@ -112,7 +174,7 @@ export class LanguageService {
 
   /** Welcher TypeScript-Server läuft (Tests). */
   get typescriptKind(): TypeScriptLaunch['kind'] | null {
-    return this.typescript.connection?.running ? (this.typescript.launch?.kind ?? null) : null;
+    return this.typescript.connection?.running ? ((this.typescript.launch?.kind as TypeScriptLaunch['kind'] | undefined) ?? null) : null;
   }
 
   // ---------- Dokumente ----------
@@ -121,13 +183,14 @@ export class LanguageService {
     const p = params as Partial<CommandParams<'language.didOpen'>>;
     const file = this.project.files.lexicalPath(p?.path);
     if (typeof p.text !== 'string' || typeof p.version !== 'number') throw new CommandError('Text and version are expected.', ErrorCode.invalidParams);
-    const languageId = typescriptLanguageId(file);
-    if (!languageId) return;
-    const doc = { path: file, languageId, text: p.text, version: p.version };
+    const languageId = languageIdOf(file);
+    const id = serverIdOf(file);
+    if (!languageId || !id) return;
+    const doc = { path: file, server: id, languageId, text: p.text, version: p.version };
     // Hatte der Dienst die Datei schon selbst geöffnet (für eine Anfrage), gilt jetzt der Text der Oberfläche.
     this.implicit.delete(key(file));
     this.documents.set(key(file), doc);
-    const server = this.typescript;
+    const server = this.servers[id];
     if (server.initialized && server.sent.has(key(file))) {
       server.connection?.notify('textDocument/didChange', { textDocument: { uri: uriOf(file), version: doc.version }, contentChanges: [{ text: doc.text }] });
       this.scheduleAllDiagnostics();
@@ -163,7 +226,7 @@ export class LanguageService {
     if (!doc || typeof p.text !== 'string' || typeof p.version !== 'number') return;
     doc.text = p.text;
     doc.version = p.version;
-    const server = this.typescript;
+    const server = this.servers[doc.server];
     if (server.initialized && server.sent.has(key(file))) {
       server.connection?.notify('textDocument/didChange', {
         textDocument: { uri: uriOf(file), version: doc.version },
@@ -181,7 +244,7 @@ export class LanguageService {
     this.documents.delete(key(file));
     clearTimeout(this.diagnosticTimers.get(key(file)));
     this.diagnosticTimers.delete(key(file));
-    this.sendClose(this.typescript, doc);
+    this.sendClose(this.servers[doc.server], doc);
   }
 
   // ---------- Typisierte Methoden ----------
@@ -280,7 +343,8 @@ export class LanguageService {
     // Auch in Bibliothekszielen ausserhalb des Projekts (wie die anderen Anfragen).
     const file = this.position({ ...(params as object), line: 0, character: 0 }).file;
     const connection = await this.connectionFor(file);
-    const legend = this.typescript.tokenLegend;
+    const id = serverIdOf(file);
+    const legend = id ? this.servers[id].tokenLegend : null;
     if (!connection || !legend) return null;
     const result = await connection
       .request<{ data?: number[] } | null>('textDocument/semanticTokens/full', { textDocument: { uri: uriOf(file) } })
@@ -294,10 +358,14 @@ export class LanguageService {
     if (typeof p?.query !== 'string' || (p.kinds !== 'types' && p.kinds !== 'all')) {
       throw new CommandError('A query and kinds are expected.', ErrorCode.invalidParams);
     }
-    // Über alle Sprachserver des Projekts (bis Ticket 14 nur TypeScript); einer, der nicht läuft, startet dafür nicht.
-    const server = this.typescript;
-    if (!server.connection?.running || !(await server.ready)) return [];
-    const result = await server.connection?.request<unknown[] | null>('workspace/symbol', { query: p.query }).catch(() => null);
+    // Über alle Sprachserver des Projekts; einer, der nicht läuft, startet dafür nicht.
+    const results = await Promise.all(
+      Object.values(this.servers).map(async (server) => {
+        if (!server.connection?.running || !(await server.ready)) return [];
+        return (await server.connection?.request<unknown[] | null>('workspace/symbol', { query: p.query }).catch(() => null)) ?? [];
+      }),
+    );
+    const result = results.flat();
     const out: SymbolMatch[] = [];
     for (const raw of (result ?? []) as Array<{ name?: string; kind?: number; containerName?: string; location?: { uri?: string; range?: TextRange } }>) {
       if (typeof raw.name !== 'string' || typeof raw.kind !== 'number' || !raw.location?.uri?.startsWith('file:')) continue;
@@ -334,7 +402,17 @@ export class LanguageService {
   /** Inhalt eines schreibgeschützten Ziels: unter node_modules im Projekt oder ein vom Server geliefertes Ziel. */
   async readTarget(params: CommandParams<'language.readTarget'>): Promise<{ text: string }> {
     const value = (params as Partial<CommandParams<'language.readTarget'>>)?.path;
-    if (typeof value !== 'string' || !path.isAbsolute(value)) throw new CommandError('An absolute path is expected.', ErrorCode.invalidParams);
+    if (typeof value !== 'string' || (!path.isAbsolute(value) && !isJdtUri(value))) throw new CommandError('An absolute path is expected.', ErrorCode.invalidParams);
+    // Klassendateien (JDK, Bibliotheken) über die Erweiterung von jdtls für Klasseninhalte (Ticket 14).
+    if (isJdtUri(value)) {
+      const connection = this.servers.java.connection;
+      if (!this.outsideTargets.has(key(value)) || !connection?.running) {
+        throw new CommandError(`Not a target of the language server: ${value}`, ErrorCode.pathOutsideProject, { path: value });
+      }
+      const text = await connection.request<string | null>('java/classFileContents', { uri: value }).catch(() => null);
+      if (typeof text !== 'string') throw new CommandError(`The class file could not be read: ${value}`, ErrorCode.fileNotFound, { path: value });
+      return { text };
+    }
     const file = path.normalize(value);
     let allowed = this.outsideTargets.has(key(file));
     if (!allowed && file.toLowerCase().includes(`${path.sep}node_modules${path.sep}`)) {
@@ -355,8 +433,9 @@ export class LanguageService {
   private position(params: unknown): { file: string; position: { line: number; character: number } } {
     const p = params as Partial<{ path: unknown; line: unknown; character: unknown }> | undefined;
     // Auch in Bibliothekszielen ausserhalb des Projekts (etwa lib.dom.d.ts) gehen weitere Sprünge (Review von Ticket 12).
-    const outside = typeof p?.path === 'string' && path.isAbsolute(p.path) && this.outsideTargets.has(key(path.normalize(p.path)));
-    const file = outside ? path.normalize(p!.path as string) : this.project.files.lexicalPath(p?.path);
+    const jdt = typeof p?.path === 'string' && isJdtUri(p.path) && this.outsideTargets.has(key(p.path));
+    const outside = !jdt && typeof p?.path === 'string' && path.isAbsolute(p.path) && this.outsideTargets.has(key(path.normalize(p.path)));
+    const file = jdt ? (p!.path as string) : outside ? path.normalize(p!.path as string) : this.project.files.lexicalPath(p?.path);
     if (!isCount(p?.line) || !isCount(p?.character)) throw new CommandError('A position is expected.', ErrorCode.invalidParams);
     return { file, position: { line: p.line, character: p.character } };
   }
@@ -371,7 +450,7 @@ export class LanguageService {
     for (const item of list as Array<{ uri?: string; range?: TextRange; targetUri?: string; targetSelectionRange?: TextRange; targetRange?: TextRange }>) {
       const uri = item.targetUri ?? item.uri;
       const range = item.targetSelectionRange ?? item.range ?? item.targetRange;
-      if (!uri || !range || !uri.startsWith('file:')) continue;
+      if (!uri || !range || (!uri.startsWith('file:') && !isJdtUri(uri))) continue;
       const file = pathOf(uri);
       const readOnly = this.isLibrary(file);
       if (readOnly && !this.isInsideProject(file)) this.outsideTargets.add(key(file));
@@ -381,6 +460,7 @@ export class LanguageService {
   }
 
   private isInsideProject(file: string): boolean {
+    if (isJdtUri(file)) return false;
     const root = key(this.project.path);
     return key(file).startsWith(root + path.sep) || key(file) === root;
   }
@@ -391,18 +471,20 @@ export class LanguageService {
 
   /** Der Server für eine Datei, gestartet und bereit; `null`, wenn es keinen gibt. */
   private async connectionFor(file: string): Promise<LspConnection | null> {
-    const languageId = typescriptLanguageId(file);
-    if (!languageId || !(await this.ensure(this.typescript))) return null;
-    const connection = this.typescript.connection;
+    const languageId = languageIdOf(file);
+    const id = serverIdOf(file);
+    if (!languageId || !id || !(await this.ensure(this.servers[id]))) return null;
+    const connection = this.servers[id].connection;
+    if (isJdtUri(file)) return connection;
     // tsserver (TypeScript bis 6) beantwortet Anfragen nur für offene Dokumente: sonst mit dem Text von der Festplatte.
     // Dateien ab 5 MB meldet die Oberfläche bewusst nicht; dann auch hier nicht.
     if (connection && !this.documents.has(key(file))) {
       const size = (await fs.promises.stat(file).catch(() => null))?.size ?? LARGE_FILE_BYTES;
       const text = size < LARGE_FILE_BYTES ? await fs.promises.readFile(file, 'utf8').catch(() => null) : null;
       if (text !== null && !this.documents.has(key(file))) {
-        this.documents.set(key(file), { path: file, languageId, text, version: 0 });
+        this.documents.set(key(file), { path: file, server: id, languageId, text, version: 0 });
         this.implicit.add(key(file));
-        this.sendOpen(this.typescript, file);
+        this.sendOpen(this.servers[id], file);
       }
     }
     return connection;
@@ -415,7 +497,8 @@ export class LanguageService {
   }
 
   private scheduleDiagnostics(file: string): void {
-    if (!this.typescript.pullDiagnostics) return;
+    const doc = this.documents.get(key(file));
+    if (!doc || !this.servers[doc.server].pullDiagnostics) return;
     const k = key(file);
     clearTimeout(this.diagnosticTimers.get(k));
     this.diagnosticTimers.set(
@@ -428,8 +511,8 @@ export class LanguageService {
   }
 
   private async pullDiagnostics(file: string): Promise<void> {
-    const connection = this.typescript.connection;
     const doc = this.documents.get(key(file));
+    const connection = doc ? this.servers[doc.server].connection : null;
     if (!connection || !doc) return;
     const version = doc.version;
     const report = await connection
@@ -461,15 +544,19 @@ export class LanguageService {
   // ---------- Dateiänderungen ----------
 
   private notifyWatched(changes: Array<{ path: string; type: number }>): void {
-    const connection = this.typescript.connection;
-    if (!connection?.running || changes.length === 0) return;
+    const connections = Object.values(this.servers)
+      .map((s) => s.connection)
+      .filter((c): c is LspConnection => c?.running === true);
+    if (connections.length === 0 || changes.length === 0) return;
     // Selbst geöffnete Dokumente (siehe `connectionFor`) stimmen nach einer Änderung auf der Festplatte nicht mehr:
     // schliessen, dann liest der Server die Datei selbst (oder weiss, dass sie fehlt).
     for (const change of changes) {
       const k = key(change.path);
       this.closeImplicit((d) => d === k || d.startsWith(k + path.sep));
     }
-    connection.notify('workspace/didChangeWatchedFiles', { changes: changes.map((c) => ({ uri: uriOf(c.path), type: c.type })) });
+    for (const connection of connections) {
+      connection.notify('workspace/didChangeWatchedFiles', { changes: changes.map((c) => ({ uri: uriOf(c.path), type: c.type })) });
+    }
     // Andere Dateien können die Fehler der offenen ändern.
     this.scheduleAllDiagnostics();
   }
@@ -480,7 +567,7 @@ export class LanguageService {
       const doc = this.documents.get(k);
       this.implicit.delete(k);
       this.documents.delete(k);
-      if (doc) this.sendClose(this.typescript, doc);
+      if (doc) this.sendClose(this.servers[doc.server], doc);
     }
   }
 
@@ -488,19 +575,49 @@ export class LanguageService {
 
   /** Startet den Server, falls nötig, und wartet, bis er bereit ist. `false`, wenn es keinen gibt. */
   private ensure(server: Server): Promise<boolean> {
-    if (this.disposed || server.gaveUp || !this.options.typescript) return Promise.resolve(false);
+    if (this.disposed || server.gaveUp || !this.available(server)) return Promise.resolve(false);
     if (server.connection?.running && server.ready) return server.ready;
     server.ready = this.start(server);
     return server.ready;
   }
 
+  /** Ob es für einen Server alles Nötige gibt; Java ohne JDK ab 25 oder ohne jdtls nicht (das ist kein Absturz). */
+  private available(server: Server): boolean {
+    if (server.id === 'typescript') return this.options.typescript !== undefined;
+    const java = this.options.java;
+    return java !== undefined && fs.existsSync(java.bundled.jdtls) && java.jdk() !== null;
+  }
+
+  private launchFor(server: Server): Launch | null {
+    if (server.id === 'typescript') return typescriptLaunch(this.project.path, this.options.typescript!);
+    const java = this.options.java!;
+    const jdk = java.jdk();
+    if (!jdk) return null;
+    return javaLaunch(this.project.path, {
+      bundled: java.bundled,
+      jdk,
+      jdks: java.jdks(),
+      dataDir: java.dataDir,
+      ...(java.mavenUserSettings ? { mavenUserSettings: java.mavenUserSettings } : {}),
+    });
+  }
+
   private async start(server: Server): Promise<boolean> {
-    const launch = typescriptLaunch(this.project.path, this.options.typescript!);
+    let launch: Launch | null;
+    try {
+      launch = this.launchFor(server);
+    } catch (err) {
+      this.options.log(`${server.label}-Sprachserver lässt sich nicht starten: ${(err as Error).message}`);
+      return false;
+    }
+    if (!launch) return false;
     server.launch = launch;
     server.stopping = false;
     server.initialized = false;
     server.sent.clear();
-    const work = this.project.progress.begin('Starting TypeScript language server…');
+    const work = this.project.progress.begin(server.id === 'java' ? 'Importing Java project…' : 'Starting TypeScript language server…');
+    // Java: Der Import läuft nach `initialize` weiter, bis jdtls „ServiceReady“ meldet.
+    if (server.id === 'java') server.importing = work;
     const connection = new LspConnection({
       command: launch.command,
       args: launch.args,
@@ -537,12 +654,15 @@ export class LanguageService {
       this.scheduleAllDiagnostics();
       return !this.disposed;
     } catch (err) {
-      this.options.log(`TypeScript-Sprachserver startet nicht: ${(err as Error).message}`);
+      this.options.log(`${server.label}-Sprachserver startet nicht: ${(err as Error).message}`);
       // Hängt er oder lehnt er ab, läuft er womöglich weiter: beenden, das zählt wie ein Absturz (Review von Ticket 12).
       if (connection.running && connection.pid !== undefined) await killProcessTree(connection.pid);
       return false;
     } finally {
-      work.end();
+      if (server.id !== 'java' || !server.initialized) {
+        work.end();
+        if (server.importing === work) server.importing = null;
+      }
     }
   }
 
@@ -562,13 +682,22 @@ export class LanguageService {
       if (p.uri?.startsWith('file:')) this.emitDiagnostics(pathOf(p.uri), p.diagnostics ?? []);
       return;
     }
+    // jdtls: Stand des Imports; danach ist der Server bereit.
+    if (method === 'language/status') {
+      const type = (params as { type?: string } | undefined)?.type;
+      if ((type === 'ServiceReady' || type === 'Error') && server.importing) {
+        server.importing.end();
+        server.importing = null;
+      }
+      return;
+    }
     if (method === '$/progress') {
       const p = params as { token?: string | number; value?: { kind?: string; title?: string; message?: string; percentage?: number } };
       const token = String(p.token);
       const value = p.value ?? {};
       if (value.kind === 'begin') {
         server.progress.get(token)?.end();
-        server.progress.set(token, this.project.progress.begin(value.title ?? 'TypeScript', percent(value.percentage)));
+        server.progress.set(token, this.project.progress.begin(value.title ?? server.label, percent(value.percentage)));
       } else if (value.kind === 'report') {
         server.progress.get(token)?.report({ ...(value.percentage !== undefined ? { fraction: percent(value.percentage) } : {}) });
       } else if (value.kind === 'end') {
@@ -582,23 +711,28 @@ export class LanguageService {
     for (const p of server.progress.values()) p.end();
     server.progress.clear();
     if (server.connection !== connection) return;
+    server.importing?.end();
+    server.importing = null;
     server.connection = null;
     server.ready = null;
     server.initialized = false;
     server.sent.clear();
     // Selbst geöffnete Dokumente öffnet der neue Server bei Bedarf wieder, mit dem dann aktuellen Text.
-    for (const k of this.implicit) this.documents.delete(k);
-    this.implicit.clear();
+    for (const k of [...this.implicit]) {
+      if (this.documents.get(k)?.server !== server.id) continue;
+      this.documents.delete(k);
+      this.implicit.delete(k);
+    }
     if (server.stopping || this.disposed) return;
     // Abgestürzt: neu starten, höchstens dreimal in drei Minuten.
     const now = this.now();
     server.crashes = server.crashes.filter((t) => now - t < RESTART_WINDOW_MS);
-    this.options.log(`TypeScript-Sprachserver abgestürzt (Exit-Code ${code}).`);
+    this.options.log(`${server.label}-Sprachserver abgestürzt (Exit-Code ${code}).`);
     if (server.crashes.length >= MAX_RESTARTS) {
       server.gaveUp = true;
       this.project.notify({
         level: 'error',
-        text: `The TypeScript language server stopped ${MAX_RESTARTS + 1} times within three minutes and was not restarted. Reopen the project to try again.`,
+        text: `The ${server.label} language server stopped ${MAX_RESTARTS + 1} times within three minutes and was not restarted. Reopen the project to try again.`,
       });
       return;
     }
@@ -610,7 +744,7 @@ export class LanguageService {
     this.disposed = true;
     for (const timer of this.diagnosticTimers.values()) clearTimeout(timer);
     this.diagnosticTimers.clear();
-    await this.stop(this.typescript);
+    await Promise.all(Object.values(this.servers).map((server) => this.stop(server)));
   }
 
   /** Beendet einen Server geordnet (shutdown, exit), nach kurzer Frist samt Kindprozessen hart. */
@@ -618,6 +752,8 @@ export class LanguageService {
     const connection = server.connection;
     if (!connection) return;
     server.stopping = true;
+    server.importing?.end();
+    server.importing = null;
     const pid = connection.pid;
     // typescript-language-server startet tsserver als Kinder; sie enden mit ihm, aber erst einen Augenblick später und
     // halten bis dahin den Projektordner (Review von Ticket 13). Vorher erfassen, nachher auf sie warten.
@@ -734,8 +870,11 @@ function completionEntry(raw: RawCompletion, id: number): CompletionEntry {
   };
 }
 
-/** Andere Namen derselben Art in den Legenden der Server: typescript-language-server sagt `member` für Methoden. */
-const TOKEN_TYPE_ALIASES: Record<string, string> = { member: 'method' };
+/**
+ * Andere Namen derselben Art in den Legenden der Server: typescript-language-server sagt `member` für Methoden, jdtls
+ * hat eigene Arten für Records und Attribute von Annotationen (Ticket 14).
+ */
+const TOKEN_TYPE_ALIASES: Record<string, string> = { member: 'method', record: 'class', recordComponent: 'property', annotationMember: 'method' };
 
 function markdownOf(value: unknown): string | undefined {
   if (typeof value === 'string') return value || undefined;
@@ -789,16 +928,34 @@ function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
 
+/** Klassendateien liefert jdtls als `jdt://contents/…`; sie sind keine Pfade (Ticket 14). */
+export function isJdtUri(value: string): boolean {
+  return value.startsWith('jdt:');
+}
+
+function serverIdOf(file: string): ServerId | null {
+  if (typescriptLanguageId(file)) return 'typescript';
+  if (isJavaFile(file) || isJdtUri(file)) return 'java';
+  return null;
+}
+
+function languageIdOf(file: string): string | null {
+  return typescriptLanguageId(file) ?? (isJavaFile(file) || isJdtUri(file) ? 'java' : null);
+}
+
 function key(file: string): string {
+  if (isJdtUri(file)) return file.toLowerCase();
   return path.normalize(file).toLowerCase();
 }
 
 export function uriOf(file: string): string {
+  if (isJdtUri(file)) return file;
   return pathToFileURL(file).href;
 }
 
 /** Pfad einer file:-Adresse in der Schreibweise von Windows (Laufwerksbuchstabe gross). */
 export function pathOf(uri: string): string {
+  if (isJdtUri(uri)) return uri;
   const file = path.normalize(fileURLToPath(uri));
   return /^[a-z]:/.test(file) ? file[0].toUpperCase() + file.slice(1) : file;
 }

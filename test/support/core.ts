@@ -3,6 +3,7 @@
 import * as path from 'node:path';
 import { ripgrepPath } from '../../src/main/ripgrepPath';
 import { AppCore } from '../../src/main/core/appCore';
+import type { BundledJava } from '../../src/main/core/language/javaServer';
 import type { BundledTypeScript } from '../../src/main/core/language/typescriptServer';
 import { createFakePorts, FakeEventSink, type FakePorts, type FakeSystemOptions } from './fakePorts';
 import { beforeTempDirRemoval } from './tempDir';
@@ -39,6 +40,9 @@ export interface TestCoreOptions {
   typescript?: BundledTypeScript;
   /** Uhr des Sprach-Dienstes für die Neustart-Regel. */
   languageClock?: () => number;
+  /** jdtls und Lombok (nur im langsamen Lauf). */
+  java?: BundledJava;
+  mavenUserSettings?: string;
 }
 
 /** Erzeugt einen App-Kern auf einem Datenordner, mit nachgemachten Ports und sofortigem Schreiben. */
@@ -61,6 +65,8 @@ export function createTestCore(dataDir: string, options: TestCoreOptions = {}): 
     ...(options.windowsConpty ? { windowsConpty: true } : {}),
     ...(options.typescript ? { typescript: options.typescript } : {}),
     ...(options.languageClock ? { languageClock: options.languageClock } : {}),
+    ...(options.java ? { java: options.java } : {}),
+    ...(options.mavenUserSettings ? { mavenUserSettings: options.mavenUserSettings } : {}),
     folderQueryTimeoutMs: options.folderQueryTimeoutMs,
     log: (message) => logs.push(message),
   });

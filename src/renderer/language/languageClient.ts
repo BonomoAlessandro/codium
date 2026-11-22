@@ -19,9 +19,36 @@ import {
 import { languageOf, monaco } from '../editor/monaco';
 
 /** Monaco-Sprachen, für die der Sprach-Dienst einen Server hat. */
-export const SERVER_LANGUAGES = ['typescript', 'javascript'];
+export const SERVER_LANGUAGES = ['typescript', 'javascript', 'java'];
 
-const SERVER_EXTENSIONS = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/i;
+const SERVER_EXTENSIONS = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|java)$/i;
+
+/** Klassendateien (JDK, Bibliotheken) liefert jdtls als `jdt://contents/…` (Ticket 14); sie sind keine Pfade. */
+export function isJdtPath(filePath: string): boolean {
+  return filePath.startsWith('jdt:');
+}
+
+/** Die Adressen der Modelle von Klassendateien und ihr ursprünglicher Text (Monaco kodiert Adressen um). */
+const jdtPaths = new Map<string, string>();
+
+/** Die Adresse eines Modells für einen Pfad: `file:` oder eine Klassendatei von jdtls. */
+export function uriOfPath(filePath: string): monaco.Uri {
+  if (!isJdtPath(filePath)) return monaco.Uri.file(filePath);
+  const uri = monaco.Uri.parse(filePath);
+  jdtPaths.set(uri.toString(), filePath);
+  return uri;
+}
+
+/** Die Sprache eines Pfads; Klassendateien sind Java. */
+export function languageOfPath(filePath: string): string {
+  return isJdtPath(filePath) ? 'java' : languageOf(filePath);
+}
+
+/** Name einer Klassendatei für den Tab, etwa „String.class“. */
+export function jdtTitle(filePath: string): string {
+  const name = /\/([^/?]+?)\.(?:class|java)(?:\?|$)/.exec(filePath)?.[1] ?? 'Class';
+  return `${name}.class`;
+}
 
 /** Ob der Sprach-Dienst eine Datei versteht. */
 export function hasLanguageServer(filePath: string): boolean {
@@ -30,6 +57,7 @@ export function hasLanguageServer(filePath: string): boolean {
 
 /** Pfad eines Modells in der Schreibweise von Windows. */
 export function pathOfUri(uri: monaco.Uri): string {
+  if (uri.scheme !== 'file') return jdtPaths.get(uri.toString()) ?? uri.toString(true);
   const fsPath = uri.fsPath;
   return /^[a-z]:/.test(fsPath) ? fsPath[0].toUpperCase() + fsPath.slice(1) : fsPath;
 }
@@ -88,7 +116,7 @@ export function registerLanguageFeatures(api: CodiumApi, beforeRequest: (filePat
     dropUnusedPreviews();
     const result: monaco.languages.Location[] = [];
     for (const location of locations) {
-      const uri = monaco.Uri.file(location.path);
+      const uri = uriOfPath(location.path);
       if (location.readOnly) readOnlyTargets.add(location.path.toLowerCase());
       if (!monaco.editor.getModel(uri)) {
         try {
@@ -97,7 +125,7 @@ export function registerLanguageFeatures(api: CodiumApi, beforeRequest: (filePat
             : await readText(api, location.path);
           if (text === null) continue;
           if (!monaco.editor.getModel(uri)) {
-            const model = monaco.editor.createModel(text, languageOf(location.path), uri);
+            const model = monaco.editor.createModel(text, languageOfPath(location.path), uri);
             previews.add(model);
             model.onWillDispose(() => previews.delete(model));
           }

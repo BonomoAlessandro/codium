@@ -188,6 +188,110 @@ if (existsSync(exe) && existsSync(tsLanguageServer)) {
   }
   check(/^\d+\.\d+\.\d+$/.test(version), `typescript-language-server startet mit Electron als Node (${version})`);
 }
+// jdtls und Lombok liegen ausserhalb des App-Archivs (Ticket 14); jdtls startet dort mit Lombok als Java-Agent und
+// beantwortet `initialize`. Der Start braucht ein JDK ab 25; ohne wird nur das Vorhandensein geprüft.
+const jdtlsDir = path.join(unpacked, 'resources', 'jdtls');
+const lombokJar = path.join(unpacked, 'resources', 'lombok.jar');
+check(existsSync(path.join(jdtlsDir, 'plugins')) && existsSync(path.join(jdtlsDir, 'config_win')), 'jdtls liegt ausserhalb des App-Archivs');
+check(existsSync(lombokJar), 'Lombok liegt ausserhalb des App-Archivs');
+const jdk25 = findJdk25();
+if (!jdk25) {
+  console.log('---- jdtls-Start übersprungen: kein JDK 25 gefunden');
+} else if (existsSync(path.join(jdtlsDir, 'plugins'))) {
+  const result = await jdtlsProbe(jdk25).catch((err) => `Fehler: ${err.message}`);
+  check(result === 'ok', `jdtls startet im Paket mit Lombok (${result})`);
+}
+
+/** Ein JDK ab 25 an den üblichen Orten (wie die JDK-Erkennung, nur grob). */
+function findJdk25() {
+  const roots = [process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs'), process.env.ProgramFiles, path.join(os.homedir(), '.jdks')].filter(Boolean);
+  for (const root of roots) {
+    for (const vendor of safeList(root)) {
+      for (const dir of [path.join(root, vendor), ...safeList(path.join(root, vendor)).map((d) => path.join(root, vendor, d))]) {
+        const release = path.join(dir, 'release');
+        if (!existsSync(release)) continue;
+        const major = Number(/JAVA_VERSION="(\d+)/.exec(readFileSync(release, 'utf8'))?.[1] ?? 0);
+        if (major >= 25 && existsSync(path.join(dir, 'bin', 'java.exe'))) return dir;
+      }
+    }
+  }
+  return null;
+}
+
+function safeList(dir) {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return [];
+  }
+}
+
+/** Startet jdtls aus dem Paket (mit eigener Kopie der Konfiguration und Temp-Arbeitsdaten) und fragt `initialize`. */
+async function jdtlsProbe(jdk) {
+  const { spawn } = await import('node:child_process');
+  const { mkdtempSync, cpSync, rmSync } = await import('node:fs');
+  const { pathToFileURL } = await import('node:url');
+  const work = mkdtempSync(path.join(os.tmpdir(), 'codium-jdtls-'));
+  cpSync(path.join(jdtlsDir, 'config_win'), path.join(work, 'config'), { recursive: true });
+  const launcher = readdirSync(path.join(jdtlsDir, 'plugins')).find((f) => /^org\.eclipse\.equinox\.launcher_.*\.jar$/.test(f));
+  const child = spawn(
+    path.join(jdk, 'bin', 'java.exe'),
+    [
+      '-Declipse.application=org.eclipse.jdt.ls.core.id1',
+      '-Dosgi.bundles.defaultStartLevel=4',
+      '-Declipse.product=org.eclipse.jdt.ls.core.product',
+      `-javaagent:${lombokJar}`,
+      '--add-modules=ALL-SYSTEM',
+      '-jar',
+      path.join(jdtlsDir, 'plugins', launcher),
+      '-configuration',
+      path.join(work, 'config'),
+      '-data',
+      path.join(work, 'data'),
+    ],
+    { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true },
+  );
+  let buffer = Buffer.alloc(0);
+  const waiting = new Map();
+  child.stdout.on('data', (chunk) => {
+    buffer = Buffer.concat([buffer, chunk]);
+    for (;;) {
+      const end = buffer.indexOf('\r\n\r\n');
+      if (end < 0) return;
+      const length = Number(/Content-Length: (\d+)/i.exec(buffer.subarray(0, end).toString())[1]);
+      if (buffer.length < end + 4 + length) return;
+      const message = JSON.parse(buffer.subarray(end + 4, end + 4 + length).toString());
+      buffer = buffer.subarray(end + 4 + length);
+      if (message.id !== undefined && message.method === undefined) waiting.get(message.id)?.(message);
+      else if (message.id !== undefined) send({ jsonrpc: '2.0', id: message.id, result: null });
+    }
+  });
+  const send = (message) => {
+    const body = JSON.stringify(message);
+    child.stdin.write(`Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
+  };
+  let nextId = 1;
+  const request = (method, params) =>
+    new Promise((resolve, reject) => {
+      const id = nextId++;
+      const timer = setTimeout(() => reject(new Error(`${method} ohne Antwort`)), 120_000);
+      waiting.set(id, (m) => {
+        clearTimeout(timer);
+        resolve(m);
+      });
+      send({ jsonrpc: '2.0', id, method, ...(params === undefined ? {} : { params }) });
+    });
+  try {
+    const init = await request('initialize', { processId: process.pid, rootUri: pathToFileURL(work).href, capabilities: {} });
+    await request('shutdown');
+    send({ jsonrpc: '2.0', method: 'exit' });
+    return init.result?.capabilities?.definitionProvider ? 'ok' : `unerwartete Antwort: ${JSON.stringify(init).slice(0, 200)}`;
+  } finally {
+    setTimeout(() => child.kill(), 3000).unref();
+    await new Promise((resolve) => (child.exitCode !== null ? resolve() : child.once('exit', resolve)));
+    rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+}
 // Was esbuild bündelt (Monaco, Schrift), gehört nicht noch einmal ins Paket.
 const bundledTwice = ['monaco-editor', '@fontsource'].filter((name) => existsSync(path.join(unpacked, 'resources', 'app.asar.unpacked', 'node_modules', name)));
 check(bundledTwice.length === 0, 'Monaco und die Schrift liegen nur gebündelt im Paket');

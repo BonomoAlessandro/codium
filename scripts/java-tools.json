@@ -1,0 +1,13 @@
+{
+  "comment": "Feste Versionen von jdtls und Lombok mit ihren SHA-256-Prüfsummen (Ticket 14). scripts/fetch-java-tools.mjs lädt sie nach .cache/java-tools und bricht bei einer Abweichung ab.",
+  "jdtls": {
+    "version": "1.63.0",
+    "url": "https://download.eclipse.org/jdtls/milestones/1.63.0/jdt-language-server-1.63.0-202610191322.tar.gz",
+    "sha256": "b1f2abe0b3cccb462cf64fb4a5587c7d09df60cf8be7748b152cbd89d018bdc4"
+  },
+  "lombok": {
+    "version": "1.18.48",
+    "url": "https://repo1.maven.org/maven2/org/projectlombok/lombok/1.18.48/lombok-1.18.48.jar",
+    "sha256": "85477a4655ebb2c074a9099cfb749be454449fee564d4282610df1b85f7c508b"
+  }
+}

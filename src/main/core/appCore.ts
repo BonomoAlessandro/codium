@@ -31,6 +31,7 @@ import { DEFAULT_CLEANUP_TIMEOUT_MS, ProjectCore } from './projectCore';
 import { FolderQueries, type FolderStatus } from './folderQueries';
 import { startClone, type CloneJob } from './clone';
 import { detectShells, shellFor } from './shells';
+import type { BundledJava } from './language/javaServer';
 import type { BundledTypeScript } from './language/typescriptServer';
 import { registerEditorCommands } from './editorCommands';
 import { JDTLS_MIN_JAVA, detectJdks, hasJavaMarkers, jdkForLanguageServer, sameJdkPath } from './jdks';
@@ -105,6 +106,10 @@ export interface AppCoreOptions {
   typescript?: BundledTypeScript;
   /** Uhr des Sprach-Dienstes für die Neustart-Regel (Tests). */
   languageClock?: () => number;
+  /** Mitgeliefertes jdtls und Lombok (Ticket 14); ohne Angabe gibt es keinen Java-Server. */
+  java?: BundledJava;
+  /** Eigene Maven-Einstellungen für jdtls (Tests: Maven Central und ein lokales Repository im Test-Zwischenspeicher). */
+  mavenUserSettings?: string;
   /** Pfad zum mitgelieferten README (im Paket ausserhalb des App-Archivs), für „Open README“. */
   readmePath?: string;
   /** Umgebung für gestartete Programme (Git); ohne Angabe die des Prozesses. Tests schirmen damit die Git-Konfiguration ab. */
@@ -558,6 +563,8 @@ export class AppCore {
       else if (isShellId(changes.terminalShell)) state.settings.terminalShell = changes.terminalShell;
     });
     const settings = appSettings(this.appState.settings);
+    // Ein anderes JDK: laufende Java-Server starten mit ihm neu (Ticket 14).
+    if ('jdk' in changes) for (const project of this.projects.values()) void project.language.restartJava();
     const windows = [...this.projects.keys(), ...(this.welcomeWindowId === null ? [] : [this.welcomeWindowId])];
     for (const windowId of windows) this.emitToWindow(windowId, 'app.settingsChanged', settings);
     return settings;
@@ -850,6 +857,18 @@ export class AppCore {
         ...(this.options.typescript ? { typescript: this.options.typescript } : {}),
         env: this.options.processEnv,
         ...(this.options.languageClock ? { now: this.options.languageClock } : {}),
+        ...(this.options.java
+          ? {
+              java: {
+                bundled: this.options.java,
+                jdks: () => detectJdks(this.ports.system),
+                jdk: () => jdkForLanguageServer(detectJdks(this.ports.system), this.appState.settings.jdk ?? null),
+                // Arbeitsdaten und Konfiguration von jdtls pro Projekt im Datenordner, neben dem Projekt-Zustand.
+                dataDir: path.join(this.options.dataDir, 'jdtls', path.basename(stateFile.file, '.json')),
+                ...(this.options.mavenUserSettings ? { mavenUserSettings: this.options.mavenUserSettings } : {}),
+              },
+            }
+          : {}),
       },
     });
     this.projects.set(windowId, core);

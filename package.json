@@ -7,6 +7,7 @@
   "private": true,
   "scripts": {
     "build": "node build.mjs",
+    "fetch:java": "node scripts/fetch-java-tools.mjs",
     "start": "node build.mjs && electron .",
     "dev": "node build.mjs --dev && electron .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -52,6 +53,21 @@
       {
         "from": "node_modules/@typescript/typescript-win32-x64/lib",
         "to": "typescript-native"
+      },
+      {
+        "from": ".cache/java-tools/jdtls-1.63.0",
+        "to": "jdtls",
+        "filter": [
+          "**/*",
+          "!config_linux*/**",
+          "!config_mac*/**",
+          "!config_ss_*/**",
+          "!.codium-extracted"
+        ]
+      },
+      {
+        "from": ".cache/java-tools/lombok-1.18.48.jar",
+        "to": "lombok.jar"
       }
     ]
   },
