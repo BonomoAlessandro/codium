@@ -10,7 +10,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { ErrorCode, type CodeLocation, type CommandParams, type LanguageDiagnostic, type TextRange } from '../../../shared/types';
+import { ErrorCode, LARGE_FILE_BYTES, MAX_OPEN_FILE_BYTES, type CodeLocation, type CommandParams, type LanguageDiagnostic, type TextRange } from '../../../shared/types';
 import { killProcessTree } from '../processTree';
 import type { Progress } from '../progress';
 import type { ProjectCore } from '../projectCore';
@@ -47,6 +47,10 @@ class Server {
   ready: Promise<boolean> | null = null;
   launch: TypeScriptLaunch | null = null;
   pullDiagnostics = false;
+  /** Nach `initialized`: Erst dann gehen Benachrichtigungen an den Server (Review von Ticket 12). */
+  initialized = false;
+  /** Dokumente, die der Server offen hat (Schlüssel); so geht nie ein zweites `didOpen` hinaus. */
+  readonly sent = new Set<string>();
   stopping = false;
   gaveUp = false;
   crashes: number[] = [];
@@ -71,6 +75,9 @@ export class LanguageService {
     this.now = options.now ?? Date.now;
     project.onDispose(() => this.dispose());
     project.subscribe('files.changed', (event) => {
+      // Nach verpassten Ereignissen (etwa einem Branch-Wechsel) sind geänderte Inhalte nicht einzeln gemeldet: Selbst
+      // geöffnete Dokumente könnten veraltet sein.
+      if (event.rescanned) this.closeImplicit();
       this.notifyWatched(event.changes.map((c) => ({ path: c.path, type: c.kind === 'created' ? 1 : c.kind === 'changed' ? 2 : 3 })));
     });
     project.subscribe('files.operation', (op) => {
@@ -103,17 +110,35 @@ export class LanguageService {
     if (!languageId) return;
     const doc = { path: file, languageId, text: p.text, version: p.version };
     // Hatte der Dienst die Datei schon selbst geöffnet (für eine Anfrage), gilt jetzt der Text der Oberfläche.
-    const wasImplicit = this.implicit.delete(key(file));
+    this.implicit.delete(key(file));
     this.documents.set(key(file), doc);
-    if (wasImplicit && this.typescript.connection?.running) {
-      this.typescript.connection.notify('textDocument/didChange', { textDocument: { uri: uriOf(file), version: doc.version }, contentChanges: [{ text: doc.text }] });
-      this.scheduleDiagnostics(file);
+    const server = this.typescript;
+    if (server.initialized && server.sent.has(key(file))) {
+      server.connection?.notify('textDocument/didChange', { textDocument: { uri: uriOf(file), version: doc.version }, contentChanges: [{ text: doc.text }] });
+      this.scheduleAllDiagnostics();
       return;
     }
-    if (await this.ensure(this.typescript)) {
-      this.typescript.connection?.notify('textDocument/didOpen', { textDocument: { uri: uriOf(file), languageId, version: doc.version, text: doc.text } });
+    // Startet der Server gerade, meldet `start` das Dokument; sonst hier.
+    if (await this.ensure(server)) {
+      this.sendOpen(server, file);
       this.scheduleDiagnostics(file);
     }
+  }
+
+  /** Meldet ein Dokument dem Server, wenn er bereit ist und es noch nicht offen hat. */
+  private sendOpen(server: Server, file: string): void {
+    const k = key(file);
+    const doc = this.documents.get(k);
+    if (!doc || !server.initialized || server.sent.has(k) || !server.connection?.running) return;
+    server.sent.add(k);
+    server.connection.notify('textDocument/didOpen', { textDocument: { uri: uriOf(doc.path), languageId: doc.languageId, version: doc.version, text: doc.text } });
+  }
+
+  /** Schliesst ein Dokument beim Server, falls er es offen hat. */
+  private sendClose(server: Server, doc: OpenDocument): void {
+    const k = key(doc.path);
+    if (!server.sent.delete(k)) return;
+    server.connection?.notify('textDocument/didClose', { textDocument: { uri: uriOf(doc.path) } });
   }
 
   didChange(params: CommandParams<'language.didChange'>): void {
@@ -123,19 +148,25 @@ export class LanguageService {
     if (!doc || typeof p.text !== 'string' || typeof p.version !== 'number') return;
     doc.text = p.text;
     doc.version = p.version;
-    this.typescript.connection?.notify('textDocument/didChange', {
-      textDocument: { uri: uriOf(file), version: doc.version },
-      contentChanges: [{ text: doc.text }],
-    });
-    this.scheduleDiagnostics(file);
+    const server = this.typescript;
+    if (server.initialized && server.sent.has(key(file))) {
+      server.connection?.notify('textDocument/didChange', {
+        textDocument: { uri: uriOf(file), version: doc.version },
+        contentChanges: [{ text: doc.text }],
+      });
+    }
+    // Eine Änderung kann die Fehler aller offenen Dateien ändern (Review von Ticket 12).
+    this.scheduleAllDiagnostics();
   }
 
   didClose(params: CommandParams<'language.didClose'>): void {
     const file = this.project.files.lexicalPath((params as Partial<CommandParams<'language.didClose'>>)?.path);
-    if (!this.documents.delete(key(file))) return;
+    const doc = this.documents.get(key(file));
+    if (!doc) return;
+    this.documents.delete(key(file));
     clearTimeout(this.diagnosticTimers.get(key(file)));
     this.diagnosticTimers.delete(key(file));
-    this.typescript.connection?.notify('textDocument/didClose', { textDocument: { uri: uriOf(file) } });
+    this.sendClose(this.typescript, doc);
   }
 
   // ---------- Typisierte Methoden ----------
@@ -188,6 +219,8 @@ export class LanguageService {
       allowed = this.isInsideProject(file) && real !== null && root !== null && key(real).startsWith(key(root) + path.sep);
     }
     if (!allowed) throw new CommandError(`Not a target of the language server: ${file}`, ErrorCode.pathOutsideProject, { path: file });
+    const size = (await fs.promises.stat(file).catch(() => null))?.size ?? 0;
+    if (size >= MAX_OPEN_FILE_BYTES) throw new CommandError(`The file is too large to open: ${file}`, ErrorCode.fileTooLarge, { path: file });
     try {
       return { text: await fs.promises.readFile(file, 'utf8') };
     } catch {
@@ -197,7 +230,9 @@ export class LanguageService {
 
   private position(params: unknown): { file: string; position: { line: number; character: number } } {
     const p = params as Partial<{ path: unknown; line: unknown; character: unknown }> | undefined;
-    const file = this.project.files.lexicalPath(p?.path);
+    // Auch in Bibliothekszielen ausserhalb des Projekts (etwa lib.dom.d.ts) gehen weitere Sprünge (Review von Ticket 12).
+    const outside = typeof p?.path === 'string' && path.isAbsolute(p.path) && this.outsideTargets.has(key(path.normalize(p.path)));
+    const file = outside ? path.normalize(p!.path as string) : this.project.files.lexicalPath(p?.path);
     if (!isCount(p?.line) || !isCount(p?.character)) throw new CommandError('A position is expected.', ErrorCode.invalidParams);
     return { file, position: { line: p.line, character: p.character } };
   }
@@ -236,18 +271,24 @@ export class LanguageService {
     if (!languageId || !(await this.ensure(this.typescript))) return null;
     const connection = this.typescript.connection;
     // tsserver (TypeScript bis 6) beantwortet Anfragen nur für offene Dokumente: sonst mit dem Text von der Festplatte.
+    // Dateien ab 5 MB meldet die Oberfläche bewusst nicht; dann auch hier nicht.
     if (connection && !this.documents.has(key(file))) {
-      const text = await fs.promises.readFile(file, 'utf8').catch(() => null);
+      const size = (await fs.promises.stat(file).catch(() => null))?.size ?? LARGE_FILE_BYTES;
+      const text = size < LARGE_FILE_BYTES ? await fs.promises.readFile(file, 'utf8').catch(() => null) : null;
       if (text !== null && !this.documents.has(key(file))) {
         this.documents.set(key(file), { path: file, languageId, text, version: 0 });
         this.implicit.add(key(file));
-        connection.notify('textDocument/didOpen', { textDocument: { uri: uriOf(file), languageId, version: 0, text } });
+        this.sendOpen(this.typescript, file);
       }
     }
     return connection;
   }
 
   // ---------- Fehler und Warnungen ----------
+
+  private scheduleAllDiagnostics(): void {
+    for (const doc of this.documents.values()) if (!this.implicit.has(key(doc.path))) this.scheduleDiagnostics(doc.path);
+  }
 
   private scheduleDiagnostics(file: string): void {
     if (!this.typescript.pullDiagnostics) return;
@@ -302,16 +343,21 @@ export class LanguageService {
     // schliessen, dann liest der Server die Datei selbst (oder weiss, dass sie fehlt).
     for (const change of changes) {
       const k = key(change.path);
-      for (const doc of [...this.implicit].filter((d) => d === k || d.startsWith(k + path.sep))) {
-        const open = this.documents.get(doc);
-        this.implicit.delete(doc);
-        this.documents.delete(doc);
-        if (open) connection.notify('textDocument/didClose', { textDocument: { uri: uriOf(open.path) } });
-      }
+      this.closeImplicit((d) => d === k || d.startsWith(k + path.sep));
     }
     connection.notify('workspace/didChangeWatchedFiles', { changes: changes.map((c) => ({ uri: uriOf(c.path), type: c.type })) });
     // Andere Dateien können die Fehler der offenen ändern.
-    for (const doc of this.documents.values()) this.scheduleDiagnostics(doc.path);
+    this.scheduleAllDiagnostics();
+  }
+
+  /** Schliesst selbst geöffnete Dokumente (alle oder die passenden). */
+  private closeImplicit(match: (k: string) => boolean = () => true): void {
+    for (const k of [...this.implicit].filter(match)) {
+      const doc = this.documents.get(k);
+      this.implicit.delete(k);
+      this.documents.delete(k);
+      if (doc) this.sendClose(this.typescript, doc);
+    }
   }
 
   // ---------- Lebenszyklus ----------
@@ -328,6 +374,8 @@ export class LanguageService {
     const launch = typescriptLaunch(this.project.path, this.options.typescript!);
     server.launch = launch;
     server.stopping = false;
+    server.initialized = false;
+    server.sent.clear();
     const work = this.project.progress.begin('Starting TypeScript language server…');
     const connection = new LspConnection({
       command: launch.command,
@@ -355,14 +403,15 @@ export class LanguageService {
       );
       server.pullDiagnostics = init?.capabilities?.diagnosticProvider !== undefined && init.capabilities.diagnosticProvider !== null;
       connection.notify('initialized', {});
-      // Nach einem Neustart: die offenen Dokumente erneut melden.
-      for (const doc of this.documents.values()) {
-        connection.notify('textDocument/didOpen', { textDocument: { uri: uriOf(doc.path), languageId: doc.languageId, version: doc.version, text: doc.text } });
-        this.scheduleDiagnostics(doc.path);
-      }
+      server.initialized = true;
+      // Die offenen Dokumente melden (auch die, die während des Starts kamen, und nach einem Neustart).
+      for (const doc of this.documents.values()) this.sendOpen(server, doc.path);
+      this.scheduleAllDiagnostics();
       return !this.disposed;
     } catch (err) {
       this.options.log(`TypeScript-Sprachserver startet nicht: ${(err as Error).message}`);
+      // Hängt er oder lehnt er ab, läuft er womöglich weiter: beenden, das zählt wie ein Absturz (Review von Ticket 12).
+      if (connection.running && connection.pid !== undefined) await killProcessTree(connection.pid);
       return false;
     } finally {
       work.end();
@@ -375,6 +424,7 @@ export class LanguageService {
       return items.map(() => ({}));
     }
     if (method === 'workspace/workspaceFolders') return [{ uri: uriOf(this.project.path), name: this.project.name }];
+    if (method === 'workspace/diagnostic/refresh') this.scheduleAllDiagnostics();
     return null;
   }
 
@@ -406,6 +456,11 @@ export class LanguageService {
     if (server.connection !== connection) return;
     server.connection = null;
     server.ready = null;
+    server.initialized = false;
+    server.sent.clear();
+    // Selbst geöffnete Dokumente öffnet der neue Server bei Bedarf wieder, mit dem dann aktuellen Text.
+    for (const k of this.implicit) this.documents.delete(k);
+    this.implicit.clear();
     if (server.stopping || this.disposed) return;
     // Abgestürzt: neu starten, höchstens dreimal in drei Minuten.
     const now = this.now();
@@ -436,14 +491,18 @@ export class LanguageService {
     if (!connection) return;
     server.stopping = true;
     const pid = connection.pid;
-    await connection.request('shutdown', null, 1500).catch(() => {});
-    connection.notify('exit', null);
+    // Ohne `params`: Der native Server lehnt `params: null` ab und endet dann nicht (Review von Ticket 12).
+    await connection.request('shutdown', undefined, 1500).catch(() => {});
+    connection.notify('exit', undefined);
     let timer: NodeJS.Timeout | undefined;
     const exited = await Promise.race([connection.exit.then(() => true), new Promise<boolean>((r) => (timer = setTimeout(() => r(false), 1000)))]);
     clearTimeout(timer);
-    // Auch wenn der Server selbst endet, können Kindprozesse (tsserver von typescript-language-server) bleiben.
-    if (pid !== undefined) await killProcessTree(pid);
-    if (!exited) await connection.exit;
+    // Nur einen Server, der nicht endet, samt Kindern hart beenden. Endet er selbst, ist seine Prozessnummer frei und
+    // könnte schon zu einem fremden Prozess gehören; seine Kinder (tsserver) enden mit ihm.
+    if (!exited) {
+      if (pid !== undefined) await killProcessTree(pid);
+      await connection.exit;
+    }
   }
 }
 
@@ -454,6 +513,7 @@ const CLIENT_CAPABILITIES = {
     workspaceFolders: true,
     configuration: true,
     didChangeWatchedFiles: { dynamicRegistration: false },
+    diagnostics: { refreshSupport: true },
   },
   textDocument: {
     synchronization: { dynamicRegistration: false, didSave: false, willSave: false },

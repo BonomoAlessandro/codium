@@ -110,6 +110,67 @@ if (existsSync(nativeTsc)) {
     version = String(err.stderr ?? err.message).split(/\r?\n/)[0];
   }
   check(/^Version 7\./.test(version), `der native TypeScript-Server startet (${version})`);
+  // Ein echtes Gespräch über LSP: Fehler einer Datei, die Typen aus lib.dom.d.ts braucht (Review von Ticket 12).
+  const result = await lspProbe(nativeTsc, ['--lsp', '--stdio']).catch((err) => `Fehler: ${err.message}`);
+  check(result === 'ok', `der native TypeScript-Server beantwortet LSP mit seinen lib-Dateien (${result})`);
+}
+
+/** Startet einen Sprachserver, öffnet eine Datei und holt ihre Fehler; „ok“, wenn es keine gibt. */
+async function lspProbe(command, args) {
+  const { spawn } = await import('node:child_process');
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { pathToFileURL } = await import('node:url');
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'codium-lsp-'));
+  writeFileSync(path.join(dir, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, lib: ['es2022', 'dom'] } }));
+  const file = path.join(dir, 'a.ts');
+  const text = 'export const body: HTMLElement = document.body;\n';
+  writeFileSync(file, text);
+  const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
+  let buffer = Buffer.alloc(0);
+  const waiting = new Map();
+  child.stdout.on('data', (chunk) => {
+    buffer = Buffer.concat([buffer, chunk]);
+    for (;;) {
+      const end = buffer.indexOf('\r\n\r\n');
+      if (end < 0) return;
+      const length = Number(/Content-Length: (\d+)/i.exec(buffer.subarray(0, end).toString())[1]);
+      if (buffer.length < end + 4 + length) return;
+      const message = JSON.parse(buffer.subarray(end + 4, end + 4 + length).toString());
+      buffer = buffer.subarray(end + 4 + length);
+      if (message.id !== undefined && message.method === undefined) waiting.get(message.id)?.(message);
+      else if (message.id !== undefined) send({ jsonrpc: '2.0', id: message.id, result: message.method === 'workspace/configuration' ? message.params.items.map(() => ({})) : null });
+    }
+  });
+  const send = (message) => {
+    const body = JSON.stringify(message);
+    child.stdin.write(`Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
+  };
+  let nextId = 1;
+  const request = (method, params) =>
+    new Promise((resolve, reject) => {
+      const id = nextId++;
+      const timer = setTimeout(() => reject(new Error(`${method} ohne Antwort`)), 30_000);
+      waiting.set(id, (m) => {
+        clearTimeout(timer);
+        resolve(m);
+      });
+      send({ jsonrpc: '2.0', id, method, ...(params === undefined ? {} : { params }) });
+    });
+  try {
+    const uri = pathToFileURL(file).href;
+    await request('initialize', { processId: process.pid, rootUri: pathToFileURL(dir).href, capabilities: { textDocument: { diagnostic: {} } } });
+    send({ jsonrpc: '2.0', method: 'initialized', params: {} });
+    send({ jsonrpc: '2.0', method: 'textDocument/didOpen', params: { textDocument: { uri, languageId: 'typescript', version: 1, text } } });
+    const report = await request('textDocument/diagnostic', { textDocument: { uri } });
+    const errors = (report.result?.items ?? []).filter((d) => d.severity === 1);
+    await request('shutdown');
+    send({ jsonrpc: '2.0', method: 'exit' });
+    return errors.length === 0 && report.result?.kind === 'full' ? 'ok' : `Fehler gemeldet: ${JSON.stringify(errors).slice(0, 200)}`;
+  } finally {
+    setTimeout(() => child.kill(), 1000).unref();
+    await new Promise((resolve) => (child.exitCode !== null ? resolve() : child.once('exit', resolve)));
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 const tsLanguageServer = path.join(unpackedModules, 'typescript-language-server', 'lib', 'cli.mjs');
 check(existsSync(tsLanguageServer), 'typescript-language-server liegt ausserhalb des App-Archivs');

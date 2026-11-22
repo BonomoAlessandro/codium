@@ -145,6 +145,24 @@ describe('TypeScript-Sprachserver', () => {
       await until(() => latestDiagnostics(test, windowId, at('main.ts')), (d) => (d ?? []).some((x) => x.severity === 'error'), 'extra.ts fehlt');
       fs.writeFileSync(at('extra.ts'), 'export function triple(x: number): number {\n  return x * 3;\n}\n');
       await until(() => latestDiagnostics(test, windowId, at('main.ts')), (d) => d !== undefined && !d.some((x) => x.severity === 'error'), 'extra.ts bekannt');
+      // … und eine von aussen geänderte: triple gibt es dort nicht mehr.
+      fs.writeFileSync(at('extra.ts'), 'export function quadruple(x: number): number {\n  return x * 4;\n}\n');
+      await until(() => latestDiagnostics(test, windowId, at('main.ts')), (d) => (d ?? []).some((x) => x.severity === 'error'), 'Änderung von aussen bekannt');
+      fs.writeFileSync(at('extra.ts'), 'export function triple(x: number): number {\n  return x * 3;\n}\n');
+      await until(() => latestDiagnostics(test, windowId, at('main.ts')), (d) => d !== undefined && !d.some((x) => x.severity === 'error'), 'wieder in Ordnung');
+
+      // Eine ungespeicherte Änderung in einer anderen offenen Datei ändert die Fehler von main.ts (Review von Ticket 12).
+      await call(test, windowId, 'language.didOpen', { path: at('shape.ts'), text: SHAPE, version: 1 });
+      await call(test, windowId, 'language.didChange', { path: at('shape.ts'), text: SHAPE.replace('function double', 'function dbl'), version: 2 });
+      await until(
+        () => latestDiagnostics(test, windowId, at('main.ts')),
+        (d) => (d ?? []).some((x) => x.severity === 'error' && /double/.test(x.message)),
+        'Fehler in der anderen Datei',
+      );
+      await call(test, windowId, 'language.didChange', { path: at('shape.ts'), text: SHAPE, version: 3 });
+      await until(() => latestDiagnostics(test, windowId, at('main.ts')), (d) => d !== undefined && !d.some((x) => x.severity === 'error'), 'wieder ohne Fehler');
+      // Wie die Oberfläche beim Umbenennen eines offenen Tabs: das alte Dokument schliessen, das neue öffnen.
+      await call(test, windowId, 'language.didClose', { path: at('shape.ts') });
 
       // Eine in Codium umbenannte Datei: Der alte Name fehlt jetzt.
       await call(test, windowId, 'files.rename', { path: at('shape.ts'), newName: 'geometry.ts' });
@@ -158,7 +176,10 @@ describe('TypeScript-Sprachserver', () => {
       const pid = test.core.projectCore(windowId)!.language.typescriptPid!;
       const tree = [pid, ...descendants(pid)];
       test.ports.windows.close(windowId);
+      const stopping = Date.now();
       await test.core.shutdown();
+      // Der Server endet geordnet auf shutdown/exit, ohne auf das harte Beenden zu warten (Review von Ticket 12).
+      expect(Date.now() - stopping).toBeLessThan(1000);
       await until(() => tree.filter(alive), (a) => a.length === 0, 'Server und Kindprozesse beendet', 10_000);
     });
   }
@@ -195,6 +216,17 @@ describe('TypeScript-Sprachserver', () => {
     }
     // Nach dem Neustart kennt der Server das offene Dokument wieder.
     await until(() => call(test, windowId, 'language.definition', { path: at('main.ts'), line: 6, character: 12 }), (r) => r.length > 0, 'Definition nach Neustart');
+    // Nach Ablauf der drei Minuten zählen alte Abstürze nicht mehr: wieder ein Neustart.
+    now += 3 * 60_000;
+    const before = language().typescriptPid!;
+    process.kill(before);
+    await until(() => language().typescriptPid, (p) => p !== undefined && p !== before, 'Neustart nach Ablauf des Zeitfensters');
+    for (let crash = 2; crash <= MAX_RESTARTS; crash++) {
+      const pid = language().typescriptPid!;
+      process.kill(pid);
+      now += 10_000;
+      await until(() => language().typescriptPid, (p) => p !== undefined && p !== pid, `erneuter Neustart ${crash}`);
+    }
     // Der nächste Absturz im selben Zeitfenster: kein Neustart, ein Fehlerhinweis.
     process.kill(language().typescriptPid!);
     await until(

@@ -400,7 +400,9 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       setContent(key, { kind: 'loading' });
       try {
         const [content, cursor] = await Promise.all([
-          libraryTab(filePath, project.path)
+          // Nur Ziele ausserhalb des Projekts kommen über den Sprach-Dienst; Dateien unter node_modules im Projekt liest der
+          // Datei-Dienst mit Erkennung von Kodierung, Bildern und Grösse (Review von Ticket 12).
+          !isInside(filePath, project.path)
             ? api.request('language.readTarget', { path: filePath }).then((target) => libraryContent(target.text))
             : api.request('files.read', { path: filePath }),
           api.request('project.cursor', { path: filePath }).catch(() => null),
@@ -1518,9 +1520,12 @@ export function formatSize(bytes: number): string {
 }
 
 /** Ein Pfad aus einer Monaco-Adresse in der Schreibweise von Windows (Laufwerksbuchstabe gross). */
-/** Ein Ziel in einer Bibliothek (unter node_modules oder ausserhalb des Projekts): schreibgeschützt. */
+/**
+ * Schreibgeschützt: Sprungziele in Bibliotheken (Typdefinitionen unter node_modules) und alles ausserhalb des Projekts.
+ * Eine Datei unter node_modules, die man selbst im Baum öffnet, bleibt bearbeitbar.
+ */
 function libraryTab(filePath: string, projectPath: string): boolean {
-  return isReadOnlyTarget(filePath) || !isInside(filePath, projectPath) || /[\\/]node_modules[\\/]/i.test(filePath);
+  return isReadOnlyTarget(filePath) || !isInside(filePath, projectPath);
 }
 
 function isInside(filePath: string, projectPath: string): boolean {

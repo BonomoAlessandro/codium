@@ -609,7 +609,7 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
   - node-pty
   - node-postgres
   - ripgrep als mitgeliefertes Programm (aus dem npm-Paket, das VS Code verwendet)
-  - TypeScript 7 (als Laufzeit-Bestandteil für den nativen Sprachserver), typescript-language-server und gegebenenfalls TypeScript 6 für den Rückfall
+  - TypeScript 7 (als Laufzeit-Bestandteil für den nativen Sprachserver) und typescript-language-server (für Projekte mit eigenem TypeScript bis Version 6); ein TypeScript 6 als Rückfall entfällt (geklärt in Ticket 12)
   - jdtls und Lombok
   - JetBrains Mono
   - markdown-it, DOMPurify und Mermaid für die Markdown-Vorschau
@@ -872,7 +872,7 @@ Diese Punkte wurden beim Schreiben der Spezifikation oder nach dem Review ergän
 16. **Beenden:** „Exit“ im Projektmenü und das Abmelden von Windows beenden Codium mit allen offenen Projekten, die beim nächsten Start wieder aufgehen. Beendet das Schliessen des letzten Projektfensters die App, gilt dieses Projekt als offen. Ein Projektfenster, das geschlossen wurde, während noch andere offen waren, öffnet beim nächsten Start nicht.
 17. **Konflikt beim automatischen Speichern** (mit dem Nutzer nach dem Review abgestimmt): Ändert sich eine Datei von aussen, während der Tab ungespeicherte Eingaben hat, erscheint ein Hinweis mit „Load from Disk“ und „Keep Mine“ statt automatisch zu speichern.
 18. **JDK für jdtls** (mit dem Nutzer nach dem Review abgestimmt): das neueste erkannte JDK ab 25, unabhängig von JAVA_HOME, in den Einstellungen änderbar.
-19. **TypeScript-Server nach Projektversion:** nativer Server ab TypeScript 7, typescript-language-server bis TypeScript 6, mitgelieferter Rückfall für Projekte ohne eigenes TypeScript.
+19. **TypeScript-Server nach Projektversion:** nativer Server ab TypeScript 7, typescript-language-server bis TypeScript 6, für Projekte ohne eigenes TypeScript der native Server des mitgelieferten TypeScript 7 (ein Rückfall ist nicht nötig, geklärt in Ticket 12).
 20. **Lombok** wird mitgeliefert und ist immer aktiv; der Gradle-Daemon bekommt ein JDK passend zur Gradle-Version.
 21. **Umbenennen im Dateibaum** merkt bei versionierten Dateien die Umbenennung im Index vor, damit Git sie als Umbenennung erkennt.
 22. **Konfliktmarkierungen:** Vor „Commit“ bzw. „Continue“ warnt Codium, wenn in Konfliktdateien noch Markierungen stehen.

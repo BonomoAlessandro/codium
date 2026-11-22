@@ -76,7 +76,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 | 09 | [Einstellungen, JDK-Erkennung, Voraussetzungen und README](09-einstellungen-und-voraussetzungen.md) | AFK | 05 | 1 | erledigt |
 | 10 | [Repository klonen](10-klonen.md) | AFK | 09 | 1 | erledigt |
 | 11 | [Terminal](11-terminal.md) | AFK | 06, 09 | 2 | erledigt |
-| 12 | [Sprach-Dienst mit TypeScript: Definition, Verwendungen, Hover, Fehler](12-sprach-dienst-typescript.md) | AFK | 06, 07, 08 | 3 | offen |
+| 12 | [Sprach-Dienst mit TypeScript: Definition, Verwendungen, Hover, Fehler](12-sprach-dienst-typescript.md) | AFK | 06, 07, 08 | 3 | erledigt |
 | 13 | [Vervollständigung, semantische Färbung, Symbolsuche, Zurück und Vor](13-vervollstaendigung-und-navigation.md) | AFK | 06, 12 | 3 | offen |
 | 14 | [Java-Sprachserver](14-java.md) | AFK | 09, 13 | 3 | offen |
 | 15 | [Git-Dienst, Git-Konsole und Branches](15-git-und-branches.md) | AFK | 07, 09 | 4 | offen |

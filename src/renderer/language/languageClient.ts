@@ -53,8 +53,31 @@ export function registerLanguageFeatures(api: CodiumApi, beforeRequest: (filePat
     return at(model, position);
   };
 
+  /**
+   * Modelle für Ziele ohne Tab (Vorschau im Peek): schreibgeschützt, und vor jeder neuen Abfrage frisch angelegt, soweit
+   * kein Editor sie zeigt (Review von Ticket 12). Öffnet ein Ziel als Tab, ersetzt der Code-Bereich das Modell.
+   */
+  const previews = new Set<monaco.editor.ITextModel>();
+  const dropUnusedPreviews = () => {
+    const shown = new Set(monaco.editor.getEditors().map((e) => e.getModel()));
+    for (const model of previews) if (!shown.has(model)) model.dispose();
+  };
+  const readOnlyPreviews = monaco.editor.onDidCreateEditor((editor) => {
+    // Nur, was hier schreibgeschützt wurde, wird wieder freigegeben (der Haupteditor regelt das je Tab selbst).
+    let lockedHere = false;
+    const update = () => {
+      const model = editor.getModel();
+      const preview = model !== null && previews.has(model);
+      if (preview || lockedHere) editor.updateOptions({ readOnly: preview });
+      lockedHere = preview;
+    };
+    editor.onDidChangeModel(update);
+    update();
+  });
+
   /** Legt für jedes Ziel ein Modell an, falls es keines gibt. */
   const withModels = async (locations: CodeLocation[]): Promise<monaco.languages.Location[]> => {
+    dropUnusedPreviews();
     const result: monaco.languages.Location[] = [];
     for (const location of locations) {
       const uri = monaco.Uri.file(location.path);
@@ -65,7 +88,11 @@ export function registerLanguageFeatures(api: CodiumApi, beforeRequest: (filePat
             ? (await api.request('language.readTarget', { path: location.path })).text
             : await readText(api, location.path);
           if (text === null) continue;
-          if (!monaco.editor.getModel(uri)) monaco.editor.createModel(text, languageOf(location.path), uri);
+          if (!monaco.editor.getModel(uri)) {
+            const model = monaco.editor.createModel(text, languageOf(location.path), uri);
+            previews.add(model);
+            model.onWillDispose(() => previews.delete(model));
+          }
         } catch {
           continue;
         }
@@ -117,6 +144,8 @@ export function registerLanguageFeatures(api: CodiumApi, beforeRequest: (filePat
     for (const d of disposables) d.dispose();
     offDiagnostics();
     created.dispose();
+    readOnlyPreviews.dispose();
+    for (const model of [...previews]) model.dispose();
   };
 }
 
