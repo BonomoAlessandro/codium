@@ -3,7 +3,7 @@
 import type { Locator, Page } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { launchCodium, prepareAppState } from '../support/launchApp';
-import { PG_DATABASE, PG_PASSWORD, PG_USER, postgresProcessesFor, startPostgres, type TestPostgres } from '../support/postgres';
+import { PG_DATABASE, PG_PASSWORD, PG_USER, startPostgres, type TestPostgres } from '../support/postgres';
 import { useTempDirs } from '../support/tempDir';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -18,6 +18,8 @@ describe('Werkzeugfenster „Database“', () => {
 
   beforeAll(async () => {
     server = await startPostgres();
+    // Die Prüfung auf Prozesse sieht den laufenden Server (sonst bewiese sie nach dem Stoppen nichts).
+    expect(server.processes()).toBeGreaterThan(0);
     await server.sql(`
       CREATE SCHEMA crm;
       CREATE TABLE crm.customers (id serial PRIMARY KEY, name text NOT NULL, email varchar(40));
@@ -26,9 +28,9 @@ describe('Werkzeugfenster „Database“', () => {
   });
 
   afterAll(async () => {
-    const dataDir = server?.dataDir;
     await server?.stop();
-    if (dataDir) expect(postgresProcessesFor(dataDir)).toBe(0);
+    // Nach den Tests läuft kein PostgreSQL-Prozess mehr.
+    if (server) expect(server.processes()).toBe(0);
   });
 
   it('legt eine Verbindung an, klappt den Baum auf und zeigt eine Tabelle mit ihren Spalten', async () => {

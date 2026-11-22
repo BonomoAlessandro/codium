@@ -15,6 +15,8 @@ export const PG_DATABASE = 'shop';
 
 export interface TestPostgres {
   port: number;
+  /** Zahl der noch laufenden PostgreSQL-Prozesse dieses Servers. */
+  processes(): number;
   dataDir: string;
   /** Führt SQL als Verwalter in der Testdatenbank aus. */
   sql(text: string, values?: unknown[]): Promise<pg.QueryResult>;
@@ -38,23 +40,33 @@ async function freePort(): Promise<number> {
 
 export async function startPostgres(): Promise<TestPostgres> {
   const port = await freePort();
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'codium-pg-'));
+  // Der echte (lange) Pfad: PostgreSQL nennt ihn so in der Befehlszeile, auch wenn TEMP ein Kurzname ist (Review).
+  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'codium-pg-')));
   const dataDir = path.join(base, 'data');
   const server = new EmbeddedPostgres({ databaseDir: dataDir, user: PG_USER, password: PG_PASSWORD, port, persistent: false, onLog: () => {}, onError: () => {} });
-  await server.initialise();
-  await server.start();
-  await server.createDatabase(PG_DATABASE);
   const admin = new pg.Client({ host: '127.0.0.1', port, user: PG_USER, password: PG_PASSWORD, database: PG_DATABASE });
-  await admin.connect();
+  try {
+    await server.initialise();
+    await server.start();
+    await server.createDatabase(PG_DATABASE);
+    await admin.connect();
+  } catch (err) {
+    // Scheitert die Vorbereitung, darf kein Server liegen bleiben (Review).
+    await admin.end().catch(() => {});
+    await server.stop().catch(() => {});
+    fs.rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    throw err;
+  }
   return {
     port,
     dataDir,
+    processes: () => postgresProcessesFor(dataDir, port),
     sql: (text, values) => admin.query(text, values),
     stop: async () => {
       await admin.end().catch(() => {});
       await server.stop().catch(() => {});
       // Erst wenn die Prozesse fort sind, ist der Datenordner frei.
-      for (let i = 0; i < 50 && postgresProcessesFor(dataDir) > 0; i++) await new Promise((resolve) => setTimeout(resolve, 200));
+      for (let i = 0; i < 50 && postgresProcessesFor(dataDir, port) > 0; i++) await new Promise((resolve) => setTimeout(resolve, 200));
       try {
         fs.rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
       } catch {
@@ -64,16 +76,25 @@ export async function startPostgres(): Promise<TestPostgres> {
   };
 }
 
-/** Laufende PostgreSQL-Prozesse, deren Befehlszeile diesen Datenordner nennt. */
-export function postgresProcessesFor(dataDir: string): number {
-  if (process.platform !== 'win32') return 0;
+/**
+ * Laufende PostgreSQL-Prozesse dieses Servers: der Hauptprozess (Datenordner oder Port in der Befehlszeile) und seine
+ * Kindprozesse (die tragen beides nicht).
+ */
+export function postgresProcessesFor(dataDir: string, port?: number): number {
+  if (process.platform !== 'win32') throw new Error('Die Prüfung auf PostgreSQL-Prozesse gibt es nur unter Windows.');
   const out = execFileSync(
     'powershell.exe',
-    ['-NoProfile', '-Command', "Get-CimInstance Win32_Process -Filter \"Name='postgres.exe'\" | ForEach-Object { $_.CommandLine }"],
+    ['-NoProfile', '-Command', "Get-CimInstance Win32_Process -Filter \"Name='postgres.exe'\" | ForEach-Object { \"$($_.ProcessId)`t$($_.ParentProcessId)`t$($_.CommandLine)\" }"],
     { encoding: 'utf8' },
   );
   const needle = dataDir.toLowerCase().replace(/\\/g, '/');
-  return out
+  const rows = out
     .split(/\r?\n/)
-    .filter((line) => line.toLowerCase().replace(/\\/g, '/').includes(needle)).length;
+    .filter(Boolean)
+    .map((line) => {
+      const [pid, parent, ...rest] = line.split('\t');
+      return { pid, parent, command: rest.join('\t').toLowerCase().replace(/\\/g, '/') };
+    });
+  const mains = new Set(rows.filter((r) => r.command.includes(needle) || (port !== undefined && new RegExp(`(^|\\s)-p\\s+"?${port}"?(\\s|$)`).test(r.command))).map((r) => r.pid));
+  return rows.filter((r) => mains.has(r.pid) || mains.has(r.parent)).length;
 }

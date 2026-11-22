@@ -2,7 +2,7 @@
 // Tabellen und Views und deren Spalten, geladen beim Aufklappen. „+“ legt eine Verbindung an; Rechtsklick „Edit…“,
 // „Delete“ und „Refresh“. Fehlt ein Passwort (etwa mit „Ask for password every time“), fragt das Fenster danach.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CodiumError, ErrorCode, type CodiumApi, type DbConnection } from '../../shared/types';
 import { errorText } from '../errors';
 import type { Notify } from '../Notices';
@@ -55,6 +55,43 @@ export function DatabaseToolWindow({ api, notify, onHide, onOpenTable }: Databas
     void reloadConnections();
   }, [reloadConnections]);
 
+  /** Laufende Passwortabfragen je Verbindung: Mehrere Anfragen, die gleichzeitig scheitern, fragen nur einmal (Review). */
+  const prompts = useRef(new Map<string, Promise<boolean>>());
+
+  /** Fragt nach dem Passwort und übergibt es dem Kern; `false` bei Abbruch oder Fehler. */
+  const promptPassword = useCallback(
+    (connection: DbConnection, message: string): Promise<boolean> => {
+      const running = prompts.current.get(connection.id);
+      if (running) return running;
+      const prompt = (async () => {
+        let entered: string | null = null;
+        await askText({
+          title: `Password for ${connection.name}`,
+          message: `${message}\n${connection.user}@${connection.host}:${connection.port}/${connection.database}`,
+          value: '',
+          password: true,
+          okLabel: 'Connect',
+          submit: (value) => {
+            entered = value;
+            return Promise.resolve();
+          },
+        });
+        if (entered === null) return false;
+        try {
+          await api.request('db.setPassword', { id: connection.id, password: entered });
+          return true;
+        } catch (err) {
+          notify({ level: 'error', text: `${connection.name}: ${errorText(err)}` });
+          return false;
+        }
+      })();
+      prompts.current.set(connection.id, prompt);
+      void prompt.finally(() => prompts.current.delete(connection.id));
+      return prompt;
+    },
+    [api, askText, notify],
+  );
+
   /** Fragt bei fehlendem Passwort danach und wiederholt; liefert `null` bei Abbruch oder Fehler. */
   const withPassword = useCallback(
     async <T,>(connection: DbConnection, work: () => Promise<T>): Promise<T | null> => {
@@ -63,20 +100,7 @@ export function DatabaseToolWindow({ api, notify, onHide, onOpenTable }: Databas
           return await work();
         } catch (err) {
           if (err instanceof CodiumError && err.code === ErrorCode.dbPasswordRequired) {
-            let entered: string | null = null;
-            await askText({
-              title: `Password for ${connection.name}`,
-              message: `${err.message}\n${connection.user}@${connection.host}:${connection.port}/${connection.database}`,
-              value: '',
-              password: true,
-              okLabel: 'Connect',
-              submit: (value) => {
-                entered = value;
-                return Promise.resolve();
-              },
-            });
-            if (entered === null) return null;
-            await api.request('db.setPassword', { id: connection.id, password: entered });
+            if (!(await promptPassword(connection, err.message))) return null;
             continue;
           }
           // Die Meldung der Datenbank als Fehlerhinweis.
@@ -85,15 +109,27 @@ export function DatabaseToolWindow({ api, notify, onHide, onOpenTable }: Databas
         }
       }
     },
-    [api, askText, notify],
+    [notify, promptPassword],
   );
+
+  /** Je Knoten ein Zähler; „Refresh“ erhöht ihn, ein älteres Ergebnis fällt dann weg (Review). */
+  const tokens = useRef(new Map<string, number>());
 
   const load = useCallback(
     async (node: TreeNode) => {
       const { connection } = node;
+      const token = tokens.current.get(node.key) ?? 0;
       setLoading((s) => new Set(s).add(node.key));
       const id = connection.id;
-      const result = await withPassword(connection, async (): Promise<TreeNode[]> => {
+      const done = () =>
+        setLoading((s) => {
+          const next = new Set(s);
+          next.delete(node.key);
+          return next;
+        });
+      let result: TreeNode[] | null = null;
+      try {
+        result = await withPassword(connection, async (): Promise<TreeNode[]> => {
         if (node.kind === 'connection') {
           // Unter der Verbindung die konfigurierte Datenbank (ohne Abfrage).
           return [{ key: `d:${id}`, label: connection.database, kind: 'database', connection }];
@@ -116,12 +152,12 @@ export function DatabaseToolWindow({ api, notify, onHide, onOpenTable }: Databas
           primaryKey: c.primaryKey,
           leaf: true,
         }));
-      });
-      setLoading((s) => {
-        const next = new Set(s);
-        next.delete(node.key);
-        return next;
-      });
+        });
+      } finally {
+        done();
+      }
+      // Inzwischen neu angestossen („Refresh“, Bearbeiten): dieses Ergebnis gilt nicht mehr.
+      if ((tokens.current.get(node.key) ?? 0) !== token) return;
       if (result === null) {
         setExpanded((s) => {
           const next = new Set(s);
@@ -147,7 +183,10 @@ export function DatabaseToolWindow({ api, notify, onHide, onOpenTable }: Databas
 
   /** „Refresh“: Der Ast der Verbindung lädt neu; aufgeklappte Knoten laden ihre Kinder gleich wieder (siehe unten). */
   const refresh = (connection: DbConnection) => {
-    setChildren((m) => new Map([...m].filter(([key]) => !key.includes(`:${connection.id}`))));
+    const mine = (key: string) => key.includes(`:${connection.id}`);
+    for (const key of [...children.keys(), ...loading]) if (mine(key)) tokens.current.set(key, (tokens.current.get(key) ?? 0) + 1);
+    setChildren((m) => new Map([...m].filter(([key]) => !mine(key))));
+    setLoading((s) => new Set([...s].filter((key) => !mine(key))));
   };
 
   const remove = async (connection: DbConnection) => {
@@ -258,8 +297,11 @@ export function DatabaseToolWindow({ api, notify, onHide, onOpenTable }: Databas
           api={api}
           {...(dialog.connection ? { connection: dialog.connection } : {})}
           onSaved={(saved) => {
-            void reloadConnections();
-            if (dialog.connection) refresh(saved);
+            // Erst die geänderten Felder, dann der Ast: sonst zeigte er noch den alten Datenbanknamen (Review).
+            const edited = dialog.connection !== undefined;
+            void reloadConnections().then(() => {
+              if (edited) refresh(saved);
+            });
           }}
           onClose={() => setDialog(null)}
         />

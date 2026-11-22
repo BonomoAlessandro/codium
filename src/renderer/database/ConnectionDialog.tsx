@@ -26,6 +26,8 @@ export function ConnectionDialog({ api, connection, onSaved, onClose }: Connecti
   const [password, setPassword] = useState('');
   const [ssl, setSsl] = useState(connection?.ssl ?? false);
   const [askPassword, setAskPassword] = useState(connection?.askPassword ?? false);
+  /** Ein gespeichertes Passwort entfernen (Review). */
+  const [clearPassword, setClearPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -93,7 +95,8 @@ export function ConnectionDialog({ api, connection, onSaved, onClose }: Connecti
       const saved = await api.request('db.saveConnection', {
         ...(connection ? { id: connection.id } : {}),
         connection: input(),
-        ...(typedPassword !== undefined && !askPassword ? { password: typedPassword } : {}),
+        // Mit „Ask for password every time“ gilt das Feld nur für „Test Connection“ und wird nie gespeichert.
+        ...(askPassword ? {} : clearPassword ? { password: '' } : typedPassword !== undefined ? { password: typedPassword } : {}),
       });
       onSaved(saved);
       onClose();
@@ -150,11 +153,17 @@ export function ConnectionDialog({ api, connection, onSaved, onClose }: Connecti
             type="password"
             value={password}
             autoComplete="off"
-            disabled={busy || askPassword}
-            placeholder={askPassword ? 'Asked when connecting' : connection?.hasPassword ? 'Saved (leave empty to keep)' : ''}
+            disabled={busy || clearPassword}
+            placeholder={askPassword ? 'Only for Test Connection, not saved' : connection?.hasPassword ? 'Saved (leave empty to keep)' : ''}
             onChange={(e) => setPassword(e.target.value)}
           />
         </div>
+        {connection?.hasPassword && !askPassword && (
+          <label className="settings-check">
+            <input type="checkbox" checked={clearPassword} disabled={busy} onChange={(e) => setClearPassword(e.target.checked)} />
+            Remove saved password
+          </label>
+        )}
         <label className="settings-check">
           <input type="checkbox" checked={askPassword} disabled={busy} onChange={(e) => setAskPassword(e.target.checked)} />
           Ask for password every time

@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CommandArgs, CommandName, CommandResult, DbConnectionInput } from '../../src/shared/types';
 import { createTestCore, restart, type TestCore } from '../support/core';
-import { PG_DATABASE, PG_PASSWORD, PG_USER, postgresProcessesFor, startPostgres, type TestPostgres } from '../support/postgres';
+import { PG_DATABASE, PG_PASSWORD, PG_USER, startPostgres, type TestPostgres } from '../support/postgres';
 import { useTempDirs } from '../support/tempDir';
 
 const WELCOME = 'Welcome to Codium';
@@ -17,6 +17,8 @@ describe('Datenbank: Verbindungen und Baum', () => {
 
   beforeAll(async () => {
     server = await startPostgres();
+    // Die Prüfung auf Prozesse sieht den laufenden Server (sonst bewiese sie nach dem Stoppen nichts).
+    expect(server.processes()).toBeGreaterThan(0);
     await server.sql(`
       CREATE SCHEMA crm;
       CREATE TABLE crm.customers (id serial PRIMARY KEY, name text NOT NULL, email varchar(40));
@@ -27,10 +29,9 @@ describe('Datenbank: Verbindungen und Baum', () => {
   });
 
   afterAll(async () => {
-    const dataDir = server?.dataDir;
     await server?.stop();
     // Nach den Tests läuft kein PostgreSQL-Prozess mehr.
-    if (dataDir) expect(postgresProcessesFor(dataDir)).toBe(0);
+    if (server) expect(server.processes()).toBe(0);
   });
 
   function call<K extends CommandName>(test: TestCore, windowId: number, name: K, ...args: CommandArgs<K>): Promise<CommandResult<K>> {
@@ -125,6 +126,38 @@ describe('Datenbank: Verbindungen und Baum', () => {
     expect(await call(test, windowId, 'db.schemas', { id: saved.id })).toContain('crm');
     await call(test, windowId, 'db.deleteConnection', { id: saved.id });
     expect((await call(test, windowId, 'db.connections')).map((c) => c.name)).toEqual(['Ask']);
+  });
+
+  it('schickt nie PGPASSWORD des Nutzers; Bearbeiten verwirft ein abgefragtes Passwort; ein Pool je Verbindung', async () => {
+    const { test, windowId } = await open(tempDir(), projectDir('alpha'));
+    // Ohne gespeichertes Passwort darf node-postgres nicht auf PGPASSWORD zurückgreifen (Review).
+    const before = process.env.PGPASSWORD;
+    process.env.PGPASSWORD = PG_PASSWORD;
+    try {
+      const plain = await call(test, windowId, 'db.saveConnection', { connection: input({ name: 'Plain' }) });
+      await expect(call(test, windowId, 'db.schemas', { id: plain.id })).rejects.toMatchObject({ code: 'DB_FAILED' });
+      await expect(call(test, windowId, 'db.testConnection', { connection: input() })).rejects.toMatchObject({ code: 'DB_FAILED' });
+    } finally {
+      if (before === undefined) delete process.env.PGPASSWORD;
+      else process.env.PGPASSWORD = before;
+    }
+
+    // Ein abgefragtes Passwort gilt nach einer Änderung der Verbindung nicht mehr.
+    const ask = await call(test, windowId, 'db.saveConnection', { connection: input({ name: 'Ask', askPassword: true }) });
+    await call(test, windowId, 'db.setPassword', { id: ask.id, password: PG_PASSWORD });
+    expect(await call(test, windowId, 'db.schemas', { id: ask.id })).toContain('crm');
+    await call(test, windowId, 'db.saveConnection', { id: ask.id, connection: input({ name: 'Ask (renamed)', askPassword: true }) });
+    await expect(call(test, windowId, 'db.schemas', { id: ask.id })).rejects.toMatchObject({ code: 'DB_PASSWORD_REQUIRED' });
+    // „Test Connection“ mit „Ask for password every time“: mit eingegebenem Passwort, ohne es zu speichern.
+    expect((await call(test, windowId, 'db.testConnection', { connection: input({ askPassword: true }), password: PG_PASSWORD })).serverVersion).toMatch(/^\d+/);
+
+    // Gleichzeitige erste Anfragen: ein Pool. Ein gespeichertes Passwort lässt sich entfernen.
+    const saved = await call(test, windowId, 'db.saveConnection', { connection: input({ name: 'Saved' }), password: PG_PASSWORD });
+    const service = test.core.projectCore(windowId)!.database;
+    const before2 = service.openPools;
+    await Promise.all([1, 2, 3].map(() => call(test, windowId, 'db.schemas', { id: saved.id })));
+    expect(service.openPools).toBe(before2 + 1);
+    expect((await call(test, windowId, 'db.saveConnection', { id: saved.id, connection: input({ name: 'Saved' }), password: '' })).hasPassword).toBe(false);
   });
 
   it('Verbindungen überstehen einen Neustart und gehören nur zu ihrem Projekt; der Abbau baut die Pools ab', async () => {

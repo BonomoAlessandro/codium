@@ -285,6 +285,8 @@ describe('Dateibaum', () => {
       await (await contextMenu(page, 'README.md')).getByRole('menuitem', { name: 'Copy', exact: true }).click();
       await (await contextMenu(page, 'Alpha')).getByRole('menuitem', { name: 'Paste', exact: true }).click();
       const copy = page.getByRole('dialog', { name: 'Copy' });
+      // Unter Last kommt der Dialog erst nach dem Klick: auf ihn warten, nicht sofort lesen.
+      await copy.waitFor({ timeout: 15_000 });
       expect(await copy.getByRole('textbox').inputValue()).toBe('README (2).md');
       await copy.getByRole('textbox').press('Enter');
       await copy.waitFor({ state: 'detached' });

@@ -25,7 +25,9 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const TEXT_TYPES = { getTypeParser: () => (value: string) => value } as unknown as pg.CustomTypesConfig;
 
 export class DatabaseService {
-  private readonly pools = new Map<string, pg.Pool>();
+  private readonly pools = new Map<string, Promise<pg.Pool>>();
+  /** Je Verbindung erhöht bei jedem Abbau ihres Pools; ein Pool aus einer älteren Generation wird gleich wieder beendet. */
+  private readonly generations = new Map<string, number>();
   /** Abgefragte Passwörter, nur bis zum Schliessen des Fensters. */
   private readonly sessionPasswords = new Map<string, string>();
   private disposed = false;
@@ -66,9 +68,10 @@ export class DatabaseService {
       const index = list.findIndex((c) => c.id === saved.id);
       state.databaseConnections = index >= 0 ? list.map((c, i) => (i === index ? saved : c)) : [...list, saved];
     });
-    // Geänderte Felder: Der alte Pool und ein abgefragtes Passwort gelten nicht mehr.
+    // Geänderte Felder: Der alte Pool und ein abgefragtes Passwort gelten nicht mehr (ein für Host A eingegebenes
+    // Passwort ginge sonst ungefragt an Host B; Review).
     await this.dropPool(saved.id);
-    if (p.password !== undefined || input.askPassword !== existing?.askPassword) this.sessionPasswords.delete(saved.id);
+    this.sessionPasswords.delete(saved.id);
     return publicConnection(saved);
   }
 
@@ -89,6 +92,8 @@ export class DatabaseService {
     let password = p.password;
     if (password === undefined && p.id !== undefined) password = await this.passwordFor(this.find(p.id), false);
     const client = new pg.Client(this.clientConfig(input, password));
+    // Ein Abbruch der Verbindung meldet pg auch als Ereignis; ohne Empfänger beendete es den Hauptprozess (Review).
+    client.on('error', (err) => this.options.log(`Test der Verbindung „${input.name}“: ${err.message}`));
     try {
       await client.connect();
       const result = await client.query<{ server_version: string }>('SHOW server_version');
@@ -187,12 +192,25 @@ export class DatabaseService {
     if (this.disposed) throw new CommandError('The project is closing.', ErrorCode.dbFailed);
     const known = this.pools.get(connection.id);
     if (known) return known;
-    const password = await this.passwordFor(connection, true);
-    const pool = new pg.Pool({ ...this.clientConfig(connection, password), max: POOL_SIZE, idleTimeoutMillis: 30_000 });
-    // Ein Fehler einer ruhenden Verbindung (etwa ein Neustart des Servers) darf den Hauptprozess nicht beenden.
-    pool.on('error', (err) => this.options.log(`Datenbank „${connection.name}“: ${err.message}`));
-    this.pools.set(connection.id, pool);
-    return pool;
+    // Gleichzeitige erste Anfragen teilen sich einen Pool; wurde er während des Entschlüsselns verworfen (Bearbeiten,
+    // Schliessen des Fensters), wird der neue gleich wieder beendet (Review).
+    const generation = this.generations.get(connection.id) ?? 0;
+    const creating = (async () => {
+      const password = await this.passwordFor(connection, true);
+      const pool = new pg.Pool({ ...this.clientConfig(connection, password), max: POOL_SIZE, idleTimeoutMillis: 30_000 });
+      // Ein Fehler einer ruhenden Verbindung (etwa ein Neustart des Servers) darf den Hauptprozess nicht beenden.
+      pool.on('error', (err) => this.options.log(`Datenbank „${connection.name}“: ${err.message}`));
+      if (this.disposed || (this.generations.get(connection.id) ?? 0) !== generation) {
+        await pool.end().catch(() => {});
+        throw new CommandError('The connection was changed or closed. Try again.', ErrorCode.dbFailed);
+      }
+      return pool;
+    })();
+    this.pools.set(connection.id, creating);
+    creating.catch(() => {
+      if (this.pools.get(connection.id) === creating) this.pools.delete(connection.id);
+    });
+    return creating;
   }
 
   private clientConfig(input: DbConnectionInput, password: string | undefined): pg.ClientConfig {
@@ -201,7 +219,9 @@ export class DatabaseService {
       port: input.port,
       database: input.database,
       user: input.user,
-      ...(password !== undefined ? { password } : {}),
+      // Immer ausdrücklich, auch leer: Sonst nähme node-postgres PGPASSWORD oder die pgpass-Datei des Nutzers und
+      // schickte sie an den eingegebenen Host (Review).
+      password: async () => password ?? '',
       // „ja“: verschlüsselt ohne Zertifikatsprüfung (wie sslmode=require); „nein“: unverschlüsselt.
       ssl: input.ssl ? { rejectUnauthorized: false } : false,
       connectionTimeoutMillis: this.options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
@@ -247,11 +267,16 @@ export class DatabaseService {
     return this.project.state.databaseConnections ?? [];
   }
 
+  /**
+   * Beendet den Pool einer Verbindung. Anfragen, die ihn schon haben, scheitern dann mit einer Meldung von pg; das
+   * betrifft nur Anfragen während eines Verbindungsfehlers oder einer Änderung der Verbindung.
+   */
   private async dropPool(id: string): Promise<void> {
+    this.generations.set(id, (this.generations.get(id) ?? 0) + 1);
     const pool = this.pools.get(id);
     if (!pool) return;
     this.pools.delete(id);
-    await pool.end().catch(() => {});
+    await pool.then((p) => p.end()).catch(() => {});
   }
 
   /** Beim Abbau des Projekt-Kerns: alle Pools zu, abgefragte Passwörter vergessen. */
@@ -260,7 +285,7 @@ export class DatabaseService {
     this.sessionPasswords.clear();
     const pools = [...this.pools.values()];
     this.pools.clear();
-    await Promise.allSettled(pools.map((p) => p.end()));
+    await Promise.allSettled(pools.map((p) => p.then((pool) => pool.end())));
   }
 
   /** Für Tests: Zahl offener Pools. */
