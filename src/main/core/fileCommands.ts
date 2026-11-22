@@ -63,6 +63,11 @@ export function registerFileCommands(register: RegisterProjectCommand): void {
   register('git.continueRebase', (project) => project.git.continueRebase());
   register('git.mergeMessage', (project) => project.git.mergeMessage());
   register('git.conflictMarkers', (project) => project.git.conflictMarkers());
+  register('git.log', (project, params) => project.git.log(params));
+  register('git.commitDetails', (project, params) => project.git.commitDetails(params));
+  register('git.commitFile', (project, params) => project.git.commitFile(params));
+  register('git.checkoutRevision', (project, params) => project.git.checkoutRevision(params));
+  register('git.copyRevision', (project, params) => project.git.copyRevision(params));
   register('git.lastMessage', (project) => project.git.lastMessage());
   register('git.rollback', (project, params) => project.git.rollback(params));
   register('git.addToGitignore', (project, params) => project.git.addToGitignore(params));

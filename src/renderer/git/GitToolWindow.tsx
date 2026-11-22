@@ -1,9 +1,11 @@
-// Werkzeugfenster „Git“ (Ticket 15) mit den Reitern „Log“ (Platzhalter bis Ticket 19) und „Console“: jeder Git-Aufruf
+// Werkzeugfenster „Git“ (Ticket 15) mit den Reitern „Log“ (Ticket 19, GitLogView.tsx) und „Console“: jeder Git-Aufruf
 // mit Zeitpunkt, Befehl, Ausgabe und Exit-Code, die letzten 1'000, nicht gespeichert. Standardmässig sichtbar sind vom
 // Nutzer ausgelöste, schreibende und Netzwerk-Befehle; „Show background commands“ blendet die Abfragen dazu.
 
 import { useEffect, useRef, useState } from 'react';
-import type { CodiumApi, GitConsoleEntry, GitState } from '../../shared/types';
+import type { CodiumApi, GitCommitDetails, GitConsoleEntry, GitState } from '../../shared/types';
+import type { Notify } from '../Notices';
+import { GitLogView } from './GitLogView';
 import { ToolWindowHeader } from '../project/ToolWindowHeader';
 import { GIT_NOT_FOUND_TEXT } from './gitState';
 
@@ -13,13 +15,19 @@ interface GitToolWindowProps {
   /** `false`: Git fehlt (Hinweis statt „Not a Git repository“). */
   gitAvailable?: boolean | null;
   onHide: () => void;
+  notify: Notify;
+  /** Vergleich einer Datei eines Commits aus dem Log (schreibgeschützt). */
+  onShowCommitDiff: (details: GitCommitDetails, file: GitCommitDetails['files'][number]) => void;
+  /** „New Branch…“ ab einem Commit. */
+  onNewBranch: (from: string) => void;
 }
 
 /** So viele Einträge hält auch die Oberfläche (wie der Kern). */
 const LIMIT = 1000;
 
-export function GitToolWindow({ api, state, gitAvailable, onHide }: GitToolWindowProps) {
-  const [tab, setTab] = useState<'log' | 'console'>('console');
+export function GitToolWindow({ api, state, gitAvailable, onHide, notify, onShowCommitDiff, onNewBranch }: GitToolWindowProps) {
+  // Wie in IntelliJ zeigt das Werkzeugfenster zuerst den Log.
+  const [tab, setTab] = useState<'log' | 'console'>('log');
   const entries = useConsole(api);
   const [background, setBackground] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
@@ -57,7 +65,7 @@ export function GitToolWindow({ api, state, gitAvailable, onHide }: GitToolWindo
         ) : state && !state.repository ? (
           <p className="tool-window-placeholder">Not a Git repository</p>
         ) : tab === 'log' ? (
-          <p className="tool-window-placeholder">The Git log will appear here.</p>
+          <GitLogView api={api} notify={notify} onShowDiff={onShowCommitDiff} onNewBranch={onNewBranch} />
         ) : (
           <>
             <label className="git-console-option">

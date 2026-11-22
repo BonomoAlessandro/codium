@@ -361,6 +361,78 @@ export interface GitBranches {
   remote: Array<{ name: string; remote: string }>;
 }
 
+/** Filter des Git-Logs (Ticket 19). Mit `text` oder `author` gibt es keinen Graph. */
+export interface GitLogFilter {
+  /** Teil der Nachricht (ohne Gross-/Kleinschreibung) oder Anfang des Hashs. */
+  text?: string;
+  /** Nur dieser Branch (lokal oder remote); ohne alle Branches. */
+  branch?: string;
+  /** Teil von Name oder E-Mail des Autors (ohne Gross-/Kleinschreibung). */
+  author?: string;
+}
+
+/** Ein Etikett an einem Commit. */
+export interface GitRefLabel {
+  name: string;
+  kind: 'head' | 'local' | 'remote' | 'tag';
+}
+
+/**
+ * Graph-Spuren einer Zeile: die Spalte des Commit-Punkts und die Linien zur nächsten Zeile (von Spalte `from` in dieser
+ * zu Spalte `to` in der nächsten). `color` ist die Nummer der Spur (die Oberfläche wählt die Farbe).
+ */
+export interface GitGraphRow {
+  column: number;
+  color: number;
+  lines: Array<{ from: number; to: number; color: number }>;
+}
+
+export interface GitLogCommit {
+  hash: string;
+  parents: string[];
+  refs: GitRefLabel[];
+  author: string;
+  email: string;
+  /** Autor-Datum (ms seit 1970). */
+  date: number;
+  subject: string;
+  /** Fehlt mit Text- oder Autorfilter. */
+  graph?: GitGraphRow;
+}
+
+/** Eine Seite des Logs. `version` wechselt, wenn der Log neu beginnt (anderer Filter, geänderte Refs). */
+export interface GitLogPage {
+  version: number;
+  commits: GitLogCommit[];
+  /** Alle Commits sind gelesen. */
+  done: boolean;
+  /** Ob die Zeilen Graph-Spuren tragen. */
+  graph: boolean;
+}
+
+/** Details eines Commits mit den geänderten Dateien (bei einem Merge gegen den ersten Elterncommit). */
+export interface GitCommitDetails {
+  hash: string;
+  parents: string[];
+  author: string;
+  email: string;
+  date: number;
+  committer: string;
+  commitDate: number;
+  /** Die vollständige Nachricht. */
+  message: string;
+  files: Array<{
+    /** Pfad relativ zur Wurzel des Repositorys, mit „/“. */
+    repoPath: string;
+    /** Absoluter Pfad. */
+    path: string;
+    /** `A` hinzugefügt, `M` geändert, `D` gelöscht, `R` umbenannt, `C` kopiert, `T` Typ geändert. */
+    status: string;
+    /** Bei Umbenennungen und Kopien der alte Pfad relativ zur Wurzel. */
+    origRepoPath?: string;
+  }>;
+}
+
 /** Ein Eintrag der Git-Konsole (Ticket 15). */
 export interface GitConsoleEntry {
   id: number;
@@ -656,6 +728,19 @@ export interface Commands {
   /** Konfliktdateien, die noch Konfliktmarkierungen enthalten. */
   'git.conflictMarkers': { params: void; result: string[] };
   /**
+   * Eine Seite des Logs ab `offset` (Ticket 19), aus einem laufenden Git-Prozess je Fenster. Ein anderer Filter oder
+   * geänderte Refs starten ihn neu; dann beginnt eine neue `version` (und `offset` zählt in ihr).
+   */
+  'git.log': { params: { filter: GitLogFilter; offset: number }; result: GitLogPage };
+  /** Details und geänderte Dateien eines Commits. */
+  'git.commitDetails': { params: { hash: string }; result: GitCommitDetails };
+  /** Inhalt einer Datei (Pfad relativ zur Wurzel des Repositorys) in einem Commit, wie `git.fileAtCommit`. */
+  'git.commitFile': { params: { hash: string; repoPath: string }; result: { exists: boolean; text: string; binary?: true } };
+  /** „Checkout Revision“: abgekoppelter Zustand auf diesem Commit. */
+  'git.checkoutRevision': { params: { hash: string }; result: void };
+  /** „Copy Revision Number“: der volle Hash in die Zwischenablage. */
+  'git.copyRevision': { params: { hash: string }; result: void };
+  /**
    * Inhalt einer Datei in einem Commit (Standard HEAD), so wie Git ihn auschecken würde (Zeilenende, Filter), mit der
    * Kodierung der Datei dekodiert; `exists: false` und leer, wenn es sie dort nicht gibt (Ticket 17).
    */
@@ -829,6 +914,8 @@ export interface Events {
   'terminal.exit': { terminalId: number; exitCode: number };
   /** Der Zustand des Repositorys hat sich geändert (Ticket 15). */
   'git.stateChanged': GitState;
+  /** Die Refs haben sich geändert (eigene Aktion, Fetch, ausserhalb von Codium); der Log lädt neu (Ticket 19). */
+  'git.refsChanged': Record<string, never>;
   /** Ein Eintrag der Git-Konsole ist neu oder fertig. */
   'git.console': GitConsoleEntry;
   /** Fehler und Warnungen einer Datei (ersetzen die bisherigen). */

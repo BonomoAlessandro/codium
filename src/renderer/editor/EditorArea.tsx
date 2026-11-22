@@ -138,8 +138,11 @@ export interface DiffSpec {
   title: string;
   /** Die Datei, um die es geht (für die Sprache und den Vergleich mit dem Arbeitsordner). */
   filePath: string;
-  /** Linke Seite: der Stand von `path` in `commit` (Standard HEAD); `null` für leer (neue Dateien). */
-  base: { path: string; commit?: string } | null;
+  /**
+   * Linke Seite: der Stand von `path` in `commit` (Standard HEAD), oder aus der Historie der Stand von `repoPath`
+   * (relativ zur Wurzel des Repositorys) in `commit`; `null` für leer (neue Dateien).
+   */
+  base: { path: string; commit?: string } | { repoPath: string; commit: string } | null;
   /** Rechte Seite: `file` ist das gemeinsame Modell der Datei (bearbeitbar), sonst ein fester Text. */
   modified: { kind: 'file' } | { kind: 'text'; text: string };
   /** Unterscheidet Vergleiche derselben Datei (etwa verschiedene Commits). */
@@ -940,9 +943,12 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     const { diff } = tab.content;
     const fileContent = tabsRef.current.find((t) => pathKey(t.path) === pathKey(diff.filePath))?.content;
     const encoding = fileContent?.kind === 'text' ? fileContent.encoding : undefined;
-    const request = diff.base
-      ? api.request('git.fileAtCommit', { path: diff.base.path, ...(diff.base.commit ? { commit: diff.base.commit } : {}), ...(encoding ? { encoding } : {}) })
-      : Promise.resolve({ exists: false, text: '' } as { exists: boolean; text: string; binary?: true });
+    const base = diff.base;
+    const request = !base
+      ? Promise.resolve({ exists: false, text: '' } as { exists: boolean; text: string; binary?: true })
+      : 'repoPath' in base
+        ? api.request('git.commitFile', { hash: base.commit, repoPath: base.repoPath })
+        : api.request('git.fileAtCommit', { path: base.path, ...(base.commit ? { commit: base.commit } : {}), ...(encoding ? { encoding } : {}) });
     return request.then(
       (result) => {
         const current = tabsRef.current.find((t) => t.path === diffPath);

@@ -2042,3 +2042,135 @@ kbd {
   display: flex;
   gap: 6px;
 }
+
+/* ---------- Git-Log mit Graph (Ticket 19) ---------- */
+
+.git-log {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.git-log-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.git-log-filters {
+  display: flex;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.git-log-filters input[type='search'] {
+  min-width: 0;
+  flex: 1;
+  max-width: 240px;
+}
+
+.git-log-list {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  outline: none;
+}
+
+.git-log-row {
+  position: absolute;
+  right: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 8px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.git-log-row.selected {
+  background: var(--selection, rgba(75, 140, 232, 0.25));
+}
+
+.git-log-graph {
+  flex: none;
+}
+
+.git-log-subject {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.git-log-ref {
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 11px;
+  border: 1px solid currentColor;
+}
+
+.git-log-ref.head {
+  color: #d6b33d;
+}
+
+.git-log-ref.local {
+  color: #4caf6a;
+}
+
+.git-log-ref.remote {
+  color: #c75cc2;
+}
+
+.git-log-ref.tag {
+  color: #4b8ce8;
+}
+
+.git-log-author,
+.git-log-date {
+  flex: none;
+  opacity: 0.75;
+}
+
+.git-log-author {
+  width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.git-log-details {
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  min-height: 0;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.git-log-files {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.git-log-message {
+  max-height: 45%;
+  overflow: auto;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.git-log-message pre {
+  margin: 0 0 6px;
+  white-space: pre-wrap;
+  font-family: inherit;
+}
+
+.git-log-hash {
+  font-family: var(--font-mono);
+}

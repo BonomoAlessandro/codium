@@ -861,7 +861,7 @@ export class AppCore {
         env: this.options.processEnv,
         ...(this.options.windowsConpty ? { bundledConpty: false } : {}),
       },
-      git: { git: this.gitPath, env: this.options.processEnv, trash: (file) => this.ports.shell.trash(file) },
+      git: { git: this.gitPath, env: this.options.processEnv, trash: (file) => this.ports.shell.trash(file), writeClipboard: (text) => this.ports.shell.writeClipboard(text) },
       language: {
         ...(this.options.typescript ? { typescript: this.options.typescript } : {}),
         env: this.options.processEnv,

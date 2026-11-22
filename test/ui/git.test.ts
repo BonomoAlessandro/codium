@@ -44,6 +44,8 @@ describe('Git: Branches und Konsole', () => {
 
       // Git-Konsole: die Befehle des Nutzers; Abfragen im Hintergrund erst mit dem Schalter.
       await page.keyboard.press('Alt+9');
+      // Das Werkzeugfenster zeigt zuerst den Log (Ticket 19).
+      await page.getByRole('tablist', { name: 'Git' }).getByRole('tab', { name: 'Console' }).click();
       const consoleLog = page.getByRole('log', { name: 'Git Console' });
       await consoleLog.waitFor();
       await expect.poll(() => consoleLog.innerText()).toContain('git switch -c feature-x');

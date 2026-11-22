@@ -9,10 +9,12 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { ErrorCode, type ChangeBlock, type CommandParams, type CommandResult, type TextEncoding, type GitBranches, type GitConsoleEntry, type GitFileStatus, type GitState } from '../../../shared/types';
+import { ErrorCode, type ChangeBlock, type CommandParams, type CommandResult, type TextEncoding, type GitBranches, type GitCommitDetails, type GitConsoleEntry, type GitLogCommit, type GitLogFilter, type GitLogPage, type GitRefLabel, type GitFileStatus, type GitState } from '../../../shared/types';
 import { gitMessage, runGit, type GitRun } from '../gitProcess';
 import { decodeAs, decodeText } from '../fileContent';
 import { changeBlocks } from './lineDiff';
+import { LogGraph } from './logGraph';
+import { LogReader } from './logReader';
 import type { ProjectCore } from '../projectCore';
 import { CommandError } from '../router';
 
@@ -31,6 +33,8 @@ export interface GitServiceOptions {
   env?: NodeJS.ProcessEnv;
   /** In den Papierkorb (Port „Shell-Aktionen“), für Rollback hinzugefügter Dateien. */
   trash: (file: string) => Promise<void>;
+  /** In die Zwischenablage (Port „Shell-Aktionen“; im Testmodus nur aufgezeichnet), für „Copy Revision Number“. */
+  writeClipboard: (text: string) => Promise<void>;
   log: (message: string) => void;
 }
 
@@ -41,6 +45,19 @@ interface RunOptions {
   write?: boolean;
   /** Pfade für `--pathspec-from-file=- --pathspec-file-nul` (über stdin, ohne Grenze der Befehlszeile). */
   pathspecs?: string[];
+}
+
+/** So viele Commits liest der Log je Seite. */
+const LOG_PAGE = 500;
+
+interface LogSession {
+  key: string;
+  version: number;
+  reader: LogReader;
+  /** `null` mit Text- oder Autorfilter (dann gibt es keinen Graph). */
+  graph: LogGraph | null;
+  commits: GitLogCommit[];
+  remotes: string[];
 }
 
 const NO_REPOSITORY: GitState = { repository: false, branch: null, ahead: 0, behind: 0, files: [] };
@@ -164,6 +181,7 @@ export class GitService {
       background: true,
     });
     if (status.code !== 0) return this.publish({ ...NO_REPOSITORY, repository: true, root: this.root });
+    await this.checkRefs();
     return this.publish({ ...parseStatus(status.stdout, this.root), ...(this.operation() ? { operation: this.operation()! } : {}) });
   }
 
@@ -372,6 +390,157 @@ export class GitService {
     // Im letzten Commit binär: keine sinnvollen Blöcke.
     if (old === null) return [];
     return changeBlocks(old, p.text);
+  }
+
+  // ---------- Log mit Graph (Ticket 19) ----------
+
+  /** Der laufende Log dieses Fensters: ein Git-Prozess, seitenweise gelesen. */
+  private logSession: LogSession | null = null;
+  private logVersion = 0;
+  /** Die Log-Aufrufe nacheinander (eine Seite nach der anderen aus demselben Prozess). */
+  private logChain: Promise<unknown> = Promise.resolve();
+  /** Gestartete Log-Prozesse; für Tests. */
+  logProcessesStarted = 0;
+  /** Stand der Refs beim letzten Lesen des Zustands; ändert er sich, meldet der Dienst „git.refsChanged“. */
+  private refsSignature: string | null = null;
+
+  /** Eine Seite des Logs; ein anderer Filter oder andere Refs beginnen einen neuen Log (neue \`version\`). */
+  log(params: CommandParams<'git.log'>): Promise<GitLogPage> {
+    const p = params as Partial<CommandParams<'git.log'>>;
+    const filter = logFilter(p?.filter);
+    const offset = p?.offset ?? 0;
+    if (typeof offset !== 'number' || !Number.isInteger(offset) || offset < 0) throw new CommandError('A page offset is expected.', ErrorCode.invalidParams);
+    const work = async (): Promise<GitLogPage> => {
+      await this.requireRepository();
+      const refs = await this.run(['show-ref', '--head'], { background: true });
+      const key = JSON.stringify([filter, refs.stdout]);
+      if (!this.logSession || this.logSession.key !== key) await this.startLog(filter, key);
+      const session = this.logSession!;
+      while (session.commits.length < offset + LOG_PAGE && !session.reader.done) {
+        const records = await session.reader.take(LOG_PAGE);
+        if (records.length === 0) break;
+        for (const fields of records) {
+          const commit = parseLogRecord(fields, session.remotes);
+          if (!commit) continue;
+          if (session.graph) commit.graph = session.graph.next(commit.hash, commit.parents);
+          else if (!matchesLog(commit, fields[7] ?? '', filter)) continue;
+          session.commits.push(commit);
+        }
+      }
+      return {
+        version: session.version,
+        commits: session.commits.slice(offset, offset + LOG_PAGE),
+        done: session.reader.done && session.commits.length <= offset + LOG_PAGE,
+        graph: session.graph !== null,
+      };
+    };
+    const next = this.logChain.then(work, work);
+    this.logChain = next.catch(() => {});
+    return next;
+  }
+
+  private async startLog(filter: GitLogFilter, key: string): Promise<void> {
+    await this.logSession?.reader.dispose();
+    this.logSession = null;
+    const withGraph = !filter.text && !filter.author;
+    const state = await this.current();
+    // Die Spur des aktuellen Branches beginnt in Spalte 0 (nur, wenn er im Log vorkommt).
+    let head: string | undefined;
+    if (withGraph && (!filter.branch || filter.branch === state.branch)) {
+      const r = await this.run(['rev-parse', '--verify', '--quiet', 'HEAD'], { background: true });
+      if (r.code === 0) head = r.stdout.trim();
+    }
+    const remotesRun = await this.run(['remote'], { background: true });
+    const remotes = remotesRun.code === 0 ? remotesRun.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [];
+    const format = ['%H', '%P', '%D', '%an', '%ae', '%at', '%s', ...(filter.text ? ['%B'] : [])].join('%x00') + '%x1e';
+    const args = ['--no-optional-locks', 'log', '--topo-order', '--decorate=full', `--format=${format}`, ...(filter.branch ? [filter.branch, '--'] : ['--all', '--'])];
+    this.logProcessesStarted++;
+    // In der Konsole wie jeder Aufruf (ohne Ausgabe: die ist der Log selbst).
+    this.addEntry({ id: this.nextEntryId++, time: Date.now(), command: ['git', ...args].map(quote).join(' '), output: '', exitCode: 0, background: true });
+    const reader = new LogReader(this.options.git!, args, { cwd: this.project.path, env: { ...(this.options.env ?? process.env), GIT_LITERAL_PATHSPECS: '1' } });
+    this.logSession = { key, version: ++this.logVersion, reader, graph: withGraph ? new LogGraph(head) : null, commits: [], remotes };
+  }
+
+  /** Details eines Commits und seine geänderten Dateien (bei einem Merge gegen den ersten Elterncommit). */
+  async commitDetails(params: CommandParams<'git.commitDetails'>): Promise<GitCommitDetails> {
+    const hash = commitHash((params as Partial<CommandParams<'git.commitDetails'>>)?.hash);
+    await this.requireRepository();
+    const meta = await this.run(['show', '-s', '--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%cn%x00%ct%x00%B', hash, '--'], { background: true });
+    if (meta.code !== 0) throw this.failure(meta);
+    const [full, parentList, author, email, at, committer, ct, ...rest] = meta.stdout.split('\0');
+    const parents = parentList.split(' ').filter(Boolean);
+    const diff = await this.run(
+      parents.length > 0 ? ['diff-tree', '-r', '-z', '--name-status', '-M', parents[0], full, '--'] : ['diff-tree', '-r', '-z', '--root', '--no-commit-id', '--name-status', '-M', full, '--'],
+      { background: true },
+    );
+    if (diff.code !== 0) throw this.failure(diff);
+    const root = this.root!;
+    const files: GitCommitDetails['files'] = [];
+    const parts = diff.stdout.split('\0');
+    for (let i = 0; i + 1 < parts.length; ) {
+      const status = parts[i];
+      if (!/^[A-Z]/.test(status)) {
+        i++;
+        continue;
+      }
+      if (/^[RC]/.test(status)) {
+        files.push({ status: status[0], origRepoPath: parts[i + 1], repoPath: parts[i + 2], path: path.join(root, parts[i + 2]) });
+        i += 3;
+      } else {
+        files.push({ status: status[0], repoPath: parts[i + 1], path: path.join(root, parts[i + 1]) });
+        i += 2;
+      }
+    }
+    return {
+      hash: full,
+      parents,
+      author,
+      email,
+      date: Number(at) * 1000,
+      committer,
+      commitDate: Number(ct) * 1000,
+      message: rest.join('\0').replace(/\s+$/, ''),
+      files,
+    };
+  }
+
+  /** Inhalt einer Datei (relativ zur Wurzel des Repositorys) in einem Commit, für Vergleiche aus der Historie. */
+  async commitFile(params: CommandParams<'git.commitFile'>): Promise<CommandResult<'git.commitFile'>> {
+    const p = params as Partial<CommandParams<'git.commitFile'>>;
+    const hash = commitHash(p?.hash);
+    const repoPath = p?.repoPath;
+    if (typeof repoPath !== 'string' || repoPath === '' || repoPath.startsWith('/') || /\0/.test(repoPath) || repoPath.split('/').includes('..')) {
+      throw new CommandError('A path in the repository is expected.', ErrorCode.invalidParams);
+    }
+    await this.requireRepository();
+    const result = await this.run(['cat-file', '--filters', `${hash}:${repoPath}`], { background: true });
+    if (result.code !== 0) return { exists: false, text: '' };
+    const text = decodeContent(result.stdoutBytes, undefined);
+    return text === null ? { exists: true, text: '', binary: true } : { exists: true, text };
+  }
+
+  /** „Checkout Revision“: abgekoppelter Zustand; \`switch --detach\` fasst keine Pfade an. */
+  async checkoutRevision(params: CommandParams<'git.checkoutRevision'>): Promise<void> {
+    const hash = commitHash((params as Partial<CommandParams<'git.checkoutRevision'>>)?.hash);
+    await this.requireRepository();
+    await this.write(['switch', '--detach', hash]);
+  }
+
+  /** „Copy Revision Number“: der volle Hash in die Zwischenablage (über den Port). */
+  async copyRevision(params: CommandParams<'git.copyRevision'>): Promise<void> {
+    const hash = commitHash((params as Partial<CommandParams<'git.copyRevision'>>)?.hash);
+    await this.requireRepository();
+    const full = await this.run(['rev-parse', '--verify', '--quiet', `${hash}^{commit}`], { background: true });
+    if (full.code !== 0) throw new CommandError(`Unknown revision: ${hash}`, ErrorCode.gitFailed);
+    await this.options.writeClipboard(full.stdout.trim());
+  }
+
+  /** Meldet geänderte Refs (auch nach einem Fetch, der den Zustand des Branches nicht ändert). */
+  private async checkRefs(): Promise<void> {
+    const refs = await this.run(['show-ref', '--head'], { background: true });
+    const signature = refs.stdout;
+    if (this.refsSignature !== null && signature !== this.refsSignature && !this.disposed) this.project.emit('git.refsChanged', {});
+    this.refsSignature = signature;
   }
 
   // ---------- Fetch, Pull, Push und Konflikte (Ticket 18) ----------
@@ -761,6 +930,9 @@ export class GitService {
 
   private async dispose(): Promise<void> {
     this.disposed = true;
+    // Der Log-Prozess endet mit dem Fenster.
+    await this.logSession?.reader.dispose();
+    this.logSession = null;
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     for (const watcher of this.watchers.values()) watcher.close();
     this.watchers.clear();
@@ -856,4 +1028,69 @@ function validEncoding(value: unknown): TextEncoding | undefined {
 function decodeContent(bytes: Buffer, encoding: TextEncoding | undefined): string | null {
   if (bytes.length === 0) return '';
   return encoding ? decodeAs(bytes, encoding) : (decodeText(bytes)?.text ?? null);
+}
+
+/** Der Filter des Logs, geprüft; leere Felder entfallen. */
+function logFilter(value: unknown): GitLogFilter {
+  if (value === undefined) return {};
+  if (typeof value !== 'object' || value === null) throw new CommandError('A log filter is expected.', ErrorCode.invalidParams);
+  const v = value as Record<string, unknown>;
+  const text = (key: string) => {
+    if (v[key] === undefined) return undefined;
+    if (typeof v[key] !== 'string') throw new CommandError(`The filter field ${key} must be a text.`, ErrorCode.invalidParams);
+    return (v[key] as string).trim() || undefined;
+  };
+  const result: GitLogFilter = {};
+  const t = text('text');
+  const author = text('author');
+  const branch = text('branch');
+  if (t) result.text = t;
+  if (author) result.author = author;
+  if (branch) result.branch = branchName(branch);
+  return result;
+}
+
+/** Ein Commit-Hash (auch gekürzt); nichts, was Git als Option oder Ausdruck lesen könnte. */
+function commitHash(value: unknown): string {
+  if (typeof value !== 'string' || !/^[0-9a-f]{4,64}$/i.test(value)) throw new CommandError('A commit hash is expected.', ErrorCode.invalidParams);
+  return value;
+}
+
+/** Ein Datensatz des Logs: Hash, Eltern, Refs, Autor, E-Mail, Datum, Betreff (und mit Textfilter die Nachricht). */
+function parseLogRecord(fields: string[], remotes: readonly string[]): GitLogCommit | null {
+  const [hash, parents, decoration, author, email, at, subject] = fields;
+  if (!hash || !/^[0-9a-f]{40,64}$/.test(hash)) return null;
+  return { hash, parents: (parents ?? '').split(' ').filter(Boolean), refs: parseRefs(decoration ?? '', remotes), author: author ?? '', email: email ?? '', date: Number(at) * 1000, subject: subject ?? '' };
+}
+
+/** Etiketten aus \`%D\` mit \`--decorate=full\`: „HEAD -> refs/heads/main, tag: refs/tags/v1, refs/remotes/origin/main“. */
+function parseRefs(decoration: string, remotes: readonly string[]): GitRefLabel[] {
+  const labels: GitRefLabel[] = [];
+  for (const raw of decoration.split(', ').map((d) => d.trim()).filter(Boolean)) {
+    if (raw === 'HEAD') labels.push({ name: 'HEAD', kind: 'head' });
+    else if (raw.startsWith('HEAD -> refs/heads/')) labels.push({ name: raw.slice('HEAD -> refs/heads/'.length), kind: 'head' });
+    else if (raw.startsWith('tag: refs/tags/')) labels.push({ name: raw.slice('tag: refs/tags/'.length), kind: 'tag' });
+    else if (raw.startsWith('refs/heads/')) labels.push({ name: raw.slice('refs/heads/'.length), kind: 'local' });
+    else if (raw.startsWith('refs/remotes/')) {
+      const name = raw.slice('refs/remotes/'.length);
+      // „origin/HEAD“ zeigt nur, wohin der Remote zeigt; IntelliJ blendet es aus.
+      if (remotes.some((r) => name === `${r}/HEAD`)) continue;
+      labels.push({ name, kind: 'remote' });
+    }
+  }
+  return labels;
+}
+
+/** Text- und Autorfilter: Teil der Nachricht oder Anfang des Hashs; Teil von Name oder E-Mail. */
+function matchesLog(commit: GitLogCommit, message: string, filter: GitLogFilter): boolean {
+  if (filter.author) {
+    const a = filter.author.toLowerCase();
+    if (!commit.author.toLowerCase().includes(a) && !commit.email.toLowerCase().includes(a)) return false;
+  }
+  if (filter.text) {
+    const t = filter.text.toLowerCase();
+    const hashMatch = /^[0-9a-f]+$/.test(t) && commit.hash.startsWith(t);
+    if (!hashMatch && !(message || commit.subject).toLowerCase().includes(t)) return false;
+  }
+  return true;
 }

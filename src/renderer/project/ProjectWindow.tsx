@@ -27,6 +27,7 @@ import { flushSync } from 'react-dom';
 import {
   TOOL_WINDOW_SIDE,
   type CodiumApi,
+  type GitCommitDetails,
   type GitFileStatus,
   type ProjectInfo,
   type SearchMatch,
@@ -216,6 +217,29 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
       },
     };
   }, [api, ask, askText, notify, project.path]);
+  // Vergleich aus der Historie (Ticket 19): beide Seiten schreibgeschützt, gegen den ersten Elterncommit.
+  const showCommitDiff = async (details: GitCommitDetails, file: GitCommitDetails['files'][number]) => {
+    try {
+      const after =
+        file.status === 'D' ? { exists: false, text: '' } : await api.request('git.commitFile', { hash: details.hash, repoPath: file.repoPath });
+      if (after.binary) {
+        notify({ level: 'info', text: 'Binary files cannot be compared.' });
+        return;
+      }
+      const parent = details.parents[0];
+      const short = details.hash.slice(0, 8);
+      editorRef.current?.openDiff({
+        id: `${details.hash}:${file.repoPath}`,
+        title: `${file.repoPath.slice(file.repoPath.lastIndexOf('/') + 1)} (${short})`,
+        filePath: file.path,
+        base: parent && file.status !== 'A' ? { repoPath: file.origRepoPath ?? file.repoPath, commit: parent } : null,
+        modified: { kind: 'text', text: after.text },
+      });
+    } catch (err) {
+      notify({ level: 'error', text: errorText(err) });
+    }
+  };
+
   // ---------- Fetch, Pull, Push (Ticket 18) ----------
 
   // Fortschritt zeigt die Statusleiste (vom Kern); hier Erfolg, Fehler und das Öffnen der Änderungsansicht bei Konflikten.
@@ -686,7 +710,15 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
                 gitStatusOf={gitStatusOf}
               />
             ) : id === 'git' ? (
-              <GitToolWindow api={api} state={gitState} gitAvailable={gitAvailable} onHide={() => hide(s)} />
+              <GitToolWindow
+                api={api}
+                state={gitState}
+                gitAvailable={gitAvailable}
+                onHide={() => hide(s)}
+                notify={notify}
+                onShowCommitDiff={(details, file) => void showCommitDiff(details, file)}
+                onNewBranch={(from) => branchActions.newBranch(from)}
+              />
             ) : id === 'commit' && gitAvailable !== false && gitState?.repository ? (
               <CommitToolWindow
                 api={api}
