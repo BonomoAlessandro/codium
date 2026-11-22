@@ -17,8 +17,12 @@ export class LogReader {
   private failure: string | null = null;
   private stderr = '';
   private waiters: Array<() => void> = [];
+  /** Exit-Code und Fehlerausgabe, sobald Git endet (für die Git-Konsole und Tests). */
+  readonly exited: Promise<{ code: number | null; stderr: string }>;
+  private resolveExit!: (value: { code: number | null; stderr: string }) => void;
 
   constructor(git: string, args: string[], options: { cwd: string; env?: NodeJS.ProcessEnv }) {
+    this.exited = new Promise((resolve) => (this.resolveExit = resolve));
     this.child = spawn(git, args, { cwd: options.cwd, env: gitEnvironment(options.env ?? process.env), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     this.child.stdout!.setEncoding('utf8');
     // Gelesen wird erst, wenn eine Seite gefragt ist.
@@ -41,11 +45,13 @@ export class LogReader {
       this.failure = err.message;
       this.ended = true;
       this.wake();
+      this.resolveExit({ code: null, stderr: err.message });
     });
     this.child.on('close', (code) => {
       if (code !== 0 && code !== null && this.failure === null) this.failure = this.stderr.trim() || `git log failed with exit code ${code}.`;
       this.ended = true;
       this.wake();
+      this.resolveExit({ code, stderr: this.stderr });
     });
   }
 

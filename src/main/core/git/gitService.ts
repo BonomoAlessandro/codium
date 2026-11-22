@@ -401,6 +401,8 @@ export class GitService {
   private logChain: Promise<unknown> = Promise.resolve();
   /** Gestartete Log-Prozesse; für Tests. */
   logProcessesStarted = 0;
+  /** Zähler der Log-Anfragen; eine lange Suche bricht ab, sobald eine neuere wartet. */
+  private logRequests = 0;
   /** Stand der Refs beim letzten Lesen des Zustands; ändert er sich, meldet der Dienst „git.refsChanged“. */
   private refsSignature: string | null = null;
 
@@ -410,14 +412,24 @@ export class GitService {
     const filter = logFilter(p?.filter);
     const offset = p?.offset ?? 0;
     if (typeof offset !== 'number' || !Number.isInteger(offset) || offset < 0) throw new CommandError('A page offset is expected.', ErrorCode.invalidParams);
+    const request = ++this.logRequests;
     const work = async (): Promise<GitLogPage> => {
       await this.requireRepository();
-      const refs = await this.run(['show-ref', '--head'], { background: true });
-      const key = JSON.stringify([filter, refs.stdout]);
+      const key = JSON.stringify([filter, await this.refsSignatureNow()]);
       if (!this.logSession || this.logSession.key !== key) await this.startLog(filter, key);
       const session = this.logSession!;
       while (session.commits.length < offset + LOG_PAGE && !session.reader.done) {
-        const records = await session.reader.take(LOG_PAGE);
+        // Eine neuere Anfrage wartet (etwa ein geänderter Filter): Diese lange Suche nicht zu Ende führen (Review).
+        if (request !== this.logRequests || this.disposed) break;
+        let records: string[][];
+        try {
+          records = await session.reader.take(LOG_PAGE);
+        } catch (err) {
+          // Gescheitert: Die Sitzung gilt nicht mehr, die nächste Anfrage beginnt neu (statt eines leeren Logs).
+          if (this.logSession === session) this.logSession = null;
+          await session.reader.dispose();
+          throw new CommandError((err as Error).message, ErrorCode.gitFailed);
+        }
         if (records.length === 0) break;
         for (const fields of records) {
           const commit = parseLogRecord(fields, session.remotes);
@@ -444,20 +456,29 @@ export class GitService {
     this.logSession = null;
     const withGraph = !filter.text && !filter.author;
     const state = await this.current();
-    // Die Spur des aktuellen Branches beginnt in Spalte 0 (nur, wenn er im Log vorkommt).
+    // Die Spur des aktuellen Branches beginnt in Spalte 0 (nur, wenn er im Log vorkommt). Abgekoppelt (etwa nach
+    // „Checkout Revision“ weit unten) nicht: Sonst bliebe Spalte 0 über tausende Zeilen leer (Review).
     let head: string | undefined;
-    if (withGraph && (!filter.branch || filter.branch === state.branch)) {
+    if (withGraph && state.branch && (!filter.branch || filter.branch === state.branch)) {
       const r = await this.run(['rev-parse', '--verify', '--quiet', 'HEAD'], { background: true });
       if (r.code === 0) head = r.stdout.trim();
     }
     const remotesRun = await this.run(['remote'], { background: true });
     const remotes = remotesRun.code === 0 ? remotesRun.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [];
     const format = ['%H', '%P', '%D', '%an', '%ae', '%at', '%s', ...(filter.text ? ['%B'] : [])].join('%x00') + '%x1e';
-    const args = ['--no-optional-locks', 'log', '--topo-order', '--decorate=full', `--format=${format}`, ...(filter.branch ? [filter.branch, '--'] : ['--all', '--'])];
+    const args = ['--no-optional-locks', 'log', '--topo-order', '--decorate=full', `--format=${format}`, ...(filter.branch ? [filter.branch, '--'] : ['--branches', '--remotes', '--tags', 'HEAD', '--'])];
+    // Schliesst das Fenster während der Vorbereitung, startet kein Prozess mehr (er bliebe sonst stehen; Review).
+    if (this.disposed) throw new CommandError('The project is closing.', ErrorCode.gitFailed);
     this.logProcessesStarted++;
-    // In der Konsole wie jeder Aufruf (ohne Ausgabe: die ist der Log selbst).
-    this.addEntry({ id: this.nextEntryId++, time: Date.now(), command: ['git', ...args].map(quote).join(' '), output: '', exitCode: 0, background: true });
+    // In der Konsole wie jeder Aufruf (ohne Ausgabe: die ist der Log selbst); Exit-Code und Fehler, sobald er endet.
+    const entry: GitConsoleEntry = { id: this.nextEntryId++, time: Date.now(), command: ['git', ...args].map(quote).join(' '), output: '', exitCode: null, background: true };
+    this.addEntry(entry);
     const reader = new LogReader(this.options.git!, args, { cwd: this.project.path, env: { ...(this.options.env ?? process.env), GIT_LITERAL_PATHSPECS: '1' } });
+    void reader.exited.then(({ code, stderr }) => {
+      entry.exitCode = code;
+      entry.output = stderr.trim();
+      if (!this.disposed) this.project.emit('git.console', { ...entry });
+    });
     this.logSession = { key, version: ++this.logVersion, reader, graph: withGraph ? new LogGraph(head) : null, commits: [], remotes };
   }
 
@@ -536,9 +557,19 @@ export class GitService {
   }
 
   /** Meldet geänderte Refs (auch nach einem Fetch, der den Zustand des Branches nicht ändert). */
-  private async checkRefs(): Promise<void> {
+  /**
+   * Stand der Refs für den Log: Branches, Remotes, Tags und HEAD mit seinem Ziel. Das Ziel gehört dazu, sonst bliebe
+   * der Log nach einem Wechsel auf einen Branch desselben Commits stehen; Stash und Notes nicht (Review).
+   */
+  private async refsSignatureNow(): Promise<string> {
     const refs = await this.run(['show-ref', '--head'], { background: true });
-    const signature = refs.stdout;
+    const lines = refs.stdout.split(/\r?\n/).filter((l) => / (HEAD|refs\/(heads|remotes|tags)\/.*)$/.test(l));
+    const head = this.gitDir ? await fs.promises.readFile(path.join(this.gitDir, 'HEAD'), 'utf8').catch(() => '') : '';
+    return `${head.trim()}\n${lines.join('\n')}`;
+  }
+
+  private async checkRefs(): Promise<void> {
+    const signature = await this.refsSignatureNow();
     if (this.refsSignature !== null && signature !== this.refsSignature && !this.disposed) this.project.emit('git.refsChanged', {});
     this.refsSignature = signature;
   }

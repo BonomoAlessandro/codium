@@ -94,6 +94,42 @@ describe('Graph-Spuren', () => {
   });
 });
 
+describe('Graph-Spuren (Zufallsprüfung)', () => {
+  it('jede Linie kommt an, jede Spur kommt von oben, jeder Elterncommit ist verbunden', () => {
+    let seed = 19;
+    const random = (n: number) => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed % n;
+    };
+    for (let round = 0; round < 1500; round++) {
+      // Zufälliger Graph: Commit i hat Eltern unter den älteren (höheren Nummern), manchmal keine (Wurzel).
+      const count = 2 + random(25);
+      const commits: Array<[string, string[]]> = [];
+      for (let i = 0; i < count; i++) {
+        const older = count - i - 1;
+        const parents = new Set<string>();
+        const n = older === 0 || random(8) === 0 ? 0 : 1 + (random(5) === 0 ? 1 + random(2) : 0);
+        for (let k = 0; k < n; k++) parents.add(`c${i + 1 + random(older)}`);
+        commits.push([`c${i}`, [...parents]]);
+      }
+      const rows = graphOf(commits, random(2) === 0 ? 'c0' : undefined);
+      const children = new Set(commits.flatMap(([, parents]) => parents));
+      rows.forEach((row, i) => {
+        const incoming = i === 0 ? new Set<number>() : new Set(rows[i - 1].lines.map((l) => l.to));
+        // Jede Linie von oben endet am Punkt oder an einer Spur, die weiterläuft.
+        const sources = new Set([row.column, ...row.lines.map((l) => l.from)]);
+        for (const to of incoming) expect(sources.has(to)).toBe(true);
+        // Jede weiterlaufende Spur kommt von oben.
+        for (const l of row.lines) if (l.from !== row.column) expect(incoming.has(l.from)).toBe(true);
+        // Ein Commit mit Kind im Log bekommt eine Linie von oben.
+        expect(incoming.has(row.column)).toBe(children.has(commits[i][0]));
+        // Je Elterncommit eine Linie vom Punkt.
+        expect(row.lines.filter((l) => l.from === row.column).length).toBe(commits[i][1].length);
+      });
+    }
+  });
+});
+
 describe('Log im Git-Dienst', { timeout: 60_000 }, () => {
   const tempDir = useTempDirs();
 
@@ -232,6 +268,28 @@ describe('Log im Git-Dienst', { timeout: 60_000 }, () => {
     expect(repo).toBeTruthy();
   });
 
+  it('lädt nach einem Wechsel auf einen Branch desselben Commits neu; Stash und Notes gehören nicht in den Log', async () => {
+    const { test, windowId, run, repo } = await setup((r, dir) => {
+      commit(r, dir, 'a.txt', 'a\n', 'a');
+    });
+    const first = await call(test, windowId, 'git.log', { filter: {}, offset: 0 });
+    expect(first.commits[0].refs).toContainEqual({ name: 'main', kind: 'head' });
+    test.events.sent.length = 0;
+    await call(test, windowId, 'git.createBranch', { name: 'other', checkout: true });
+    expect(test.events.sent.some((e) => e.name === 'git.refsChanged')).toBe(true);
+    const after = await call(test, windowId, 'git.log', { filter: {}, offset: 0 });
+    expect(after.version).not.toBe(first.version);
+    expect(after.commits[0].refs).toContainEqual({ name: 'other', kind: 'head' });
+    expect(after.commits[0].refs).toContainEqual({ name: 'main', kind: 'local' });
+
+    // Stash und Notes: nicht im Log.
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'geändert\n');
+    run('stash');
+    run('notes', 'add', '-m', 'Eine Notiz');
+    const subjects = (await call(test, windowId, 'git.log', { filter: {}, offset: 0 })).commits.map((c) => c.subject);
+    expect(subjects).toEqual(['a', 'Erster Commit']);
+  });
+
   it('beendet den Log-Prozess mit dem Fenster und meldet geänderte Refs', async () => {
     const { test, windowId, run, repo } = await setup((r, dir, e) => manyCommits(dir, e, 600));
     await call(test, windowId, 'git.log', { filter: {}, offset: 0 });
@@ -239,11 +297,13 @@ describe('Log im Git-Dienst', { timeout: 60_000 }, () => {
     run('branch', 'neu');
     await call(test, windowId, 'git.refresh');
     expect(test.events.sent.some((e) => e.name === 'git.refsChanged')).toBe(true);
-    const service = test.core.projectCore(windowId)!.git as unknown as { logSession: unknown };
-    expect(service.logSession).not.toBeNull();
+    const service = test.core.projectCore(windowId)!.git as unknown as { logSession: { reader: { exited: Promise<{ code: number | null }> } } | null };
+    const exited = service.logSession!.reader.exited;
     test.ports.windows.close(windowId);
     await test.core.disposalsSettled();
     expect(service.logSession).toBeNull();
+    // Der Prozess (mit noch ungelesener Ausgabe) ist wirklich beendet.
+    await exited;
     expect(repo).toBeTruthy();
   });
 });

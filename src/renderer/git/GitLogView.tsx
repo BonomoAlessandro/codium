@@ -49,6 +49,11 @@ export function GitLogView({ api, notify, onShowDiff, onNewBranch }: GitLogViewP
     return () => window.clearTimeout(timer);
   }, [textInput, authorInput]);
 
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const commitsRef = useRef(commits);
+  commitsRef.current = commits;
+
   /** Lädt ab `offset`; mit 0 von vorn (behält die Auswahl, wenn der Commit noch da ist). */
   const load = useCallback(
     async (offset: number) => {
@@ -63,11 +68,26 @@ export function GitLogView({ api, notify, onShowDiff, onNewBranch }: GitLogViewP
         void load(0);
         return;
       }
+      let list = page.commits;
+      let isDone = page.done;
+      if (offset === 0) {
+        // Die Auswahl bleibt, wenn es den Commit noch gibt, auch weiter unten: so weit nachladen, wie vorher geladen
+        // war (Review von Ticket 19).
+        const wanted = selectedRef.current;
+        const before = commitsRef.current.length;
+        while (wanted !== null && !isDone && !list.some((c) => c.hash === wanted) && list.length < before) {
+          const more = await api.request('git.log', { filter, offset: list.length }).catch(() => null);
+          if (!more || id !== request.current || more.version !== page.version) break;
+          list = [...list, ...more.commits];
+          isDone = more.done;
+        }
+        if (id !== request.current) return;
+      }
       version.current = page.version;
       setGraph(page.graph);
-      setDone(page.done);
-      setCommits((current) => (offset === 0 ? page.commits : [...current.slice(0, offset), ...page.commits]));
-      if (offset === 0) setSelected((s) => (s !== null && page.commits.some((c) => c.hash === s) ? s : null));
+      setDone(isDone);
+      setCommits((current) => (offset === 0 ? list : [...current.slice(0, offset), ...list]));
+      if (offset === 0) setSelected((s) => (s !== null && list.some((c) => c.hash === s) ? s : null));
     },
     [api, filter, notify],
   );
