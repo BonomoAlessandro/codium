@@ -102,7 +102,7 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   binding('Ctrl+Alt+Shift+N', 'symbol.gotoSymbol', 'window'),
   binding('Ctrl+Alt+ArrowLeft', 'navigate.back', 'window'),
   binding('Ctrl+Alt+ArrowRight', 'navigate.forward', 'window'),
-  // Spätere Tickets: Git (15, 16, 18).
+  // Git: Commit (Ticket 16), Push und Pull (Ticket 18).
   binding('Ctrl+K', 'vcs.commit', 'window'),
   binding('Ctrl+Shift+K', 'vcs.push', 'window'),
   binding('Ctrl+T', 'vcs.pull', 'window'),

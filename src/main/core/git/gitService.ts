@@ -374,6 +374,140 @@ export class GitService {
     return changeBlocks(old, p.text);
   }
 
+  // ---------- Fetch, Pull, Push und Konflikte (Ticket 18) ----------
+
+  /** Fetch von allen Remotes, verschwundene Remote-Branches fort. Kein automatischer Fetch. */
+  async fetch(): Promise<void> {
+    await this.requireRepository();
+    await this.project.progress.run('Fetching…', () => this.serial(() => this.networkWrite(['fetch', '--all', '--prune', '--progress'])));
+  }
+
+  /** Pull nach der Konfiguration des Nutzers; Konflikte sind kein Fehler, sondern ein laufender Merge oder Rebase. */
+  async pull(): Promise<{ conflicts: boolean }> {
+    await this.requireRepository();
+    return this.project.progress.run('Pulling…', () =>
+      this.serial(async () => {
+        const result = await this.run(['pull', '--progress']);
+        const state = await this.refresh();
+        if (result.code === 0) return { conflicts: false };
+        if (state.operation && state.files.some((f) => f.conflict)) return { conflicts: true };
+        throw this.failure(result);
+      }),
+    );
+  }
+
+  /** Push des aktuellen Branches nach den Regeln oben; nie erzwungen. */
+  async push(): Promise<{ remote: string; branch: string; upstreamSet: boolean }> {
+    await this.requireRepository();
+    return this.project.progress.run('Pushing…', () =>
+      this.serial(async () => {
+        const state = await this.readState();
+        const branch = state.branch;
+        if (!branch) throw new CommandError('Check out a branch to push.', ErrorCode.gitFailed);
+        const configured = async (key: string) => {
+          const r = await this.run(['config', '--get', `branch.${branch}.${key}`], { background: true });
+          return r.code === 0 ? r.stdout.trim() : '';
+        };
+        const upstreamRemote = await configured('remote');
+        const upstreamMerge = await configured('merge');
+        let remote: string;
+        let target: string;
+        let upstreamSet = false;
+        if (upstreamRemote && upstreamRemote !== '.' && upstreamMerge.startsWith('refs/heads/')) {
+          remote = upstreamRemote;
+          target = upstreamMerge;
+        } else {
+          const list = await this.run(['remote'], { background: true });
+          const remotes = list.code === 0 ? list.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [];
+          if (remotes.length === 0) throw new CommandError('No remote is configured for this repository.', ErrorCode.gitFailed);
+          const chosen = remotes.includes('origin') ? 'origin' : remotes.length === 1 ? remotes[0] : null;
+          if (!chosen) throw new CommandError(`There are several remotes and none is called 'origin': ${remotes.join(', ')}.`, ErrorCode.gitFailed);
+          remote = chosen;
+          target = `refs/heads/${branch}`;
+          upstreamSet = true;
+        }
+        if (remote.startsWith('-')) throw new CommandError(`Not a valid remote: ${remote}`, ErrorCode.gitFailed);
+        const args = ['push', '--progress', ...(upstreamSet ? ['--set-upstream'] : []), remote, `refs/heads/${branch}:${target}`];
+        const result = await this.run(args);
+        await this.refresh();
+        if (result.code !== 0) {
+          // Abgelehnt, weil der Remote Commits hat, die hier fehlen (in jeder Sprache an der Kennung in Klammern).
+          if (/\[rejected\]|\[remote rejected\]/.test(result.stderr) && /\((fetch first|non-fast-forward)\)/.test(result.stderr)) {
+            throw new CommandError(gitMessage(result.stderr) || 'The push was rejected because the remote has changes you do not have.', ErrorCode.gitPushRejected);
+          }
+          throw this.failure(result);
+        }
+        return { remote, branch: target.slice('refs/heads/'.length), upstreamSet };
+      }),
+    );
+  }
+
+  /** Bricht den laufenden Merge oder Rebase ab (auch Cherry-Pick und Revert). */
+  async abort(): Promise<void> {
+    await this.requireRepository();
+    await this.serial(async () => {
+      const operation = this.operation();
+      if (!operation) throw new CommandError('Nothing to abort.', ErrorCode.gitFailed);
+      const result = await this.run([operation, '--abort']);
+      await this.refresh();
+      if (result.code !== 0) throw this.failure(result);
+    });
+  }
+
+  /** Rebase fortsetzen: `add -u` (alle versionierten Änderungen), dann `rebase --continue` ohne Editor. */
+  async continueRebase(): Promise<{ conflicts: boolean }> {
+    await this.requireRepository();
+    return this.serial(async () => {
+      if (this.operation() !== 'rebase') throw new CommandError('No rebase is in progress.', ErrorCode.gitFailed);
+      const added = await this.run(['add', '-u']);
+      if (added.code !== 0) {
+        await this.refresh();
+        throw this.failure(added);
+      }
+      const result = await this.run(['rebase', '--continue']);
+      const state = await this.refresh();
+      if (result.code === 0) return { conflicts: false };
+      if (state.operation === 'rebase' && state.files.some((f) => f.conflict)) return { conflicts: true };
+      throw this.failure(result);
+    });
+  }
+
+  /** Die vorbereitete Merge-Nachricht aus MERGE_MSG, ohne Kommentarzeilen. */
+  async mergeMessage(): Promise<string | null> {
+    await this.requireRepository();
+    if (!this.gitDir || this.operation() !== 'merge') return null;
+    try {
+      const text = await fs.promises.readFile(path.join(this.gitDir, 'MERGE_MSG'), 'utf8');
+      return text
+        .split(/\r?\n/)
+        .filter((l) => !l.startsWith('#'))
+        .join('\n')
+        .trim();
+    } catch {
+      return null;
+    }
+  }
+
+  /** Konfliktdateien mit verbliebenen Markierungen (`<<<<<<<`, `=======`, `>>>>>>>` am Zeilenanfang). */
+  async conflictMarkers(): Promise<string[]> {
+    await this.requireRepository();
+    const state = await this.readState();
+    const found: string[] = [];
+    for (const f of state.files) {
+      if (!f.conflict) continue;
+      const text = await fs.promises.readFile(f.path, 'utf8').catch(() => '');
+      if (/^(<{7}|={7}|>{7})(\s|$)/m.test(text)) found.push(f.path);
+    }
+    return found;
+  }
+
+  /** Ein Aufruf mit Netz, der Refs schreibt; Fehler im Wortlaut von Git, danach neuer Zustand. */
+  private async networkWrite(args: string[]): Promise<void> {
+    const result = await this.run(args);
+    await this.refresh();
+    if (result.code !== 0) throw this.failure(result);
+  }
+
   // ---------- Commit, Rollback, .gitignore (Ticket 16) ----------
 
   async commit(params: CommandParams<'git.commit'>): Promise<void> {
@@ -385,9 +519,19 @@ export class GitService {
     if (message === '') throw new CommandError('Enter a commit message.', ErrorCode.invalidParams);
     await this.requireRepository();
     const paths = p.paths.map((x) => this.project.files.lexicalPath(x));
-    if (paths.length === 0 && p.amend !== true) throw new CommandError('Select the files to commit.', ErrorCode.invalidParams);
+    if (paths.length === 0 && p.amend !== true && !this.state.operation) throw new CommandError('Select the files to commit.', ErrorCode.invalidParams);
     await this.serial(async () => {
       const status = await this.readState();
+      if (status.operation === 'rebase') throw new CommandError('A rebase is in progress: use Continue.', ErrorCode.gitFailed);
+      if (status.operation === 'merge') {
+        // Merge abschliessen: alle Änderungen an versionierten Dateien (auch die aufgelösten Konflikte) in den Index,
+        // dann ein Commit ohne Pfade (`--only` geht während eines Merges nicht).
+        const added = await this.run(['add', '-u']);
+        const result = added.code === 0 ? await this.run(['commit', '-m', message]) : added;
+        await this.refresh();
+        if (result.code !== 0) throw this.failure(result);
+        return;
+      }
       const byKey = filesByKey(status.files);
       // Nicht versionierte zuerst in den Index; zu Umbenennungen gehört der alte Pfad dazu.
       const untracked = paths.filter((x) => byKey.get(x.toLowerCase())?.index === '?');

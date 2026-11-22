@@ -23,6 +23,8 @@ interface CommitToolWindowProps {
   onOpenFile: (path: string) => void;
   /** Vergleichsansicht einer geänderten Datei (Ticket 17). */
   onShowDiff: (file: GitFileStatus) => void;
+  /** Push nach den Regeln von Ticket 18 (für „Commit and Push“); zeigt Erfolg und Fehler selbst. */
+  onPush: () => Promise<void>;
   /** Vor jeder schreibenden Git-Aktion: alle Tabs speichern (Ticket 07). */
   saveAll: () => Promise<void>;
 }
@@ -38,7 +40,7 @@ export function changeKind(file: GitFileStatus): 'modified' | 'added' | 'deleted
   return 'modified';
 }
 
-export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFile, onShowDiff, saveAll }: CommitToolWindowProps) {
+export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFile, onShowDiff, onPush, saveAll }: CommitToolWindowProps) {
   // Je Pfad ein Eintrag; gibt es zwei (etwa „D“ und „?“), gilt der versionierte (Review von Ticket 16).
   const files = useMemo(() => {
     const byPath = new Map<string, GitFileStatus>();
@@ -49,8 +51,12 @@ export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFi
     }
     return [...byPath.values()];
   }, [state]);
-  const changes = files.filter((f) => f.index !== '?');
+  const conflicts = files.filter((f) => f.conflict);
+  const changes = files.filter((f) => f.index !== '?' && !f.conflict);
   const unversioned = files.filter((f) => f.index === '?');
+  // Ticket 18: Während eines Merges nimmt „Commit“ alle Änderungen auf (Häkchen inaktiv); bei einem Rebase heisst er
+  // „Continue“.
+  const operation = state?.operation === 'merge' || state?.operation === 'rebase' ? state.operation : undefined;
 
   // Häkchen: neue Einträge bekommen ihren Standard, bekannte behalten ihren Stand.
   const [checked, setChecked] = useState<ReadonlyMap<string, boolean>>(() => new Map());
@@ -94,10 +100,85 @@ export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFi
     };
   }, [api]);
 
+  // Merge: die von Git vorbereitete Nachricht, solange das Feld leer ist.
+  useEffect(() => {
+    if (operation !== 'merge') return;
+    let live = true;
+    api.request('git.mergeMessage').then(
+      (prepared) => {
+        if (live && prepared) setMessage((current) => (current.trim() === '' ? prepared : current));
+      },
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, operation]);
+
   const selected = files.filter(isChecked);
-  // Inaktiv ohne Nachricht oder ohne angehakte Datei, ausser bei Amend mit geänderter Nachricht.
+  // Inaktiv ohne Nachricht oder ohne angehakte Datei, ausser bei Amend mit geänderter Nachricht; beim Merge zählt nur
+  // die Nachricht, beim Rebase nichts.
   const canCommit =
-    !busy && message.trim() !== '' && (selected.length > 0 || (amend && amendMessage !== null && message.trim() !== amendMessage.trim()));
+    !busy &&
+    (operation === 'rebase' ||
+      (message.trim() !== '' &&
+        (operation === 'merge' || selected.length > 0 || (amend && amendMessage !== null && message.trim() !== amendMessage.trim()))));
+
+  /** Vor „Commit“ bzw. „Continue“ bei einem Konflikt: verbliebene Markierungen? Dann erst nach Bestätigung. */
+  const confirmMarkers = async (): Promise<boolean> => {
+    if (!operation) return true;
+    const left = await api.request('git.conflictMarkers').catch(() => [] as string[]);
+    if (left.length === 0) return true;
+    const choice = await ask({
+      title: 'Conflict Markers',
+      message: `${left.length === 1 ? 'This file still contains' : 'These files still contain'} conflict markers. ${operation === 'rebase' ? 'Continue' : 'Commit'} anyway?`,
+      items: left.map((f) => relativeLabel(project.path, f)),
+      buttons: [
+        { id: 'go', label: operation === 'rebase' ? 'Continue' : 'Commit' },
+        { id: 'cancel', label: 'Cancel', primary: true },
+      ],
+    });
+    return choice === 'go';
+  };
+
+  const continueRebase = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await saveAll();
+      if (!(await confirmMarkers())) return;
+      const result = await api.request('git.continueRebase');
+      notify(result.conflicts ? { level: 'info', text: 'The rebase stopped with new conflicts.' } : { level: 'success', text: 'Rebase completed.' });
+    } catch (err) {
+      notify({ level: 'error', text: errorText(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const abort = async () => {
+    if (busy || !operation) return;
+    const choice = await ask({
+      title: operation === 'rebase' ? 'Abort Rebase' : 'Abort Merge',
+      message: `Abort the ${operation} and restore the state before it?`,
+      buttons: [
+        { id: 'abort', label: 'Abort', primary: true },
+        { id: 'cancel', label: 'Cancel' },
+      ],
+    });
+    if (choice !== 'abort') return;
+    setBusy(true);
+    try {
+      await saveAll();
+      await api.request('git.abort');
+      setMessage('');
+      notify({ level: 'success', text: operation === 'rebase' ? 'Rebase aborted.' : 'Merge aborted.' });
+    } catch (err) {
+      notify({ level: 'error', text: errorText(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const toggleAmend = async (value: boolean) => {
     setAmend(value);
@@ -113,24 +194,35 @@ export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFi
     if (last && message.trim() === '') setMessage(last);
   };
 
-  const commit = async () => {
+  const commit = async (andPush = false) => {
     if (!canCommit) return;
+    if (operation === 'rebase') return continueRebase();
     setBusy(true);
+    let committed = false;
     try {
       await saveAll();
-      await api.request('git.commit', { paths: selected.map((f) => f.path), message, ...(amend ? { amend: true } : {}) });
+      if (!(await confirmMarkers())) return;
+      const merge = operation === 'merge';
+      await api.request('git.commit', { paths: merge ? [] : selected.map((f) => f.path), message, ...(amend && !merge ? { amend: true } : {}) });
+      committed = true;
       setMessage('');
       setAmend(false);
       setAmendMessage(null);
       notify({
         level: 'success',
-        text: selected.length === 0 ? 'Amended the last commit.' : `Committed ${selected.length} ${selected.length === 1 ? 'file' : 'files'}.`,
+        text: merge
+          ? 'Merge committed.'
+          : selected.length === 0
+            ? 'Amended the last commit.'
+            : `Committed ${selected.length} ${selected.length === 1 ? 'file' : 'files'}.`,
       });
     } catch (err) {
       notify({ level: 'error', text: errorText(err) });
     } finally {
       setBusy(false);
     }
+    // „Commit and Push“: erst nach erfolgreichem Commit (Ticket 18).
+    if (committed && andPush) await onPush();
   };
 
   const rollback = async (targets: GitFileStatus[]) => {
@@ -196,9 +288,18 @@ export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFi
           <p className="tool-window-placeholder">Not a Git repository</p>
         ) : (
           <>
+            {operation && (
+              <div className="commit-operation" role="status">
+                <span>{operation === 'rebase' ? 'Rebase in progress' : 'Merge in progress'}</span>
+                <button type="button" disabled={busy} onClick={() => void abort()}>
+                  Abort
+                </button>
+              </div>
+            )}
             <div className="commit-changes" role="tree" aria-label="Changes">
               {files.length === 0 && <p className="tool-window-placeholder">No changes</p>}
               {[
+                { label: 'Merge Conflicts', list: conflicts },
                 { label: 'Changes', list: changes },
                 { label: 'Unversioned Files', list: unversioned },
               ]
@@ -209,7 +310,8 @@ export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFi
                       <input
                         type="checkbox"
                         aria-label={group.label}
-                        checked={group.list.every(isChecked)}
+                        disabled={operation !== undefined}
+                        checked={operation !== undefined || group.list.every(isChecked)}
                         ref={(el) => {
                           if (el) el.indeterminate = group.list.some(isChecked) && !group.list.every(isChecked);
                         }}
@@ -253,7 +355,8 @@ export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFi
                           <input
                             type="checkbox"
                             aria-label={`Include ${baseName(entry.file.path)}`}
-                            checked={isChecked(entry.file)}
+                            disabled={operation !== undefined}
+                            checked={operation !== undefined ? entry.file.index !== '?' : isChecked(entry.file)}
                             onChange={(e) => setMany([entry.file], e.target.checked)}
                           />
                           <FileIcon />
@@ -283,12 +386,19 @@ export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFi
               />
               <div className="commit-actions">
                 <label className="commit-option">
-                  <input type="checkbox" checked={amend} onChange={(e) => void toggleAmend(e.target.checked)} />
+                  <input type="checkbox" checked={amend} disabled={operation !== undefined} onChange={(e) => void toggleAmend(e.target.checked)} />
                   Amend
                 </label>
-                <button type="button" className="button-primary" disabled={!canCommit} onClick={() => void commit()}>
-                  Commit
-                </button>
+                <span className="commit-buttons">
+                  <button type="button" className="button-primary" disabled={!canCommit} onClick={() => void commit()}>
+                    {operation === 'rebase' ? 'Continue' : 'Commit'}
+                  </button>
+                  {operation !== 'rebase' && (
+                    <button type="button" disabled={!canCommit} onClick={() => void commit(true)}>
+                      Commit and Push
+                    </button>
+                  )}
+                </span>
               </div>
             </div>
           </>

@@ -1,7 +1,7 @@
 // Branch-Menü der Kopfzeile (Ticket 15), wie in IntelliJ: oben ein Suchfeld und „New Branch…“, darunter die lokalen
 // und die Remote-Branches getrennt, der aktuelle markiert. Enter oder ein Klick auf einen Branch öffnet sein Untermenü:
 // lokal „Checkout“, „New Branch from '…'…“, „Rename…“, „Delete“; remote „Checkout“ und „New Branch from '…'…“.
-// Die Einträge „Commit…“, „Pull“, „Push…“ und „Fetch“ kommen mit den Tickets 16 und 18.
+// Die Einträge „Commit…“ (Ticket 16), „Push…“, „Pull“ und „Fetch“ (Ticket 18).
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CodiumApi, GitBranches, GitState } from '../../shared/types';
@@ -14,6 +14,10 @@ import { moveSelection } from '../search/searchResults';
 export interface BranchActions {
   /** „Commit…“: die Änderungsansicht (Ticket 16). */
   commit(): void;
+  /** „Pull“, „Push…“, „Fetch“ (Ticket 18). */
+  pull(): void;
+  push(): void;
+  fetch(): void;
   newBranch(from?: string): void;
   checkout(name: string): void;
   checkoutRemote(name: string): void;
@@ -65,6 +69,9 @@ export function BranchPopup({ api, state, actions, onClose }: BranchPopupProps) 
     const result: Row[] = [];
     if (q === '') {
       result.push({ kind: 'action', label: 'Commit…', run: () => actions.commit() });
+      result.push({ kind: 'action', label: 'Push…', run: () => actions.push() });
+      result.push({ kind: 'action', label: 'Pull', run: () => actions.pull() });
+      result.push({ kind: 'action', label: 'Fetch', run: () => actions.fetch() });
       result.push({ kind: 'action', label: 'New Branch…', run: () => actions.newBranch() });
     }
     if (local.length > 0) result.push({ kind: 'header', label: 'Local' }, ...local.map((b): Row => ({ kind: 'local', ...b })));

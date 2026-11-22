@@ -496,6 +496,8 @@ export const ErrorCode = {
   gitNotMerged: 'GIT_NOT_MERGED',
   /** Ein Wechsel wurde wegen lokaler Änderungen verweigert; `data.files` sind die betroffenen Dateien. */
   gitCheckoutBlocked: 'GIT_CHECKOUT_BLOCKED',
+  /** Ein Push wurde abgelehnt, weil der Remote weiter ist (Ticket 18); die Oberfläche bietet „Pull“ an. */
+  gitPushRejected: 'GIT_PUSH_REJECTED',
   /** Der Projektordner liegt in keinem Git-Repository. */
   notARepository: 'NOT_A_REPOSITORY',
   /** Es gibt keine Shell fürs Terminal. */
@@ -636,6 +638,23 @@ export interface Commands {
   'git.rollback': { params: { paths: string[] }; result: void };
   /** Hängt den Pfad (relativ zum Repository) an die .gitignore im Wurzelordner an und legt sie bei Bedarf an. */
   'git.addToGitignore': { params: { path: string }; result: void };
+  /** Fetch von allen Remotes; verschwundene Remote-Branches werden entfernt (Ticket 18). */
+  'git.fetch': { params: void; result: void };
+  /** Pull nach der Git-Konfiguration des Nutzers (Merge oder Rebase); `conflicts`: Es blieben Konflikte. */
+  'git.pull': { params: void; result: { conflicts: boolean } };
+  /**
+   * Push des aktuellen Branches, nie erzwungen. Ohne Upstream auf „origin“ (bzw. das einzige Remote) unter demselben
+   * Namen, mit Upstream. Abgelehnt, weil der Remote weiter ist: `GIT_PUSH_REJECTED`.
+   */
+  'git.push': { params: void; result: { remote: string; branch: string; upstreamSet: boolean } };
+  /** Bricht einen laufenden Merge oder Rebase ab. */
+  'git.abort': { params: void; result: void };
+  /** Rebase fortsetzen: alle Änderungen an versionierten Dateien in den Index, ohne Editor; `conflicts`: neue Konflikte. */
+  'git.continueRebase': { params: void; result: { conflicts: boolean } };
+  /** Die von Git vorbereitete Merge-Nachricht (ohne Kommentarzeilen); `null` ohne laufenden Merge. */
+  'git.mergeMessage': { params: void; result: string | null };
+  /** Konfliktdateien, die noch Konfliktmarkierungen enthalten. */
+  'git.conflictMarkers': { params: void; result: string[] };
   /**
    * Inhalt einer Datei in einem Commit (Standard HEAD), so wie Git ihn auschecken würde (Zeilenende, Filter), mit der
    * Kodierung der Datei dekodiert; `exists: false` und leer, wenn es sie dort nicht gibt (Ticket 17).

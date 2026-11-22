@@ -123,6 +123,8 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
   // ---------- Git (Ticket 15) ----------
 
   const gitState = useGitState(api);
+  const gitStateRef = useRef(gitState);
+  gitStateRef.current = gitState;
   // Ohne Git ein Hinweis auf das fehlende Git statt „Not a Git repository“ (Review von Ticket 15).
   const gitAvailable = useGitAvailable(api);
   const [branchesOpen, setBranchesOpen] = useState(false);
@@ -162,6 +164,9 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
     };
     return {
       commit: () => openCommitRef.current(),
+      pull: () => void gitRemoteRef.current.pull(),
+      push: () => void gitRemoteRef.current.push(),
+      fetch: () => void gitRemoteRef.current.fetch(),
       newBranch: (from) => {
         let checkout = true;
         void askText({
@@ -211,6 +216,54 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
       },
     };
   }, [api, ask, askText, notify, project.path]);
+  // ---------- Fetch, Pull, Push (Ticket 18) ----------
+
+  // Fortschritt zeigt die Statusleiste (vom Kern); hier Erfolg, Fehler und das Öffnen der Änderungsansicht bei Konflikten.
+  const gitRemote = {
+    fetch: async () => {
+      try {
+        await api.request('git.fetch');
+        notify({ level: 'success', text: 'Fetched from all remotes.' });
+      } catch (err) {
+        notify({ level: 'error', text: errorText(err) });
+      }
+    },
+    pull: async () => {
+      try {
+        // Vorher speichern: Der Pull ändert Dateien, ungespeicherte Eingaben gingen sonst in Konflikte mit der Platte.
+        await (editorRef.current?.saveAll() ?? Promise.resolve());
+        const result = await api.request('git.pull');
+        if (result.conflicts) {
+          notify({ level: 'info', text: 'Pull stopped with conflicts. Resolve them and commit in the Commit tool window.' });
+          openCommitRef.current();
+        } else notify({ level: 'success', text: 'Pulled.' });
+      } catch (err) {
+        notify({ level: 'error', text: errorText(err) });
+      }
+    },
+    push: async () => {
+      try {
+        const result = await api.request('git.push');
+        notify({
+          level: 'success',
+          text: `Pushed ${result.branch} to ${result.remote}/${result.branch}${result.upstreamSet ? ' and set it as upstream' : ''}.`,
+        });
+      } catch (err) {
+        if (err instanceof CodiumError && err.code === ErrorCode.gitPushRejected) {
+          notify({
+            level: 'error',
+            text: `Push rejected: the remote has changes you do not have yet. Pull them first.\n${err.message}`,
+            actions: [{ label: 'Pull', run: () => void gitRemoteRef.current.pull() }],
+          });
+          return;
+        }
+        notify({ level: 'error', text: errorText(err) });
+      }
+    },
+  };
+  const gitRemoteRef = useRef(gitRemote);
+  gitRemoteRef.current = gitRemote;
+
   const pendingTerminalCwd = useRef<string | undefined>(undefined);
   const takePendingTerminalCwd = useCallback(() => {
     const cwd = pendingTerminalCwd.current;
@@ -492,6 +545,15 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
         openCommitRef.current();
         return;
       }
+      // Ctrl + T und Ctrl + Shift + K (Ticket 18): Pull und Push, auch mit Fokus im Editor.
+      if (command === 'vcs.pull' || command === 'vcs.push') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.repeat || !gitStateRef.current?.repository) return;
+        if (command === 'vcs.pull') void gitRemoteRef.current.pull();
+        else void gitRemoteRef.current.push();
+        return;
+      }
       if (command === 'symbol.gotoClass' || command === 'symbol.gotoSymbol') {
         e.preventDefault();
         e.stopPropagation();
@@ -634,6 +696,7 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
                 onHide={() => hide(s)}
                 onOpenFile={openFile}
                 onShowDiff={showDiff}
+                onPush={() => gitRemoteRef.current.push()}
                 saveAll={() => editorRef.current?.saveAll() ?? Promise.resolve()}
               />
             ) : id === 'commit' && (gitAvailable === false || (gitState && !gitState.repository)) ? (
