@@ -2,7 +2,7 @@
 // Pfeiltasten wählen, Enter oder Doppelklick öffnet.
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { CodiumApi, FileNameMatch, ProjectInfo } from '../../shared/types';
+import type { CodiumApi, FileNameMatch, ProjectInfo, SymbolMatch } from '../../shared/types';
 import { FileIcon } from '../icons';
 import { baseName, parentPath, relativeLabel } from '../project/filePaths';
 import { QuickPopup } from './QuickPopup';
@@ -206,6 +206,87 @@ export function RecentFilesPopup({ api, project, onOpen, onClose }: PopupProps) 
       onOpen={onOpen}
       onClose={onClose}
       empty="No recent files"
+    />
+  );
+}
+
+/** Arten von Symbolen (LSP `SymbolKind`) zur Anzeige. */
+const SYMBOL_KINDS: Record<number, string> = {
+  2: 'module',
+  3: 'namespace',
+  5: 'class',
+  6: 'method',
+  7: 'property',
+  8: 'field',
+  9: 'constructor',
+  10: 'enum',
+  11: 'interface',
+  12: 'function',
+  13: 'variable',
+  14: 'constant',
+  22: 'enum member',
+  23: 'struct',
+  26: 'type parameter',
+};
+
+interface SymbolPopupProps {
+  api: CodiumApi;
+  project: ProjectInfo;
+  /** `types`: Ctrl + N (Klassen, Interfaces, Enums); `all`: Ctrl + Alt + Shift + N (alle Symbole). */
+  kinds: 'types' | 'all';
+  onOpen: (symbol: SymbolMatch) => void;
+  onClose: () => void;
+}
+
+/** Ctrl + N und Ctrl + Alt + Shift + N (Ticket 13): Symbole über alle Sprachserver; Enter öffnet an der Stelle. */
+export function SymbolPopup({ api, project, kinds, onOpen, onClose }: SymbolPopupProps) {
+  const [query, setQuery] = useState('');
+  const [matches, setMatches] = useState<SymbolMatch[]>([]);
+  useEffect(() => {
+    let live = true;
+    if (query.trim() === '') {
+      setMatches([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      api.request('language.symbols', { query: query.trim(), kinds }).then(
+        (result) => {
+          if (live) setMatches(result);
+        },
+        (err: unknown) => console.error('Symbolsuche gescheitert:', err),
+      );
+    }, 80);
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [api, query, kinds]);
+  // Die Liste kennt nur Kennungen; über sie findet „Öffnen“ das Symbol wieder.
+  const byId = useMemo(() => new Map(matches.map((m, i) => [`${i}:${m.path}:${m.range.start.line}:${m.name}`, m])), [matches]);
+  const items = useMemo(
+    () =>
+      [...byId].map(([id, m]): ListItem => {
+        const where = relativeLabel(project.path, m.path);
+        const kind = SYMBOL_KINDS[m.kind] ?? 'symbol';
+        return { path: id, name: [{ text: m.name, marked: false }], folder: `${kind}${m.container ? ` in ${m.container}` : ''} – ${where}` };
+      }),
+    [byId, project.path],
+  );
+  const label = kinds === 'types' ? 'Go to Class' : 'Go to Symbol';
+  return (
+    <FileList
+      label={label}
+      placeholder={kinds === 'types' ? 'Class name' : 'Symbol name'}
+      query={query}
+      onQuery={setQuery}
+      items={items}
+      initialIndex={0}
+      onOpen={(id) => {
+        const symbol = byId.get(id);
+        if (symbol) onOpen(symbol);
+      }}
+      onClose={onClose}
+      empty={query.trim() === '' ? `Type a part of the ${kinds === 'types' ? 'class' : 'symbol'} name` : 'Nothing found'}
     />
   );
 }

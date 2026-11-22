@@ -10,7 +10,15 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { ErrorCode, LARGE_FILE_BYTES, MAX_OPEN_FILE_BYTES, type CodeLocation, type CommandParams, type LanguageDiagnostic, type TextRange } from '../../../shared/types';
+import {
+  ErrorCode,
+  LARGE_FILE_BYTES,
+  MAX_OPEN_FILE_BYTES,
+  SEMANTIC_TOKEN_MODIFIERS,
+  SEMANTIC_TOKEN_TYPES,
+  type CompletionEntry,
+  type SymbolMatch,
+  type CodeLocation, type CommandParams, type LanguageDiagnostic, type TextRange } from '../../../shared/types';
 import { killProcessTree } from '../processTree';
 import type { Progress } from '../progress';
 import type { ProjectCore } from '../projectCore';
@@ -47,6 +55,8 @@ class Server {
   ready: Promise<boolean> | null = null;
   launch: TypeScriptLaunch | null = null;
   pullDiagnostics = false;
+  /** Legende der semantischen Token des Servers; `null`, wenn er keine liefert. */
+  tokenLegend: { types: string[]; modifiers: string[] } | null = null;
   /** Nach `initialized`: Erst dann gehen Benachrichtigungen an den Server (Review von Ticket 12). */
   initialized = false;
   /** Dokumente, die der Server offen hat (Schlüssel); so geht nie ein zweites `didOpen` hinaus. */
@@ -67,6 +77,10 @@ export class LanguageService {
   private readonly outsideTargets = new Set<string>();
   private readonly now: () => number;
   private disposed = false;
+  /** Rohe Vorschläge der letzten Vervollständigung, für das Nachladen von Details. */
+  private completionItems = new Map<number, unknown>();
+  private completionConnection: LspConnection | null = null;
+  private completionCounter = 0;
 
   constructor(
     private readonly project: ProjectCore,
@@ -205,6 +219,86 @@ export class LanguageService {
     if (!result?.contents) return null;
     const markdown = hoverMarkdown(result.contents);
     return markdown.trim() === '' ? null : { markdown, ...(result.range ? { range: result.range } : {}) };
+  }
+
+  // ---------- Ticket 13: Vervollständigung, semantische Token, Symbolsuche ----------
+
+  async completion(params: CommandParams<'language.completion'>): Promise<{ incomplete: boolean; items: CompletionEntry[] }> {
+    const at = this.position(params);
+    const trigger = (params as { triggerCharacter?: unknown } | undefined)?.triggerCharacter;
+    const connection = await this.connectionFor(at.file);
+    if (!connection) return { incomplete: false, items: [] };
+    const result = await connection
+      .request<unknown>('textDocument/completion', {
+        textDocument: { uri: uriOf(at.file) },
+        position: at.position,
+        context: typeof trigger === 'string' && trigger !== '' ? { triggerKind: 2, triggerCharacter: trigger } : { triggerKind: 1 },
+      })
+      .catch(() => null);
+    const list = (Array.isArray(result) ? { isIncomplete: false, items: result } : (result ?? { isIncomplete: false, items: [] })) as {
+      isIncomplete?: boolean;
+      items?: unknown[];
+    };
+    this.completionItems = new Map();
+    this.completionConnection = connection;
+    const items: CompletionEntry[] = [];
+    for (const raw of (list.items ?? []).slice(0, 1000)) {
+      const id = ++this.completionCounter;
+      this.completionItems.set(id, raw);
+      items.push(completionEntry(raw as RawCompletion, id));
+    }
+    return { incomplete: list.isIncomplete === true || (list.items?.length ?? 0) > 1000, items };
+  }
+
+  async resolveCompletion(params: CommandParams<'language.resolveCompletion'>): Promise<{ detail?: string; documentation?: string }> {
+    const id = (params as { id?: unknown } | undefined)?.id;
+    const raw = typeof id === 'number' ? this.completionItems.get(id) : undefined;
+    const connection = this.completionConnection;
+    if (!raw || !connection?.running) return {};
+    const resolved = await connection.request<RawCompletion | null>('completionItem/resolve', raw).catch(() => null);
+    if (!resolved) return {};
+    const documentation = markdownOf(resolved.documentation);
+    return { ...(resolved.detail ? { detail: resolved.detail } : {}), ...(documentation ? { documentation } : {}) };
+  }
+
+  async semanticTokens(params: CommandParams<'language.semanticTokens'>): Promise<{ data: number[] } | null> {
+    const file = this.project.files.lexicalPath((params as { path?: unknown } | undefined)?.path);
+    const connection = await this.connectionFor(file);
+    const legend = this.typescript.tokenLegend;
+    if (!connection || !legend) return null;
+    const result = await connection
+      .request<{ data?: number[] } | null>('textDocument/semanticTokens/full', { textDocument: { uri: uriOf(file) } })
+      .catch(() => null);
+    if (!result?.data) return null;
+    return { data: remapTokens(result.data, legend) };
+  }
+
+  async symbols(params: CommandParams<'language.symbols'>): Promise<SymbolMatch[]> {
+    const p = params as Partial<CommandParams<'language.symbols'>> | undefined;
+    if (typeof p?.query !== 'string' || (p.kinds !== 'types' && p.kinds !== 'all')) {
+      throw new CommandError('A query and kinds are expected.', ErrorCode.invalidParams);
+    }
+    // Über alle Sprachserver des Projekts (bis Ticket 14 nur TypeScript); einer, der nicht läuft, startet dafür nicht.
+    const server = this.typescript;
+    if (!server.connection?.running || !(await server.ready)) return [];
+    const result = await server.connection?.request<unknown[] | null>('workspace/symbol', { query: p.query }).catch(() => null);
+    const out: SymbolMatch[] = [];
+    for (const raw of (result ?? []) as Array<{ name?: string; kind?: number; containerName?: string; location?: { uri?: string; range?: TextRange } }>) {
+      if (typeof raw.name !== 'string' || typeof raw.kind !== 'number' || !raw.location?.uri?.startsWith('file:')) continue;
+      if (p.kinds === 'types' && !TYPE_KINDS.has(raw.kind)) continue;
+      const file = pathOf(raw.location.uri);
+      // Nur Symbole im Projekt, ohne node_modules (wie die Symbolsuche von IntelliJ ohne Bibliotheken).
+      if (this.isLibrary(file)) continue;
+      out.push({
+        name: raw.name,
+        kind: raw.kind,
+        ...(raw.containerName ? { container: raw.containerName } : {}),
+        path: file,
+        range: raw.location.range ?? { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
+      });
+      if (out.length >= 500) break;
+    }
+    return out;
   }
 
   /** Inhalt eines schreibgeschützten Ziels: unter node_modules im Projekt oder ein vom Server geliefertes Ziel. */
@@ -389,7 +483,9 @@ export class LanguageService {
     });
     server.connection = connection;
     try {
-      const init = await connection.request<{ capabilities?: { diagnosticProvider?: unknown } }>(
+      const init = await connection.request<{
+        capabilities?: { diagnosticProvider?: unknown; semanticTokensProvider?: { legend?: { tokenTypes?: string[]; tokenModifiers?: string[] } } };
+      }>(
         'initialize',
         {
           processId: process.pid,
@@ -402,6 +498,8 @@ export class LanguageService {
         60_000,
       );
       server.pullDiagnostics = init?.capabilities?.diagnosticProvider !== undefined && init.capabilities.diagnosticProvider !== null;
+      const legend = init?.capabilities?.semanticTokensProvider?.legend;
+      server.tokenLegend = legend ? { types: legend.tokenTypes ?? [], modifiers: legend.tokenModifiers ?? [] } : null;
       connection.notify('initialized', {});
       server.initialized = true;
       // Die offenen Dokumente melden (auch die, die während des Starts kamen, und nach einem Neustart).
@@ -514,6 +612,7 @@ const CLIENT_CAPABILITIES = {
     configuration: true,
     didChangeWatchedFiles: { dynamicRegistration: false },
     diagnostics: { refreshSupport: true },
+    symbol: {},
   },
   textDocument: {
     synchronization: { dynamicRegistration: false, didSave: false, willSave: false },
@@ -521,10 +620,95 @@ const CLIENT_CAPABILITIES = {
     definition: { linkSupport: true },
     implementation: { linkSupport: true },
     references: {},
+    completion: {
+      contextSupport: true,
+      completionItem: {
+        snippetSupport: true,
+        documentationFormat: ['markdown', 'plaintext'],
+        insertReplaceSupport: false,
+        resolveSupport: { properties: ['documentation', 'detail'] },
+      },
+    },
+    semanticTokens: {
+      requests: { full: true },
+      tokenTypes: [...SEMANTIC_TOKEN_TYPES],
+      tokenModifiers: [...SEMANTIC_TOKEN_MODIFIERS],
+      formats: ['relative'],
+    },
     publishDiagnostics: { relatedInformation: false, tagSupport: { valueSet: [1, 2] } },
     diagnostic: { dynamicRegistration: false, relatedDocumentSupport: false },
   },
 };
+
+/** Klassen, Interfaces, Enums und Structs (`SymbolKind`) für Ctrl + N. */
+const TYPE_KINDS = new Set([5, 10, 11, 23]);
+
+interface RawCompletion {
+  label?: string;
+  kind?: number;
+  detail?: string;
+  documentation?: unknown;
+  insertText?: string;
+  insertTextFormat?: number;
+  textEdit?: { newText?: string; range?: TextRange; replace?: TextRange };
+  sortText?: string;
+  filterText?: string;
+  commitCharacters?: string[];
+}
+
+function completionEntry(raw: RawCompletion, id: number): CompletionEntry {
+  const label = typeof raw.label === 'string' ? raw.label : '';
+  const documentation = markdownOf(raw.documentation);
+  const range = raw.textEdit?.range ?? raw.textEdit?.replace;
+  return {
+    id,
+    label,
+    kind: typeof raw.kind === 'number' ? raw.kind : 1,
+    ...(raw.detail ? { detail: raw.detail } : {}),
+    ...(documentation ? { documentation } : {}),
+    insertText: raw.textEdit?.newText ?? raw.insertText ?? label,
+    ...(raw.insertTextFormat === 2 ? { snippet: true as const } : {}),
+    ...(range ? { range } : {}),
+    ...(raw.sortText ? { sortText: raw.sortText } : {}),
+    ...(raw.filterText ? { filterText: raw.filterText } : {}),
+    ...(raw.commitCharacters ? { commitCharacters: raw.commitCharacters } : {}),
+  };
+}
+
+function markdownOf(value: unknown): string | undefined {
+  if (typeof value === 'string') return value || undefined;
+  const v = value as { kind?: string; value?: string } | undefined;
+  return typeof v?.value === 'string' && v.value !== '' ? v.value : undefined;
+}
+
+/**
+ * Rechnet semantische Token von der Legende des Servers auf die gemeinsame Legende um. Token mit einer Art, die die
+ * gemeinsame Legende nicht kennt, fallen weg; die relativen Positionen werden dafür neu berechnet.
+ */
+export function remapTokens(data: readonly number[], legend: { types: readonly string[]; modifiers: readonly string[] }): number[] {
+  const typeIndex = legend.types.map((t) => (SEMANTIC_TOKEN_TYPES as readonly string[]).indexOf(t));
+  const modifierBit = legend.modifiers.map((m) => (SEMANTIC_TOKEN_MODIFIERS as readonly string[]).indexOf(m));
+  const out: number[] = [];
+  let line = 0;
+  let char = 0;
+  let lastLine = 0;
+  let lastChar = 0;
+  for (let i = 0; i + 4 < data.length; i += 5) {
+    const deltaLine = data[i];
+    line += deltaLine;
+    char = deltaLine === 0 ? char + data[i + 1] : data[i + 1];
+    const type = typeIndex[data[i + 3]] ?? -1;
+    if (type < 0) continue;
+    let modifiers = 0;
+    for (let bit = 0; bit < modifierBit.length; bit++) {
+      if ((data[i + 4] & (1 << bit)) !== 0 && modifierBit[bit] >= 0) modifiers |= 1 << modifierBit[bit];
+    }
+    out.push(line - lastLine, line === lastLine ? char - lastChar : char, data[i + 2], type, modifiers);
+    lastLine = line;
+    lastChar = char;
+  }
+  return out;
+}
 
 function hoverMarkdown(contents: unknown): string {
   if (typeof contents === 'string') return contents;

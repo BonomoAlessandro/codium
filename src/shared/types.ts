@@ -234,6 +234,80 @@ export interface CodeLocation {
   lineText?: string;
 }
 
+/** Ein Vorschlag der Vervollständigung (Ticket 13). Details lädt `language.resolveCompletion` mit `id` nach. */
+export interface CompletionEntry {
+  id: number;
+  label: string;
+  /** Art nach LSP (`CompletionItemKind`, 1–25). */
+  kind: number;
+  detail?: string;
+  /** Dokumentation als Markdown. */
+  documentation?: string;
+  insertText: string;
+  /** `insertText` ist ein Snippet (`$1`, `${2:name}`). */
+  snippet?: true;
+  /** Ersetzter Bereich; ohne Angabe das Wort an der Stelle. */
+  range?: TextRange;
+  sortText?: string;
+  filterText?: string;
+  commitCharacters?: string[];
+}
+
+/** Ein Symbol aus der Symbolsuche (Ticket 13). */
+export interface SymbolMatch {
+  name: string;
+  /** Art nach LSP (`SymbolKind`, 1–26). */
+  kind: number;
+  /** Wo es steht, etwa die Klasse einer Methode. */
+  container?: string;
+  path: string;
+  range: TextRange;
+}
+
+/**
+ * Legende der semantischen Token zwischen Kern und Oberfläche (Ticket 13): Der Kern meldet sie den Servern und rechnet
+ * deren Token auf diese Reihenfolge um. Namen nach LSP, dazu `local` (TypeScript: lokale Variable).
+ */
+export const SEMANTIC_TOKEN_TYPES = [
+  'namespace',
+  'type',
+  'class',
+  'enum',
+  'interface',
+  'struct',
+  'typeParameter',
+  'parameter',
+  'variable',
+  'property',
+  'enumMember',
+  'event',
+  'function',
+  'method',
+  'macro',
+  'keyword',
+  'modifier',
+  'comment',
+  'string',
+  'number',
+  'regexp',
+  'operator',
+  'decorator',
+  'annotation',
+] as const;
+export const SEMANTIC_TOKEN_MODIFIERS = [
+  'declaration',
+  'definition',
+  'readonly',
+  'static',
+  'deprecated',
+  'abstract',
+  'async',
+  'modification',
+  'documentation',
+  'defaultLibrary',
+  'local',
+] as const;
+
 /** Ein Fehler oder eine Warnung eines Sprachservers. */
 export interface LanguageDiagnostic {
   range: TextRange;
@@ -458,6 +532,17 @@ export interface Commands {
   'language.implementations': { params: { path: string; line: number; character: number }; result: CodeLocation[] };
   /** Typ und Dokumentation an einer Stelle, als Markdown; `null` ohne. */
   'language.hover': { params: { path: string; line: number; character: number }; result: { markdown: string; range?: TextRange } | null };
+  /** Vorschläge an einer Stelle (Ticket 13); `incomplete`: beim Weitertippen neu fragen. */
+  'language.completion': {
+    params: { path: string; line: number; character: number; triggerCharacter?: string };
+    result: { incomplete: boolean; items: CompletionEntry[] };
+  };
+  /** Details eines Vorschlags aus der letzten Vervollständigung. */
+  'language.resolveCompletion': { params: { id: number }; result: { detail?: string; documentation?: string } };
+  /** Semantische Token einer Datei, kodiert wie in LSP, mit der Legende `SEMANTIC_TOKEN_TYPES`/`…_MODIFIERS`. */
+  'language.semanticTokens': { params: { path: string }; result: { data: number[] } | null };
+  /** Symbolsuche über alle Sprachserver des Projekts: `types` nur Klassen, Interfaces und Enums. */
+  'language.symbols': { params: { query: string; kinds: 'types' | 'all' }; result: SymbolMatch[] };
   /** Inhalt eines schreibgeschützten Ziels (siehe `CodeLocation.readOnly`). */
   'language.readTarget': { params: { path: string }; result: { text: string } };
   /** Die gemerkte Ansicht einer Markdown-Datei; `null` ohne gemerkte (dann gilt „Split“). */

@@ -31,13 +31,13 @@ export type EditorCommand =
   | 'editor.gotoImplementation'
   | 'editor.quickDoc';
 
-/** Verwendungen in das Werkzeugfenster „Find“ (Ticket 12); der Code-Bereich fragt den Sprach-Dienst. */
-export type UsagesCommand = 'navigate.usages';
+/** Verwendungen in das Werkzeugfenster „Find“ (Ticket 12), Zurück und Vor (Ticket 13); der Code-Bereich führt sie aus. */
+export type UsagesCommand = 'navigate.usages' | 'navigate.back' | 'navigate.forward';
 
 export type TabCommand = 'tab.close' | 'tab.recent' | 'tab.recentForward' | 'file.saveAll';
 
 /** Suchfenster über dem Editor (Ticket 08); das Projektfenster öffnet sie. */
-export type SearchCommand = 'file.gotoFile' | 'file.recent' | 'find.inFiles';
+export type SearchCommand = 'file.gotoFile' | 'file.recent' | 'find.inFiles' | 'symbol.gotoClass' | 'symbol.gotoSymbol';
 
 /** Kürzel für Funktionen späterer Tickets; sie sind schon belegt, damit Monaco sie nicht nimmt. */
 export type ReservedCommand = 'settings.open' | 'vcs.commit' | 'vcs.push' | 'vcs.pull';
@@ -97,6 +97,11 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   binding('Ctrl+Alt+B', 'editor.gotoImplementation', 'editor'),
   binding('Ctrl+Q', 'editor.quickDoc', 'editor'),
   binding('Alt+F7', 'navigate.usages', 'editor'),
+  // Symbolsuche, Zurück und Vor (Ticket 13).
+  binding('Ctrl+N', 'symbol.gotoClass', 'window'),
+  binding('Ctrl+Alt+Shift+N', 'symbol.gotoSymbol', 'window'),
+  binding('Ctrl+Alt+ArrowLeft', 'navigate.back', 'window'),
+  binding('Ctrl+Alt+ArrowRight', 'navigate.forward', 'window'),
   // Spätere Tickets: Git (15, 16, 18).
   binding('Ctrl+K', 'vcs.commit', 'window'),
   binding('Ctrl+Shift+K', 'vcs.push', 'window'),

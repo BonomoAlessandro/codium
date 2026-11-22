@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { EditorArea, type EditorAreaHandle, type EditorStatus } from '../editor/EditorArea';
 import { FindInFilesPopup, type SearchOutcome } from '../search/FindInFilesPopup';
-import { GotoFilePopup, RecentFilesPopup } from '../search/FilePopups';
+import { GotoFilePopup, RecentFilesPopup, SymbolPopup } from '../search/FilePopups';
 import { FindToolWindow, type FindTab } from '../search/FindToolWindow';
 import { errorText } from '../errors';
 import { useSettings } from '../settings';
@@ -88,7 +88,7 @@ const INITIAL_SEARCH: SearchOptions = {
 };
 
 /** Welches Suchfenster über dem Editor offen ist. */
-type SearchPopup = 'gotoFile' | 'recentFiles' | 'findInFiles' | null;
+type SearchPopup = 'gotoFile' | 'recentFiles' | 'findInFiles' | 'gotoClass' | 'gotoSymbol' | null;
 
 /** Layout, falls der Kern keines liefert (das Fenster schliesst sich gerade): alle Seiten zu. */
 const CLOSED_LAYOUT: ToolWindowLayout = {
@@ -337,6 +337,15 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
         setSettingsOpen(true);
         return;
       }
+      if (command === 'symbol.gotoClass' || command === 'symbol.gotoSymbol') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.repeat) return;
+        closeOpenMenus();
+        stopDrag();
+        setPopup(command === 'symbol.gotoClass' ? 'gotoClass' : 'gotoSymbol');
+        return;
+      }
       if (command === 'file.gotoFile' || command === 'file.recent' || command === 'find.inFiles') {
         e.preventDefault();
         e.stopPropagation();
@@ -530,6 +539,20 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
       </div>
       <StatusBar work={work} editor={status} />
       {settingsOpen && <SettingsDialog api={api} settings={settings} onClose={() => setSettingsOpen(false)} />}
+      {(popup === 'gotoClass' || popup === 'gotoSymbol') && (
+        <SymbolPopup
+          api={api}
+          project={project}
+          kinds={popup === 'gotoClass' ? 'types' : 'all'}
+          onOpen={(symbol) =>
+            editorRef.current?.open(symbol.path, {
+              focus: true,
+              target: { lineNumber: symbol.range.start.line + 1, column: symbol.range.start.character + 1 },
+            })
+          }
+          onClose={() => setPopup(null)}
+        />
+      )}
       {popup === 'gotoFile' && <GotoFilePopup api={api} project={project} onOpen={openFile} onClose={() => setPopup(null)} />}
       {popup === 'recentFiles' && <RecentFilesPopup api={api} project={project} onOpen={openFile} onClose={() => setPopup(null)} />}
       {popup === 'findInFiles' && (

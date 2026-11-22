@@ -7,7 +7,15 @@
 // - Ziele in anderen Dateien: Bevor Monaco sie bekommt, gibt es für jedes ein Modell (für die Vorschau im Peek und
 //   für das Öffnen über den Editor-Opener). Ziele in Bibliotheken kommen über `language.readTarget`.
 
-import type { CodeLocation, CodiumApi, LanguageDiagnostic, TextRange } from '../../shared/types';
+import {
+  SEMANTIC_TOKEN_MODIFIERS,
+  SEMANTIC_TOKEN_TYPES,
+  type CodeLocation,
+  type CodiumApi,
+  type CompletionEntry,
+  type LanguageDiagnostic,
+  type TextRange,
+} from '../../shared/types';
 import { languageOf, monaco } from '../editor/monaco';
 
 /** Monaco-Sprachen, für die der Sprach-Dienst einen Server hat. */
@@ -113,6 +121,44 @@ export function registerLanguageFeatures(api: CodiumApi, beforeRequest: (filePat
       provideImplementation: async (model, position) =>
         withModels(await api.request('language.implementations', ask(model, position)).catch(() => [])),
     }),
+    // Vervollständigung (Ticket 13): automatisch beim Tippen und mit Ctrl + Leertaste; Details beim Auswählen.
+    monaco.languages.registerCompletionItemProvider(language, {
+      triggerCharacters: ['.', '"', "'", '`', '/', '@', '<', '#'],
+      provideCompletionItems: async (model, position, context) => {
+        const result = await api
+          .request('language.completion', {
+            ...ask(model, position),
+            ...(context.triggerCharacter ? { triggerCharacter: context.triggerCharacter } : {}),
+          })
+          .catch(() => null);
+        if (!result) return { suggestions: [] };
+        const word = model.getWordUntilPosition(position);
+        const fallback = new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn);
+        return { incomplete: result.incomplete, suggestions: result.items.map((entry) => completionItem(entry, fallback)) };
+      },
+      resolveCompletionItem: async (item) => {
+        const id = completionIds.get(item);
+        if (id === undefined) return item;
+        const details = await api.request('language.resolveCompletion', { id }).catch(() => null);
+        if (details?.detail) item.detail = details.detail;
+        if (details?.documentation) item.documentation = { value: details.documentation, isTrusted: false, supportHtml: false };
+        return item;
+      },
+    }),
+    // Semantische Färbung (Ticket 13) mit der gemeinsamen Legende; die Farben stehen im Schema (theme.ts).
+    monaco.languages.registerDocumentSemanticTokensProvider(language, {
+      getLegend: () => ({ tokenTypes: [...SEMANTIC_TOKEN_TYPES], tokenModifiers: [...SEMANTIC_TOKEN_MODIFIERS] }),
+      provideDocumentSemanticTokens: async (model) => {
+        const filePath = pathOfUri(model.uri);
+        beforeRequest(filePath);
+        const version = model.getVersionId();
+        const result = await api.request('language.semanticTokens', { path: filePath }).catch(() => null);
+        // Hat sich der Text inzwischen geändert, fragt Monaco ohnehin neu.
+        if (!result || model.isDisposed() || model.getVersionId() !== version) return null;
+        return { data: new Uint32Array(result.data) };
+      },
+      releaseDocumentSemanticTokens: () => {},
+    }),
     monaco.languages.registerHoverProvider(language, {
       provideHover: async (model, position) => {
         const hover = await api.request('language.hover', ask(model, position)).catch(() => null);
@@ -147,6 +193,55 @@ export function registerLanguageFeatures(api: CodiumApi, beforeRequest: (filePat
     readOnlyPreviews.dispose();
     for (const model of [...previews]) model.dispose();
   };
+}
+
+/** Kennung eines Vorschlags beim Kern, für das Nachladen der Details. */
+const completionIds = new WeakMap<monaco.languages.CompletionItem, number>();
+
+/** CompletionItemKind von LSP (1–25) in die Art von Monaco. */
+const COMPLETION_KINDS: Record<number, monaco.languages.CompletionItemKind> = {
+  1: monaco.languages.CompletionItemKind.Text,
+  2: monaco.languages.CompletionItemKind.Method,
+  3: monaco.languages.CompletionItemKind.Function,
+  4: monaco.languages.CompletionItemKind.Constructor,
+  5: monaco.languages.CompletionItemKind.Field,
+  6: monaco.languages.CompletionItemKind.Variable,
+  7: monaco.languages.CompletionItemKind.Class,
+  8: monaco.languages.CompletionItemKind.Interface,
+  9: monaco.languages.CompletionItemKind.Module,
+  10: monaco.languages.CompletionItemKind.Property,
+  11: monaco.languages.CompletionItemKind.Unit,
+  12: monaco.languages.CompletionItemKind.Value,
+  13: monaco.languages.CompletionItemKind.Enum,
+  14: monaco.languages.CompletionItemKind.Keyword,
+  15: monaco.languages.CompletionItemKind.Snippet,
+  16: monaco.languages.CompletionItemKind.Color,
+  17: monaco.languages.CompletionItemKind.File,
+  18: monaco.languages.CompletionItemKind.Reference,
+  19: monaco.languages.CompletionItemKind.Folder,
+  20: monaco.languages.CompletionItemKind.EnumMember,
+  21: monaco.languages.CompletionItemKind.Constant,
+  22: monaco.languages.CompletionItemKind.Struct,
+  23: monaco.languages.CompletionItemKind.Event,
+  24: monaco.languages.CompletionItemKind.Operator,
+  25: monaco.languages.CompletionItemKind.TypeParameter,
+};
+
+function completionItem(entry: CompletionEntry, fallback: monaco.IRange): monaco.languages.CompletionItem {
+  const item: monaco.languages.CompletionItem = {
+    label: entry.label,
+    kind: COMPLETION_KINDS[entry.kind] ?? monaco.languages.CompletionItemKind.Text,
+    insertText: entry.insertText,
+    range: entry.range ? toMonacoRange(entry.range) : fallback,
+    ...(entry.snippet ? { insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet } : {}),
+    ...(entry.detail ? { detail: entry.detail } : {}),
+    ...(entry.documentation ? { documentation: { value: entry.documentation, isTrusted: false, supportHtml: false } } : {}),
+    ...(entry.sortText ? { sortText: entry.sortText } : {}),
+    ...(entry.filterText ? { filterText: entry.filterText } : {}),
+    ...(entry.commitCharacters ? { commitCharacters: entry.commitCharacters } : {}),
+  };
+  completionIds.set(item, entry.id);
+  return item;
 }
 
 async function readText(api: CodiumApi, filePath: string): Promise<string | null> {

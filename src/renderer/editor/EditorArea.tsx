@@ -41,6 +41,7 @@ import { DocumentSync, hasLanguageServer, isReadOnlyTarget, pathOfUri, registerL
 import { MarkdownPreview } from '../markdown/MarkdownPreview';
 import { isMarkdownFile } from '../markdown/markdown';
 import { EDITOR_ACTIONS } from './editorActions';
+import { NavigationHistory, type NavLocation } from './navigationHistory';
 import { EDITOR_FONT_FAMILY, editorFontReady, languageOf, monaco } from './monaco';
 import { pinTab, recentOrder, tabLabels, tabsToClose, unpinTab, withTab, withoutTab } from './tabs';
 
@@ -671,6 +672,67 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     };
   }, []);
 
+  // ---------- Zurück und Vor (Ticket 13) ----------
+
+  const history = useRef(new NavigationHistory());
+  /** Die letzte bekannte Stelle des Cursors. */
+  const lastPlace = useRef<NavLocation | null>(null);
+  /** Während Zurück/Vor: das Ziel; die Bewegung dorthin ist kein neuer Eintrag. */
+  const navigatingTo = useRef<NavLocation | null>(null);
+
+  const currentPlace = (): NavLocation | null => {
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    const position = editor?.getPosition();
+    if (!model || !position) return null;
+    const known = entryOfModel(model);
+    return { path: (known && tabPath(known[0])) ?? pathOfUri(model.uri), line: position.lineNumber, column: position.column };
+  };
+  const trackPlaceRef = useRef(() => {});
+  trackPlaceRef.current = () => {
+    const place = currentPlace();
+    if (!place) return;
+    const target = navigatingTo.current;
+    if (target) {
+      if (target.path.toLowerCase() === place.path.toLowerCase() && target.line === place.line) navigatingTo.current = null;
+      lastPlace.current = place;
+      return;
+    }
+    if (lastPlace.current) history.current.moved(lastPlace.current, place);
+    lastPlace.current = place;
+  };
+
+  /** Zurück (`-1`) oder Vor (`1`); `false`, wenn es keinen Eintrag gibt. */
+  const navigate = (direction: -1 | 1): boolean => {
+    const current = currentPlace() ?? lastPlace.current;
+    if (!current) return false;
+    const target = direction < 0 ? history.current.goBack(current) : history.current.goForward(current);
+    if (!target) return false;
+    navigatingTo.current = target;
+    window.setTimeout(() => {
+      if (navigatingTo.current === target) navigatingTo.current = null;
+    }, 2000);
+    open(target.path, { focus: true, target: { lineNumber: target.line, column: target.column } });
+    return true;
+  };
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+
+  // Die Seitentasten der Maus („zurück“, „vor“) wirken wie Ctrl + Alt + Links/Rechts.
+  useEffect(() => {
+    const onMouse = (e: MouseEvent) => {
+      if (e.button !== 3 && e.button !== 4) return;
+      e.preventDefault();
+      if (e.type === 'mouseup') navigateRef.current(e.button === 3 ? -1 : 1);
+    };
+    window.addEventListener('mousedown', onMouse, true);
+    window.addEventListener('mouseup', onMouse, true);
+    return () => {
+      window.removeEventListener('mousedown', onMouse, true);
+      window.removeEventListener('mouseup', onMouse, true);
+    };
+  }, []);
+
   // ---------- Kürzel der zentralen Belegung ----------
 
   const handleCommand = useCallback(
@@ -697,6 +759,10 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
         case 'tab.recentForward':
           if (tabsRef.current.length === 0) return false;
           switchRecent(command === 'tab.recent' ? 1 : -1);
+          return true;
+        case 'navigate.back':
+        case 'navigate.forward':
+          if (!repeat) navigate(command === 'navigate.back' ? -1 : 1);
           return true;
         case 'navigate.usages': {
           // Alt + F7: die Verwendungen als Reiter ins Werkzeugfenster „Find“.
@@ -902,7 +968,9 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
         editor.onDidChangeCursorPosition(() => {
           reportStatus();
           scheduleCursorSave();
+          trackPlaceRef.current();
         }),
+        editor.onDidChangeModel(() => trackPlaceRef.current()),
         editor.onDidScrollChange(() => reportTopLine()),
         editor.onDidScrollChange((e) => {
           if (e.scrollTopChanged) scheduleCursorSave();
@@ -1067,6 +1135,8 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   // Dateioperationen in Codium: Tabs folgen einer Umbenennung, beim Löschen schliessen sie.
   const onOperation = useRef<(op: FileOperation) => void>(() => {});
   onOperation.current = (op) => {
+    if (op.kind === 'deleted') history.current.rename(op.path, null);
+    if (op.kind === 'renamed') history.current.rename(op.from, op.to);
     if (op.kind === 'deleted') {
       // Alle auf einmal und ohne den Cursor zu sichern: Der Kern hat ihn mit der Datei schon vergessen.
       closeTabs(

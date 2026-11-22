@@ -40,6 +40,10 @@ export function registerFileCommands(register: RegisterProjectCommand): void {
   register('language.implementations', (project, params) => project.language.implementations(params));
   register('language.hover', (project, params) => project.language.hover(params));
   register('language.readTarget', (project, params) => project.language.readTarget(params));
+  register('language.completion', (project, params) => project.language.completion(params));
+  register('language.resolveCompletion', (project, params) => project.language.resolveCompletion(params));
+  register('language.semanticTokens', (project, params) => project.language.semanticTokens(params));
+  register('language.symbols', (project, params) => project.language.symbols(params));
   register('project.expandedFolders', (project) => expandedFolders(project));
   register('project.setExpandedFolders', (project, params) => setExpandedFolders(project, params));
 }
