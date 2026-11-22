@@ -1924,3 +1924,7 @@ kbd {
   gap: 4px;
   color: var(--text-muted);
 }
+
+.commit-file.selected {
+  background: var(--bg-selected);
+}

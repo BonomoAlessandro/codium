@@ -37,6 +37,8 @@ interface RunOptions {
   background?: boolean;
   /** Schreibende Aktion: läuft nach allen anderen schreibenden dieses Projekts. */
   write?: boolean;
+  /** Pfade für `--pathspec-from-file=- --pathspec-file-nul` (über stdin, ohne Grenze der Befehlszeile). */
+  pathspecs?: string[];
 }
 
 const NO_REPOSITORY: GitState = { repository: false, branch: null, ahead: 0, behind: 0, files: [] };
@@ -54,6 +56,8 @@ export class GitService {
   private refreshing: Promise<GitState> | null = null;
   private refreshAgain = false;
   private readonly watchers = new Map<string, fs.FSWatcher>();
+  /** Umbenennungen, deren Ziel schon weiter umbenannt war: neues Ziel → ursprünglicher Pfad. */
+  private readonly pendingRenames = new Map<string, string>();
   private lastRepositoryError: string | null = null;
   /** Bis zur ersten Abfrage ist der Zustand unbekannt; `git.state` wartet dann auf sie (Review von Ticket 15). */
   private firstRead: Promise<GitState> | null = null;
@@ -315,7 +319,7 @@ export class GitService {
     if (paths.length === 0 && p.amend !== true) throw new CommandError('Select the files to commit.', ErrorCode.invalidParams);
     await this.serial(async () => {
       const status = await this.readState();
-      const byKey = new Map(status.files.map((f) => [f.path.toLowerCase(), f]));
+      const byKey = filesByKey(status.files);
       // Nicht versionierte zuerst in den Index; zu Umbenennungen gehört der alte Pfad dazu.
       const untracked = paths.filter((x) => byKey.get(x.toLowerCase())?.index === '?');
       const all = new Set(paths);
@@ -324,12 +328,17 @@ export class GitService {
         if (orig) all.add(orig);
       }
       if (untracked.length > 0) {
-        const added = await this.run(['add', '--', ...untracked.map((x) => this.relative(x))]);
+        const added = await this.run(['add'], { pathspecs: untracked.map((x) => this.relative(x)) });
         if (added.code !== 0) throw this.failure(added);
       }
       // `--only`: nur diese Pfade, vorbereitete Einträge anderer Dateien bleiben im Index.
-      const args = ['commit', '--only', '-m', message, ...(p.amend === true ? ['--amend'] : []), ...(all.size > 0 ? ['--', ...[...all].map((x) => this.relative(x))] : [])];
-      const result = await this.run(args);
+      const result = await this.run(['commit', '--only', '-m', message, ...(p.amend === true ? ['--amend'] : [])], {
+        ...(all.size > 0 ? { pathspecs: [...all].map((x) => this.relative(x)) } : {}),
+      });
+      if (result.code !== 0 && untracked.length > 0) {
+        // Abgelehnt (etwa von einem Hook): die eben aufgenommenen Dateien wieder unversioniert, wie in IntelliJ.
+        await this.run(['rm', '--cached', '--quiet', '-r'], { pathspecs: untracked.map((x) => this.relative(x)) });
+      }
       await this.refresh();
       if (result.code !== 0) throw this.failure(result);
     });
@@ -348,7 +357,7 @@ export class GitService {
     const paths = p.paths.map((x) => this.project.files.lexicalPath(x));
     await this.serial(async () => {
       const status = await this.readState();
-      const byKey = new Map(status.files.map((f) => [f.path.toLowerCase(), f]));
+      const byKey = filesByKey(status.files);
       const restore = new Set<string>();
       const removeAdded: string[] = [];
       for (const x of paths) {
@@ -365,14 +374,14 @@ export class GitService {
         }
       }
       if (removeAdded.length > 0) {
-        const removed = await this.run(['rm', '--cached', '--quiet', '-r', '--', ...removeAdded.map((x) => this.relative(x))]);
+        const removed = await this.run(['rm', '--cached', '--quiet', '-r'], { pathspecs: removeAdded.map((x) => this.relative(x)) });
         if (removed.code !== 0) throw this.failure(removed);
         for (const file of removeAdded) {
           if (fs.existsSync(file)) await this.options.trash(file);
         }
       }
       if (restore.size > 0) {
-        const restored = await this.run(['restore', '--source=HEAD', '--staged', '--worktree', '--', ...[...restore].map((x) => this.relative(x))]);
+        const restored = await this.run(['restore', '--source=HEAD', '--staged', '--worktree'], { pathspecs: [...restore].map((x) => this.relative(x)) });
         if (restored.code !== 0) throw this.failure(restored);
       }
       await this.refresh();
@@ -384,26 +393,49 @@ export class GitService {
     const target = this.project.files.lexicalPath((params as { path?: unknown } | undefined)?.path);
     const root = this.root!;
     const isDir = fs.existsSync(target) && fs.statSync(target).isDirectory();
-    const entry = `/${path.relative(root, target).split(path.sep).join('/')}${isDir ? '/' : ''}`;
+    // Zeichen, die in .gitignore ein Muster bilden, wörtlich nehmen (Review von Ticket 16: „[ab].txt“ ignorierte sonst
+    // „b.txt“); „#“ und „!“ am Anfang entschärft der führende „/“.
+    const relative = path.relative(root, target).split(path.sep).join('/').replace(/[[\]*?\\]/g, (c) => `\\${c}`).replace(/ $/, '\\ ');
+    const entry = `/${relative}${isDir ? '/' : ''}`;
     const file = path.join(root, '.gitignore');
-    const current = fs.existsSync(file) ? await fs.promises.readFile(file, 'utf8') : '';
-    if (current.split(/\r?\n/).includes(entry)) return;
-    const newline = current.includes('\r\n') ? '\r\n' : '\n';
-    const prefix = current === '' || current.endsWith('\n') ? '' : newline;
-    await fs.promises.writeFile(file, `${current}${prefix}${entry}${newline}`, 'utf8');
+    await this.serial(async () => {
+      const current = fs.existsSync(file) ? await fs.promises.readFile(file, 'utf8') : '';
+      if (current.split(/\r?\n/).includes(entry)) return;
+      const newline = current.includes('\r\n') ? '\r\n' : '\n';
+      const prefix = current === '' || current.endsWith('\n') ? '' : newline;
+      await fs.promises.writeFile(file, `${current}${prefix}${entry}${newline}`, 'utf8');
+    });
     await this.refresh();
   }
 
   /** Merkt eine Umbenennung einer versionierten Datei im Index vor (Ticket 16). */
-  private async recordRename(from: string, to: string): Promise<void> {
-    if (!this.root || this.disposed) return;
-    const tracked = await this.run(['ls-files', '--error-unmatch', '--', this.relative(from)], { background: true });
-    if (tracked.code !== 0) return;
-    await this.serial(async () => {
-      await this.run(['rm', '-r', '--cached', '--quiet', '--', this.relative(from)]);
-      await this.run(['add', '--', this.relative(to)]);
-    });
-    this.scheduleRefresh();
+  private recordRename(from: string, to: string): Promise<void> {
+    if (!this.root || this.disposed) return Promise.resolve();
+    // In der Schreibreihe (Review von Ticket 16): Mehrere schnelle Umbenennungen und ein Commit danach sehen jeweils
+    // den Stand der vorigen.
+    return this.serial(async () => {
+      // Schnell hintereinander umbenannt (a → b → c): Lief das Vormerken für a → b erst, als b schon c hiess, gilt die
+      // Kette a → c (Review von Ticket 16).
+      const origin = this.pendingRenames.get(from.toLowerCase()) ?? from;
+      this.pendingRenames.delete(from.toLowerCase());
+      // Nur die versionierten Dateien übertragen; nicht versionierte in einem umbenannten Ordner bleiben es.
+      // ls-files kennt --pathspec-from-file nicht; ein Pfad passt auf die Befehlszeile.
+      const listed = await this.run(['ls-files', '-z', '--', this.relative(origin)], { background: true });
+      if (listed.code !== 0) return;
+      const tracked = listed.stdout.split('\0').filter(Boolean);
+      if (tracked.length === 0) return;
+      if (!fs.existsSync(to)) {
+        this.pendingRenames.set(to.toLowerCase(), origin);
+        return;
+      }
+      const originRel = this.relative(origin);
+      const toRel = this.relative(to);
+      const moved = tracked.map((t) => toRel + t.slice(originRel.length));
+      // Erst die neuen aufnehmen; geht das nicht (etwa ein ignorierter Name), bleibt der Index, wie er war.
+      const added = await this.run(['add'], { pathspecs: moved });
+      if (added.code !== 0) return;
+      await this.run(['rm', '--cached', '--quiet', '-r'], { pathspecs: tracked });
+    }).then(() => this.scheduleRefresh());
   }
 
   /** Pfad relativ zum Projektordner (dem Arbeitsordner von Git), mit „/“. */
@@ -436,7 +468,9 @@ export class GitService {
       const entry: GitConsoleEntry = {
         id: this.nextEntryId++,
         time: Date.now(),
-        command: ['git', ...args].map(quote).join(' '),
+        command: ['git', ...args, ...(options.pathspecs ? [`-- ${options.pathspecs.length === 1 ? options.pathspecs[0] : `(${options.pathspecs.length} paths)`}`] : [])]
+          .map(quote)
+          .join(' '),
         output: '',
         exitCode: null,
         background: options.background === true,
@@ -444,7 +478,14 @@ export class GitService {
       this.addEntry(entry);
       let result: GitRun;
       if (this.disposed) return { code: null, stdout: '', stderr: 'The project is closing.' };
-      const call = runGit(git, args, { cwd: this.project.path, env: this.options.env });
+      // Pfade immer wörtlich: Ein Name wie „[id].tsx“ ist sonst ein Muster und träfe andere Dateien (Review von
+      // Ticket 16). Viele Pfade kommen über stdin statt über die Befehlszeile (Grenze von Windows).
+      const env = { ...(this.options.env ?? process.env), GIT_LITERAL_PATHSPECS: '1' };
+      const call = runGit(git, options.pathspecs ? [...args, '--pathspec-from-file=-', '--pathspec-file-nul'] : args, {
+        cwd: this.project.path,
+        env,
+        ...(options.pathspecs ? { input: options.pathspecs.join('\0') } : {}),
+      });
       this.running.add(call);
       void call.finally(() => this.running.delete(call)).catch(() => {});
       try {
@@ -498,6 +539,17 @@ export class GitService {
     this.watchers.clear();
     await Promise.allSettled([...this.running]);
   }
+}
+
+/** Die Dateizustände nach Pfad; gibt es für einen Pfad zwei (etwa „D“ und „?“), gilt der versionierte. */
+function filesByKey(files: GitFileStatus[]): Map<string, GitFileStatus> {
+  const map = new Map<string, GitFileStatus>();
+  for (const f of files) {
+    const k = f.path.toLowerCase();
+    const known = map.get(k);
+    if (!known || known.index === '?') map.set(k, f);
+  }
+  return map;
 }
 
 /** Ein Branchname aus der Oberfläche: nicht leer, ohne führendes „-“ (wäre eine Option für Git). */
@@ -556,8 +608,9 @@ export function parseStatus(output: string, root: string): GitState {
     } else if (line.startsWith('? ')) {
       state.files.push({ path: path.join(root, line.slice(2)), index: '?', worktree: '?' });
     } else if (line.startsWith('! ')) {
-      // Ignoriert; ein Ordner endet mit „/“.
-      state.files.push({ path: path.join(root, line.slice(2).replace(/\/$/, '')), index: '!', worktree: '!' });
+      // Ignoriert, getrennt von den Änderungen (Review von Ticket 16); ein Ordner endet mit „/“.
+      const name = line.slice(2);
+      (state.ignored ??= []).push({ path: path.join(root, name.replace(/\/$/, '')), ...(name.endsWith('/') ? { directory: true as const } : {}) });
     }
   }
   if (state.branch === null && oid && oid !== '(initial)') state.detached = oid.slice(0, 8);

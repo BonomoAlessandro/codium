@@ -112,7 +112,7 @@ describe('Commit und Rollback', { timeout: 30_000 }, () => {
     expect(fs.existsSync(at('neu.txt'))).toBe(false);
     expect(fs.existsSync(at('c2.txt'))).toBe(false);
     expect(test.ports.shell.trashed.map((t) => path.basename(t.path)).sort()).toEqual(['c2.txt', 'neu.txt']);
-    expect((await call(test, windowId, 'git.refresh')).files.filter((f) => f.index !== '!')).toEqual([]);
+    expect((await call(test, windowId, 'git.refresh')).files).toEqual([]);
   });
 
   it('ergänzt die .gitignore und meldet ignorierte Dateien und Konflikte für den Dateibaum', async () => {
@@ -125,8 +125,7 @@ describe('Commit und Rollback', { timeout: 30_000 }, () => {
     await call(test, windowId, 'git.addToGitignore', { path: at('out') });
     expect(fs.readFileSync(at('.gitignore'), 'utf8')).toBe('/build.log\n/out/\n');
     const state = await call(test, windowId, 'git.refresh');
-    expect(status(state, 'build.log')).toMatchObject({ index: '!' });
-    expect(status(state, 'out')).toMatchObject({ index: '!' });
+    expect(state.ignored).toEqual(expect.arrayContaining([{ path: at('build.log') }, { path: at('out'), directory: true }]));
 
     // Konflikt.
     run('add', '.gitignore');
@@ -143,6 +142,75 @@ describe('Commit und Rollback', { timeout: 30_000 }, () => {
       // Konflikt erwartet.
     }
     expect(status(await call(test, windowId, 'git.refresh'), 'a.txt')).toMatchObject({ conflict: true });
+  });
+
+  it('nimmt Dateinamen mit [ ] wörtlich (* und ? sind unter Windows keine gültigen Namen): Rollback, Commit und .gitignore treffen nur sie (Review von Ticket 16)', async () => {
+    const { test, windowId, at, run } = await setup({ '[ab].txt': 'x\n', 'a.txt': 'a\n', 'b.txt': 'b\n', '[x]y.txt': 's\n' });
+    fs.writeFileSync(at('[ab].txt'), 'geändert\n');
+    fs.writeFileSync(at('a.txt'), 'WICHTIG ungespeicherte Arbeit\n');
+    fs.writeFileSync(at('[x]y.txt'), 'geändert\n');
+    await call(test, windowId, 'git.refresh');
+    await call(test, windowId, 'git.rollback', { paths: [at('[ab].txt')] });
+    expect(fs.readFileSync(at('[ab].txt'), 'utf8')).toBe('x\n');
+    expect(fs.readFileSync(at('a.txt'), 'utf8')).toBe('WICHTIG ungespeicherte Arbeit\n');
+
+    await call(test, windowId, 'git.commit', { paths: [at('[x]y.txt')], message: 'Nur die Klammer' });
+    expect(run('show', '--name-only', '--format=', 'HEAD')).toBe('[x]y.txt');
+
+    fs.writeFileSync(at('[cd].log'), 'x\n');
+    fs.writeFileSync(at('c.log'), 'x\n');
+    await call(test, windowId, 'git.addToGitignore', { path: at('[cd].log') });
+    const state = await call(test, windowId, 'git.refresh');
+    expect(state.ignored).toEqual(expect.arrayContaining([{ path: at('[cd].log') }]));
+    expect(state.files.find((f) => f.path === at('c.log'))).toMatchObject({ index: '?' });
+  });
+
+  it('committet sehr viele neue Dateien (Pfade über stdin statt über die Befehlszeile)', async () => {
+    const { test, windowId, at, run } = await setup();
+    const dir = at('ein-ziemlich-langer-ordnername-fuer-generierten-code', 'noch-ein-unterordner');
+    fs.mkdirSync(dir, { recursive: true });
+    const paths = Array.from({ length: 700 }, (_, i) => path.join(dir, `generierte-datei-nummer-${i}.txt`));
+    for (const p of paths) fs.writeFileSync(p, 'x\n');
+    await call(test, windowId, 'git.refresh');
+    await call(test, windowId, 'git.commit', { paths, message: 'Viele' });
+    expect(run('show', '--name-only', '--format=', 'HEAD').split('\n')).toHaveLength(700);
+  });
+
+  it('überträgt beim Umbenennen eines Ordners nur versionierte Dateien und übersteht schnelles Umbenennen', async () => {
+    const { test, windowId, at, run } = await setup();
+    fs.mkdirSync(at('dir'));
+    fs.writeFileSync(at('dir', 't.txt'), 't\n');
+    run('add', '.');
+    run('commit', '-m', 'dir');
+    fs.writeFileSync(at('dir', 'privat.txt'), 'geheim\n');
+    await call(test, windowId, 'files.rename', { path: at('dir'), newName: 'dir2' });
+    const afterDir = await until(
+      () => call(test, windowId, 'git.refresh'),
+      (s) => s.files.some((f) => f.index === 'R'),
+      'Ordner umbenannt',
+    );
+    expect(afterDir.files.find((f) => f.path === at('dir2', 't.txt'))).toMatchObject({ index: 'R', origPath: at('dir', 't.txt') });
+    expect(afterDir.files.find((f) => f.path === at('dir2', 'privat.txt'))).toMatchObject({ index: '?' });
+
+    // a.txt → b2.txt → c2.txt kurz hintereinander: am Ende eine Umbenennung a.txt → c2.txt.
+    await call(test, windowId, 'files.rename', { path: at('a.txt'), newName: 'b2.txt' });
+    await call(test, windowId, 'files.rename', { path: at('b2.txt'), newName: 'c2.txt' });
+    const fast = await until(
+      () => call(test, windowId, 'git.refresh'),
+      (s) => s.files.some((f) => f.path === at('c2.txt') && f.index === 'R'),
+      'zweimal umbenannt',
+    );
+    expect(fast.files.find((f) => f.path === at('c2.txt'))).toMatchObject({ origPath: at('a.txt') });
+    expect(fast.files.some((f) => f.path === at('a.txt'))).toBe(false);
+  });
+
+  it('nimmt neu aufgenommene Dateien wieder aus dem Index, wenn ein Hook den Commit ablehnt', async () => {
+    const { test, windowId, at, run, repo } = await setup();
+    fs.writeFileSync(path.join(repo, '.git', 'hooks', 'pre-commit'), '#!/bin/sh\necho "Abgelehnt vom Hook" >&2\nexit 1\n');
+    fs.writeFileSync(at('neu.txt'), 'neu\n');
+    await call(test, windowId, 'git.refresh');
+    await expect(call(test, windowId, 'git.commit', { paths: [at('neu.txt')], message: 'x' })).rejects.toThrow(/Abgelehnt vom Hook/);
+    expect(run('status', '--porcelain', '--', 'neu.txt')).toBe('?? neu.txt');
   });
 
   it('merkt sich „Group by Directory“ über einen Neustart', async () => {

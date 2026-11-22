@@ -339,6 +339,8 @@ export interface GitState {
   /** Eine laufende Operation. */
   operation?: 'merge' | 'rebase' | 'cherry-pick' | 'revert';
   files: GitFileStatus[];
+  /** Ignorierte Dateien und Ordner (für die Farben im Dateibaum); ein Ordner wie node_modules als ein Eintrag. */
+  ignored?: Array<{ path: string; directory?: true }>;
 }
 
 /** Branches des Repositorys. */

@@ -339,17 +339,24 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
   // Git-Farben im Dateibaum (Ticket 16): Zustand je Pfad, ignorierte Ordner färben alles darin grau.
   const gitStatusOf = useMemo(() => {
     const byPath = new Map<string, string>();
-    const ignored: string[] = [];
     for (const file of gitState?.files ?? []) {
-      const kind = changeKind(file);
-      byPath.set(file.path.toLowerCase(), kind);
-      if (kind === 'ignored') ignored.push(file.path.toLowerCase());
+      const known = byPath.get(file.path.toLowerCase());
+      if (!known || known === 'unversioned') byPath.set(file.path.toLowerCase(), changeKind(file));
+    }
+    // Ignorierte: eigene Einträge, und alles unter einem ignorierten Ordner (über die Elternordner nachgeschlagen,
+    // statt jede Zeile gegen alle ignorierten Einträge zu prüfen; Review von Ticket 16).
+    const ignoredDirs = new Set<string>();
+    for (const entry of gitState?.ignored ?? []) {
+      byPath.set(entry.path.toLowerCase(), 'ignored');
+      if (entry.directory) ignoredDirs.add(entry.path.toLowerCase());
     }
     return (filePath: string): string | undefined => {
       const k = filePath.toLowerCase();
       const own = byPath.get(k);
       if (own) return own;
-      return ignored.some((dir) => k.startsWith(`${dir}\\`) || k.startsWith(`${dir}/`)) ? 'ignored' : undefined;
+      if (ignoredDirs.size === 0) return undefined;
+      for (let i = k.lastIndexOf('\\'); i > 0; i = k.lastIndexOf('\\', i - 1)) if (ignoredDirs.has(k.slice(0, i))) return 'ignored';
+      return undefined;
     };
   }, [gitState]);
 

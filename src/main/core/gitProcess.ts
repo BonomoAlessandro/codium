@@ -18,6 +18,8 @@ export interface GitRunOptions {
   env?: NodeJS.ProcessEnv;
   /** Jede Zeile auf stderr, sobald sie kommt (etwa für Fortschritt); auch mit „\r“ abgeschlossene. */
   onStderrLine?: (line: string) => void;
+  /** Eingabe auf stdin (etwa NUL-getrennte Pfade für `--pathspec-from-file=-`); ohne ist stdin zu. */
+  input?: string;
 }
 
 /** Die Umgebung für jeden Aufruf: kein Editor, keine Eingabeaufforderung im Terminal, englische Meldungen nicht erzwungen. */
@@ -55,13 +57,17 @@ export function startGit(git: string, args: string[], options: GitRunOptions): G
       cwd: options.cwd,
       env: gitEnvironment(options.env ?? process.env),
       windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
     });
+    if (options.input !== undefined && child.stdin) {
+      child.stdin.on('error', () => {});
+      child.stdin.end(options.input, 'utf8');
+    }
     const out: Buffer[] = [];
     let err = '';
     let pending = '';
-    child.stdout.on('data', (chunk: Buffer) => out.push(chunk));
-    child.stderr.on('data', (chunk: Buffer) => {
+    child.stdout!.on('data', (chunk: Buffer) => out.push(chunk));
+    child.stderr!.on('data', (chunk: Buffer) => {
       const text = chunk.toString('utf8');
       err += text;
       if (!options.onStderrLine) return;

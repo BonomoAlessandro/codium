@@ -37,16 +37,26 @@ export function changeKind(file: GitFileStatus): 'modified' | 'added' | 'deleted
 }
 
 export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFile, saveAll }: CommitToolWindowProps) {
-  const files = useMemo(() => (state?.files ?? []).filter((f) => f.index !== '!'), [state]);
+  // Je Pfad ein Eintrag; gibt es zwei (etwa „D“ und „?“), gilt der versionierte (Review von Ticket 16).
+  const files = useMemo(() => {
+    const byPath = new Map<string, GitFileStatus>();
+    for (const f of state?.files ?? []) {
+      if (f.index === '!') continue;
+      const known = byPath.get(f.path);
+      if (!known || known.index === '?') byPath.set(f.path, f);
+    }
+    return [...byPath.values()];
+  }, [state]);
   const changes = files.filter((f) => f.index !== '?');
   const unversioned = files.filter((f) => f.index === '?');
 
   // Häkchen: neue Einträge bekommen ihren Standard, bekannte behalten ihren Stand.
   const [checked, setChecked] = useState<ReadonlyMap<string, boolean>>(() => new Map());
   useEffect(() => {
+    // Bekannte Einträge behalten ihr Häkchen auch, wenn eine Abfrage einmal nichts liefert (Review von Ticket 16).
     setChecked((current) => {
-      const next = new Map<string, boolean>();
-      for (const f of files) next.set(f.path, current.get(f.path) ?? f.index !== '?');
+      const next = new Map<string, boolean>(current);
+      for (const f of files) if (!next.has(f.path)) next.set(f.path, f.index !== '?');
       return next;
     });
   }, [files]);
@@ -64,6 +74,8 @@ export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFi
   const [busy, setBusy] = useState(false);
   const [groupByDirectory, setGroupByDirectory] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; file: GitFileStatus } | null>(null);
+  /** Ausgewählte Zeilen (Klick, Ctrl + Klick); Rollback und Co. wirken auf sie, nicht auf die Häkchen (Review). */
+  const [selection, setSelection] = useState<ReadonlySet<string>>(() => new Set());
   const ask = useAsk();
   const messageRef = useRef<HTMLTextAreaElement>(null);
 
@@ -87,7 +99,12 @@ export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFi
 
   const toggleAmend = async (value: boolean) => {
     setAmend(value);
-    if (!value) return;
+    if (!value) {
+      // Abgehakt: die vorausgefüllte Nachricht wieder fort, wenn sie unverändert ist.
+      if (amendMessage !== null && message.trim() === amendMessage.trim()) setMessage('');
+      setAmendMessage(null);
+      return;
+    }
     const last = await api.request('git.lastMessage').catch(() => null);
     setAmendMessage(last);
     // Wie in IntelliJ: Die letzte Nachricht füllt das Feld, wenn es noch leer ist.
@@ -103,7 +120,10 @@ export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFi
       setMessage('');
       setAmend(false);
       setAmendMessage(null);
-      notify({ level: 'success', text: `Committed ${selected.length} ${selected.length === 1 ? 'file' : 'files'}.` });
+      notify({
+        level: 'success',
+        text: selected.length === 0 ? 'Amended the last commit.' : `Committed ${selected.length} ${selected.length === 1 ? 'file' : 'files'}.`,
+      });
     } catch (err) {
       notify({ level: 'error', text: errorText(err) });
     } finally {
@@ -133,7 +153,7 @@ export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFi
   };
 
   const menuEntries = (file: GitFileStatus): MenuEntry[] => {
-    const targets = isChecked(file) ? selected : [file];
+    const targets = selection.has(file.path) ? files.filter((f) => selection.has(f.path)) : [file];
     const entries: MenuEntry[] = [
       { kind: 'item', label: 'Rollback…', disabled: file.index === '?', run: () => void rollback(targets) },
       { kind: 'item', label: 'Jump to Source', disabled: changeKind(file) === 'deleted', run: () => onOpenFile(file.path) },
@@ -142,7 +162,11 @@ export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFi
       entries.push({
         kind: 'item',
         label: 'Add to .gitignore',
-        run: () => void api.request('git.addToGitignore', { path: file.path }).catch((err: unknown) => notify({ level: 'error', text: errorText(err) })),
+        // Vorher speichern: Ist die .gitignore offen, gingen ungespeicherte Eingaben sonst in einen Konflikt (Review).
+        run: () =>
+          void saveAll()
+            .then(() => api.request('git.addToGitignore', { path: file.path }))
+            .catch((err: unknown) => notify({ level: 'error', text: errorText(err) })),
       });
     }
     return entries;
@@ -200,8 +224,22 @@ export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFi
                           key={entry.file.path}
                           role="treeitem"
                           aria-label={baseName(entry.file.path)}
-                          aria-selected={false}
-                          className={`commit-file git-${changeKind(entry.file)}${groupByDirectory ? ' nested' : ''}`}
+                          aria-selected={selection.has(entry.file.path)}
+                          className={`commit-file git-${changeKind(entry.file)}${groupByDirectory ? ' nested' : ''}${selection.has(entry.file.path) ? ' selected' : ''}`}
+                          onMouseDown={(e) => {
+                            if ((e.target as HTMLElement).tagName === 'INPUT') return;
+                            const p = entry.file.path;
+                            if (e.button === 2 && selection.has(p)) return;
+                            setSelection((current) => {
+                              if (e.ctrlKey && e.button === 0) {
+                                const next = new Set(current);
+                                if (next.has(p)) next.delete(p);
+                                else next.add(p);
+                                return next;
+                              }
+                              return new Set([p]);
+                            });
+                          }}
                           data-git={changeKind(entry.file)}
                           onDoubleClick={() => changeKind(entry.file) !== 'deleted' && onOpenFile(entry.file.path)}
                           onContextMenu={(e) => {
@@ -260,14 +298,15 @@ export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFi
 
 type Grouped = { kind: 'folder'; folder: string } | { kind: 'file'; file: GitFileStatus };
 
-/** Flach (nach Name) oder nach Ordnern gruppiert. */
+/** Flach (nach Name) oder nach Ordnern gruppiert, sortiert nach (Ordner, Name) (Review von Ticket 16). */
 function grouped(list: GitFileStatus[], byDirectory: boolean, projectPath: string): Grouped[] {
-  const sorted = [...list].sort((a, b) => a.path.localeCompare(b.path));
-  if (!byDirectory) return sorted.sort((a, b) => baseName(a.path).localeCompare(baseName(b.path))).map((file) => ({ kind: 'file', file }));
+  const folderOf = (f: GitFileStatus) => relativeLabel(projectPath, parentPath(f.path)) || '.';
+  if (!byDirectory) return [...list].sort((a, b) => baseName(a.path).localeCompare(baseName(b.path))).map((file) => ({ kind: 'file', file }));
+  const sorted = [...list].sort((a, b) => folderOf(a).localeCompare(folderOf(b)) || baseName(a.path).localeCompare(baseName(b.path)));
   const result: Grouped[] = [];
   let last: string | null = null;
   for (const file of sorted) {
-    const folder = relativeLabel(projectPath, parentPath(file.path)) || '.';
+    const folder = folderOf(file);
     if (folder !== last) result.push({ kind: 'folder', folder });
     last = folder;
     result.push({ kind: 'file', file });

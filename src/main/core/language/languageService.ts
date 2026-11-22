@@ -796,6 +796,7 @@ export class LanguageService {
     // Nur einen Server, der nicht endet, samt Kindern hart beenden. Endet er selbst, ist seine Prozessnummer frei und
     // könnte schon zu einem fremden Prozess gehören; seine Kinder (tsserver) enden mit ihm.
     if (!exited) {
+      this.options.log(`${server.label}-Sprachserver hart beendet (keine Antwort auf shutdown/exit).`);
       if (pid !== undefined) await killProcessTree(pid);
       await connection.exit;
     }
