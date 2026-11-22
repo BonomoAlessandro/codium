@@ -103,7 +103,8 @@ function semanticStyle(type: string, modifiers: ReadonlySet<SemanticModifier>): 
     case 'function':
       return { foreground: hex(modifiers.has('declaration') ? SCHEME.methodDeclaration : SCHEME.text), fontStyle: italic };
     case 'variable':
-      // Eine statische Konstante (etwa in TypeScript ein `static readonly`) wie ein Feld.
+      // Eine statische Variable wie ein Feld (Java meldet statische Konstanten so). In TypeScript ist ein
+      // `static readonly` eine `property` und greift hier nicht (Review von Ticket 13).
       if (modifiers.has('static')) return { foreground: hex(SCHEME.field), fontStyle: 'italic' };
       return { foreground: hex(SCHEME.text), fontStyle: '' };
     case 'parameter':

@@ -29,6 +29,12 @@ const SOURCE = [
   '  return new Counter();',
   '}',
   '',
+  'export class Factory {',
+  '  static create(): Counter {',
+  '    return new Counter();',
+  '  }',
+  '}',
+  '',
 ].join('\n');
 
 const VARIANTS = [
@@ -76,6 +82,7 @@ describe('TypeScript: Vervollständigung, semantische Token, Symbolsuche', () =>
       fs.writeFileSync(path.join(project, 'package.json'), JSON.stringify({ name: 'counters', type: 'module' }));
       fs.writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, target: 'es2022', module: 'nodenext', noEmit: true } }));
       fs.writeFileSync(path.join(project, 'counter.ts'), SOURCE);
+      fs.writeFileSync(path.join(project, 'util.ts'), 'export function helperFunction(): number {\n  return 1;\n}\n');
       if (variant.typescript) fs.symlinkSync(path.join(REPO, 'node_modules', variant.typescript), path.join(project, 'node_modules', 'typescript'), 'junction');
       const test = createTestCore(path.join(root, 'data'), { typescript: BUNDLED, cleanupTimeoutMs: 10_000 });
       await test.core.start();
@@ -88,7 +95,7 @@ describe('TypeScript: Vervollständigung, semantische Token, Symbolsuche', () =>
       await call(test, windowId, 'language.didOpen', { path: file, text, version: 1 });
       const lines = text.split('\n');
       const completion = await until(
-        () => call(test, windowId, 'language.completion', { path: file, line: 16, character: 2, triggerCharacter: '.' }),
+        () => call(test, windowId, 'language.completion', { path: file, line: lines.length - 2, character: 2, triggerCharacter: '.' }),
         (r) => r.items.some((i) => i.label === 'increment'),
         'Vorschläge',
       );
@@ -114,6 +121,27 @@ describe('TypeScript: Vervollständigung, semantische Token, Symbolsuche', () =>
       expect(property).toMatch(/^property/);
       expect(staticMember).toMatch(/^property.*\.static/);
       expect(new Set([parameter, local, property, staticMember]).size).toBe(4);
+      // Methoden in allen drei Varianten (typescript-language-server sagt „member“; Review von Ticket 13).
+      expect(kind(4, 'increment')).toMatch(/^method.*\.declaration/);
+      expect(kind(16, 'create')).toMatch(/^method(?=.*\.declaration)(?=.*\.static)/);
+
+      // Vervollständigung nach einem Wortanfang mit über tausend globalen Namen: gefiltert, nicht abgeschnitten, und
+      // der automatische Import kommt beim Nachladen mit (Review von Ticket 13).
+      const other = path.join(project, 'main.ts');
+      const otherText = 'export const h = helperFun';
+      fs.writeFileSync(other, otherText);
+      await call(test, windowId, 'language.didOpen', { path: other, text: otherText, version: 1 });
+      const filtered = await until(
+        () => call(test, windowId, 'language.completion', { path: other, line: 0, character: otherText.length }),
+        (r) => r.items.some((i) => i.label === 'helperFunction'),
+        'helperFunction vorgeschlagen',
+      );
+      expect(filtered.incomplete).toBe(false);
+      expect(filtered.items.length).toBeLessThan(200);
+      const helper = filtered.items.find((i) => i.label === 'helperFunction')!;
+      const resolved = await call(test, windowId, 'language.resolveCompletion', { id: helper.id });
+      const imports = [...(helper.additionalTextEdits ?? []), ...(resolved.additionalTextEdits ?? [])].map((e) => e.newText).join('');
+      expect(imports).toMatch(/import \{ helperFunction \} from ["']\.\/util(\.js)?["']/);
 
       // Symbolsuche: die Klasse über „types“, die Funktion nur über „all“.
       const types = await until(() => call(test, windowId, 'language.symbols', { query: 'Count', kinds: 'types' }), (r) => r.length > 0, 'Klassen');
@@ -121,6 +149,12 @@ describe('TypeScript: Vervollständigung, semantische Token, Symbolsuche', () =>
       expect(types.some((s) => s.name === 'makeCounter')).toBe(false);
       const all = await until(() => call(test, windowId, 'language.symbols', { query: 'makeCount', kinds: 'all' }), (r) => r.length > 0, 'alle Symbole');
       expect(all.some((s) => s.name === 'makeCounter' && s.path === file)).toBe(true);
+      // Am Namen, nicht am Zeilenanfang (TypeScript 6 meldet die ganze Deklaration).
+      expect(all.find((s) => s.name === 'makeCounter')!.range.start).toEqual({ line: 11, character: 16 });
+
+      // Abbau: Server und Kindprozesse sind weg, bevor der Projektordner aufgeräumt wird (Review von Ticket 13).
+      test.ports.windows.close(windowId);
+      await test.core.shutdown();
     });
   }
 });

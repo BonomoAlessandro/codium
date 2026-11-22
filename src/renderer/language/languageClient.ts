@@ -142,6 +142,10 @@ export function registerLanguageFeatures(api: CodiumApi, beforeRequest: (filePat
         const details = await api.request('language.resolveCompletion', { id }).catch(() => null);
         if (details?.detail) item.detail = details.detail;
         if (details?.documentation) item.documentation = { value: details.documentation, isTrusted: false, supportHtml: false };
+        // Automatischer Import (Review von Ticket 13): kommt erst beim Nachladen.
+        if (details?.additionalTextEdits) {
+          item.additionalTextEdits = details.additionalTextEdits.map((e) => ({ range: toMonacoRange(e.range), text: e.newText }));
+        }
         return item;
       },
     }),
@@ -239,6 +243,9 @@ function completionItem(entry: CompletionEntry, fallback: monaco.IRange): monaco
     ...(entry.sortText ? { sortText: entry.sortText } : {}),
     ...(entry.filterText ? { filterText: entry.filterText } : {}),
     ...(entry.commitCharacters ? { commitCharacters: entry.commitCharacters } : {}),
+    ...(entry.additionalTextEdits
+      ? { additionalTextEdits: entry.additionalTextEdits.map((e) => ({ range: toMonacoRange(e.range), text: e.newText })) }
+      : {}),
   };
   completionIds.set(item, entry.id);
   return item;

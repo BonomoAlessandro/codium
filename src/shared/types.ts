@@ -251,6 +251,8 @@ export interface CompletionEntry {
   sortText?: string;
   filterText?: string;
   commitCharacters?: string[];
+  /** Weitere Änderungen beim Übernehmen, etwa ein automatischer Import. */
+  additionalTextEdits?: Array<{ range: TextRange; newText: string }>;
 }
 
 /** Ein Symbol aus der Symbolsuche (Ticket 13). */
@@ -538,7 +540,10 @@ export interface Commands {
     result: { incomplete: boolean; items: CompletionEntry[] };
   };
   /** Details eines Vorschlags aus der letzten Vervollständigung. */
-  'language.resolveCompletion': { params: { id: number }; result: { detail?: string; documentation?: string } };
+  'language.resolveCompletion': {
+    params: { id: number };
+    result: { detail?: string; documentation?: string; additionalTextEdits?: Array<{ range: TextRange; newText: string }> };
+  };
   /** Semantische Token einer Datei, kodiert wie in LSP, mit der Legende `SEMANTIC_TOKEN_TYPES`/`…_MODIFIERS`. */
   'language.semanticTokens': { params: { path: string }; result: { data: number[] } | null };
   /** Symbolsuche über alle Sprachserver des Projekts: `types` nur Klassen, Interfaces und Enums. */

@@ -117,6 +117,50 @@ describe('TypeScript: Zurück und Vor, Symbolsuche, Vervollständigung', () => {
     }
   });
 
+  it('folgt mit Zurück einer umbenannten Datei; Ctrl + Alt + Shift + N findet eine Methode', async () => {
+    const { codium, page } = await launch();
+    try {
+      // Ctrl + Alt + Shift + N: alle Symbole, auch Methoden; Enter öffnet am Namen.
+      await expect
+        .poll(
+          async () => {
+            await page.keyboard.press('Control+Alt+Shift+n');
+            const popup = page.getByRole('dialog', { name: 'Go to Symbol' });
+            await popup.waitFor();
+            await page.keyboard.type('increment');
+            const found = await popup
+              .getByRole('option', { name: 'increment' })
+              .waitFor({ timeout: 3000 })
+              .then(() => true, () => false);
+            await page.keyboard.press(found ? 'Enter' : 'Escape');
+            return found;
+          },
+          { timeout: 30_000, interval: 500 },
+        )
+        .toBe(true);
+      await expect.poll(() => activeTab(page)).toBe('counter.ts');
+      await expect.poll(() => position(page)).toBe('3:3');
+
+      // counter.ts umbenennen: Zurück führt nach main.ts, nicht zur alten Datei (Review von Ticket 13).
+      await item(page, 'counter.ts').click({ button: 'right' });
+      await page.getByRole('menuitem', { name: 'Rename…', exact: true }).click();
+      const rename = page.getByRole('dialog', { name: 'Rename' });
+      await rename.getByRole('textbox').fill('counter2.ts');
+      await rename.getByRole('textbox').press('Enter');
+      await rename.waitFor({ state: 'detached' });
+      await expect.poll(() => activeTab(page)).toBe('counter2.ts');
+      await page.locator('.editor-host .view-lines').click();
+      await page.keyboard.press('Control+Alt+ArrowLeft');
+      await expect.poll(() => activeTab(page)).toBe('main.ts');
+      expect(await page.getByText(/Not found/).count()).toBe(0);
+      // Vor führt zur umbenannten Datei.
+      await page.keyboard.press('Control+Alt+ArrowRight');
+      await expect.poll(() => activeTab(page)).toBe('counter2.ts');
+    } finally {
+      await codium.close();
+    }
+  });
+
   it('öffnet mit Ctrl + N eine Klasse und zeigt mit Ctrl + Leertaste Vorschläge', async () => {
     const { codium, page } = await launch();
     try {

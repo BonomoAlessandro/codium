@@ -34,7 +34,7 @@ import { errorText } from '../errors';
 import { ChevronDownIcon, CloseIcon, FileIcon, PinIcon } from '../icons';
 import { shortcutLabel, type KeyCommand, type ToolWindowCommand } from '../keymap';
 import type { Notify } from '../Notices';
-import { useAsk } from '../popup/Dialogs';
+import { isDialogOpen, useAsk } from '../popup/Dialogs';
 import { Menu, type MenuAnchor, type MenuEntry } from '../popup/Menu';
 import { baseName, isSameOrInside, movedPath, pathKey, relativeLabel } from '../project/filePaths';
 import { DocumentSync, hasLanguageServer, isReadOnlyTarget, pathOfUri, registerLanguageFeatures } from '../language/languageClient';
@@ -679,6 +679,8 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   const lastPlace = useRef<NavLocation | null>(null);
   /** Während Zurück/Vor: das Ziel; die Bewegung dorthin ist kein neuer Eintrag. */
   const navigatingTo = useRef<NavLocation | null>(null);
+  /** Gerade wurde das Modell gewechselt; die nächste Cursorbewegung durch Codium gehört noch dazu. */
+  const modelJustChanged = useRef(false);
 
   const currentPlace = (): NavLocation | null => {
     const editor = editorRef.current;
@@ -688,30 +690,44 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     const known = entryOfModel(model);
     return { path: (known && tabPath(known[0])) ?? pathOfUri(model.uri), line: position.lineNumber, column: position.column };
   };
-  const trackPlaceRef = useRef(() => {});
-  trackPlaceRef.current = () => {
+  const trackPlaceRef = useRef((_jump = false) => {});
+  trackPlaceRef.current = (jump = false) => {
     const place = currentPlace();
     if (!place) return;
     const target = navigatingTo.current;
     if (target) {
+      // Erst wenn das Ziel erreicht ist, zählen Bewegungen wieder (Review von Ticket 13: kein fester Zeitgeber mehr).
       if (target.path.toLowerCase() === place.path.toLowerCase() && target.line === place.line) navigatingTo.current = null;
       lastPlace.current = place;
       return;
     }
-    if (lastPlace.current) history.current.moved(lastPlace.current, place);
+    const last = lastPlace.current;
+    const afterSwitch = modelJustChanged.current;
+    if (!jump) modelJustChanged.current = false;
+    if (last && afterSwitch && jump) {
+      lastPlace.current = place;
+      return;
+    }
+    if (last) {
+      const sameFile = last.path.toLowerCase() === place.path.toLowerCase();
+      if (jump && sameFile && last.line !== place.line) history.current.jumped(last);
+      else history.current.moved(last, place);
+    }
     lastPlace.current = place;
   };
 
   /** Zurück (`-1`) oder Vor (`1`); `false`, wenn es keinen Eintrag gibt. */
   const navigate = (direction: -1 | 1): boolean => {
-    const current = currentPlace() ?? lastPlace.current;
+    // Läuft noch eine Navigation (der Tab lädt), gilt deren Ziel als Ausgangsstelle (Review von Ticket 13).
+    const current = navigatingTo.current ?? currentPlace() ?? lastPlace.current;
     if (!current) return false;
     const target = direction < 0 ? history.current.goBack(current) : history.current.goForward(current);
     if (!target) return false;
     navigatingTo.current = target;
+    // Gibt es die Zielzeile nicht mehr, erreicht der Cursor sie nie: dann nach einer Weile wieder zählen.
     window.setTimeout(() => {
       if (navigatingTo.current === target) navigatingTo.current = null;
-    }, 2000);
+    }, 10_000);
     open(target.path, { focus: true, target: { lineNumber: target.line, column: target.column } });
     return true;
   };
@@ -723,6 +739,8 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     const onMouse = (e: MouseEvent) => {
       if (e.button !== 3 && e.button !== 4) return;
       e.preventDefault();
+      // Wie die Tastatur: nicht hinter einer Rückfrage oder einem Dialog (Review von Ticket 13).
+      if (isDialogOpen()) return;
       if (e.type === 'mouseup') navigateRef.current(e.button === 3 ? -1 : 1);
     };
     window.addEventListener('mousedown', onMouse, true);
@@ -965,12 +983,19 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       });
       editorRef.current = editor;
       listeners.push(
-        editor.onDidChangeCursorPosition(() => {
+        editor.onDidChangeCursorPosition((e) => {
           reportStatus();
           scheduleCursorSave();
-          trackPlaceRef.current();
+          // Bewegungen durch Codium oder Monaco selbst (Sprung zur Definition in derselben Datei, Zu Zeile,
+          // Suchtreffer) sind Sprünge, auch über wenige Zeilen (Review von Ticket 13); Tippen und Klicken nicht.
+          trackPlaceRef.current(e.source === 'api');
         }),
-        editor.onDidChangeModel(() => trackPlaceRef.current()),
+        editor.onDidChangeModel(() => {
+          // Wer das Modell wechselt, setzt den Cursor gleich danach (Ziel des Sprungs, gemerkte Stelle): das gehört zum
+          // Wechsel und ist kein eigener Sprung.
+          trackPlaceRef.current();
+          modelJustChanged.current = true;
+        }),
         editor.onDidScrollChange(() => reportTopLine()),
         editor.onDidScrollChange((e) => {
           if (e.scrollTopChanged) scheduleCursorSave();
@@ -1135,8 +1160,15 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   // Dateioperationen in Codium: Tabs folgen einer Umbenennung, beim Löschen schliessen sie.
   const onOperation = useRef<(op: FileOperation) => void>(() => {});
   onOperation.current = (op) => {
-    if (op.kind === 'deleted') history.current.rename(op.path, null);
-    if (op.kind === 'renamed') history.current.rename(op.from, op.to);
+    // Der Verlauf und die letzte Stelle folgen; sonst entstünde beim Wechsel auf das neue Modell ein Eintrag mit dem
+    // alten Pfad (Review von Ticket 13).
+    if (op.kind === 'deleted' || op.kind === 'renamed') {
+      const from = op.kind === 'deleted' ? op.path : op.from;
+      const to = op.kind === 'deleted' ? null : op.to;
+      history.current.rename(from, to);
+      const last = lastPlace.current;
+      if (last && isSameOrInside(last.path, from)) lastPlace.current = to === null ? null : { ...last, path: to + last.path.slice(from.length) };
+    }
     if (op.kind === 'deleted') {
       // Alle auf einmal und ohne den Cursor zu sichern: Der Kern hat ihn mit der Datei schon vergessen.
       closeTabs(
@@ -1291,6 +1323,11 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       api.on('files.changed', (event: FilesChangedEvent) => {
         // Gelöscht heisst: nach dem Bündeln wirklich weg. „Gelöscht und neu angelegt“ kommt als Änderung.
         const deleted = event.changes.filter((c) => c.kind === 'deleted');
+        // Von aussen gelöschte Dateien fallen auch aus dem Navigationsverlauf (Review von Ticket 13).
+        for (const c of deleted) {
+          history.current.rename(c.path, null);
+          if (lastPlace.current && isSameOrInside(lastPlace.current.path, c.path)) lastPlace.current = null;
+        }
         const gone = tabsRef.current.filter((t) => deleted.some((c) => isSameOrInside(t.path, c.path))).map((t) => t.path);
         if (gone.length > 0) closeRef.current(gone, { saveCursor: false });
         const changed = new Set(event.changes.filter((c) => c.kind !== 'deleted').map((c) => pathKey(c.path)));

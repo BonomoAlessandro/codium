@@ -16,10 +16,11 @@ import {
   MAX_OPEN_FILE_BYTES,
   SEMANTIC_TOKEN_MODIFIERS,
   SEMANTIC_TOKEN_TYPES,
+  type CommandResult,
   type CompletionEntry,
   type SymbolMatch,
   type CodeLocation, type CommandParams, type LanguageDiagnostic, type TextRange } from '../../../shared/types';
-import { killProcessTree } from '../processTree';
+import { descendantsOf, isAlive, killProcessTree } from '../processTree';
 import type { Progress } from '../progress';
 import type { ProjectCore } from '../projectCore';
 import { CommandError } from '../router';
@@ -241,16 +242,24 @@ export class LanguageService {
     };
     this.completionItems = new Map();
     this.completionConnection = connection;
+    // Die Server filtern nicht nach dem getippten Wortanfang und liefern oft über tausend Vorschläge (Review von
+    // Ticket 13). Codium filtert selbst (wie Monaco: die Buchstaben in dieser Reihenfolge) und begrenzt erst danach.
+    const lineText = this.documents.get(key(at.file))?.text.split(/\r?\n/)[at.position.line] ?? '';
+    const prefix = /[\p{L}\p{N}_$]*$/u.exec(lineText.slice(0, at.position.character))?.[0] ?? '';
+    const candidates = ((list.items ?? []) as RawCompletion[])
+      .filter((raw) => matchesPrefix(raw.filterText ?? raw.label ?? '', prefix))
+      .sort((a, b) => (a.sortText ?? a.label ?? '').localeCompare(b.sortText ?? b.label ?? ''));
     const items: CompletionEntry[] = [];
-    for (const raw of (list.items ?? []).slice(0, 1000)) {
+    for (const raw of candidates.slice(0, COMPLETION_LIMIT)) {
       const id = ++this.completionCounter;
       this.completionItems.set(id, raw);
-      items.push(completionEntry(raw as RawCompletion, id));
+      items.push(completionEntry(raw, id));
     }
-    return { incomplete: list.isIncomplete === true || (list.items?.length ?? 0) > 1000, items };
+    // Nur wenn der Server es sagt oder Codium wirklich gekürzt hat, fragt Monaco beim Weitertippen neu.
+    return { incomplete: list.isIncomplete === true || candidates.length > COMPLETION_LIMIT, items };
   }
 
-  async resolveCompletion(params: CommandParams<'language.resolveCompletion'>): Promise<{ detail?: string; documentation?: string }> {
+  async resolveCompletion(params: CommandParams<'language.resolveCompletion'>): Promise<CommandResult<'language.resolveCompletion'>> {
     const id = (params as { id?: unknown } | undefined)?.id;
     const raw = typeof id === 'number' ? this.completionItems.get(id) : undefined;
     const connection = this.completionConnection;
@@ -258,11 +267,18 @@ export class LanguageService {
     const resolved = await connection.request<RawCompletion | null>('completionItem/resolve', raw).catch(() => null);
     if (!resolved) return {};
     const documentation = markdownOf(resolved.documentation);
-    return { ...(resolved.detail ? { detail: resolved.detail } : {}), ...(documentation ? { documentation } : {}) };
+    // Automatischer Import: Der native Server liefert ihn hier als zusätzliche Änderung (Review von Ticket 13).
+    const edits = textEdits(resolved.additionalTextEdits);
+    return {
+      ...(resolved.detail ? { detail: resolved.detail } : {}),
+      ...(documentation ? { documentation } : {}),
+      ...(edits.length > 0 ? { additionalTextEdits: edits } : {}),
+    };
   }
 
   async semanticTokens(params: CommandParams<'language.semanticTokens'>): Promise<{ data: number[] } | null> {
-    const file = this.project.files.lexicalPath((params as { path?: unknown } | undefined)?.path);
+    // Auch in Bibliothekszielen ausserhalb des Projekts (wie die anderen Anfragen).
+    const file = this.position({ ...(params as object), line: 0, character: 0 }).file;
     const connection = await this.connectionFor(file);
     const legend = this.typescript.tokenLegend;
     if (!connection || !legend) return null;
@@ -289,16 +305,30 @@ export class LanguageService {
       const file = pathOf(raw.location.uri);
       // Nur Symbole im Projekt, ohne node_modules (wie die Symbolsuche von IntelliJ ohne Bibliotheken).
       if (this.isLibrary(file)) continue;
+      const range = raw.location.range ?? { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } };
       out.push({
         name: raw.name,
         kind: raw.kind,
         ...(raw.containerName ? { container: raw.containerName } : {}),
         path: file,
-        range: raw.location.range ?? { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
+        range: await this.atName(file, range, raw.name),
       });
       if (out.length >= 500) break;
     }
     return out;
+  }
+
+  /**
+   * Der Bereich eines Symbols an seinem Namen: TypeScript 6 meldet die ganze Deklaration ab Zeilenanfang
+   * (`export type …`), Enter soll aber am Namen landen (Review von Ticket 13).
+   */
+  private async atName(file: string, range: TextRange, name: string): Promise<TextRange> {
+    const text = this.documents.get(key(file))?.text ?? (await fs.promises.readFile(file, 'utf8').catch(() => null));
+    const line = text?.split(/\r?\n/)[range.start.line];
+    if (line === undefined) return range;
+    const at = line.indexOf(name, range.start.character);
+    if (at < 0 || (range.end.line === range.start.line && at > range.end.character)) return range;
+    return { start: { line: range.start.line, character: at }, end: { line: range.start.line, character: at + name.length } };
   }
 
   /** Inhalt eines schreibgeschützten Ziels: unter node_modules im Projekt oder ein vom Server geliefertes Ziel. */
@@ -589,6 +619,9 @@ export class LanguageService {
     if (!connection) return;
     server.stopping = true;
     const pid = connection.pid;
+    // typescript-language-server startet tsserver als Kinder; sie enden mit ihm, aber erst einen Augenblick später und
+    // halten bis dahin den Projektordner (Review von Ticket 13). Vorher erfassen, nachher auf sie warten.
+    const children = server.launch?.kind === 'project-tsserver' && pid !== undefined ? await descendantsOf(pid) : [];
     // Ohne `params`: Der native Server lehnt `params: null` ab und endet dann nicht (Review von Ticket 12).
     await connection.request('shutdown', undefined, 1500).catch(() => {});
     connection.notify('exit', undefined);
@@ -601,6 +634,9 @@ export class LanguageService {
       if (pid !== undefined) await killProcessTree(pid);
       await connection.exit;
     }
+    const until = Date.now() + 2000;
+    while (children.some(isAlive) && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+    for (const child of children.filter(isAlive)) await killProcessTree(child);
   }
 }
 
@@ -643,6 +679,27 @@ const CLIENT_CAPABILITIES = {
 /** Klassen, Interfaces, Enums und Structs (`SymbolKind`) für Ctrl + N. */
 const TYPE_KINDS = new Set([5, 10, 11, 23]);
 
+/** So viele Vorschläge gehen nach dem Filtern höchstens an die Oberfläche. */
+const COMPLETION_LIMIT = 1000;
+
+/** Ob ein Vorschlag zum getippten Wortanfang passt: dessen Buchstaben in dieser Reihenfolge, ohne Gross/Klein. */
+export function matchesPrefix(text: string, prefix: string): boolean {
+  if (prefix === '') return true;
+  const t = text.toLowerCase();
+  let i = 0;
+  for (const ch of prefix.toLowerCase()) {
+    i = t.indexOf(ch, i);
+    if (i < 0) return false;
+    i++;
+  }
+  return true;
+}
+
+function textEdits(value: unknown): Array<{ range: TextRange; newText: string }> {
+  if (!Array.isArray(value)) return [];
+  return value.filter((e): e is { range: TextRange; newText: string } => typeof e?.newText === 'string' && e?.range?.start !== undefined);
+}
+
 interface RawCompletion {
   label?: string;
   kind?: number;
@@ -654,6 +711,7 @@ interface RawCompletion {
   sortText?: string;
   filterText?: string;
   commitCharacters?: string[];
+  additionalTextEdits?: unknown;
 }
 
 function completionEntry(raw: RawCompletion, id: number): CompletionEntry {
@@ -672,8 +730,12 @@ function completionEntry(raw: RawCompletion, id: number): CompletionEntry {
     ...(raw.sortText ? { sortText: raw.sortText } : {}),
     ...(raw.filterText ? { filterText: raw.filterText } : {}),
     ...(raw.commitCharacters ? { commitCharacters: raw.commitCharacters } : {}),
+    ...(textEdits(raw.additionalTextEdits).length > 0 ? { additionalTextEdits: textEdits(raw.additionalTextEdits) } : {}),
   };
 }
+
+/** Andere Namen derselben Art in den Legenden der Server: typescript-language-server sagt `member` für Methoden. */
+const TOKEN_TYPE_ALIASES: Record<string, string> = { member: 'method' };
 
 function markdownOf(value: unknown): string | undefined {
   if (typeof value === 'string') return value || undefined;
@@ -686,7 +748,7 @@ function markdownOf(value: unknown): string | undefined {
  * gemeinsame Legende nicht kennt, fallen weg; die relativen Positionen werden dafür neu berechnet.
  */
 export function remapTokens(data: readonly number[], legend: { types: readonly string[]; modifiers: readonly string[] }): number[] {
-  const typeIndex = legend.types.map((t) => (SEMANTIC_TOKEN_TYPES as readonly string[]).indexOf(t));
+  const typeIndex = legend.types.map((t) => (SEMANTIC_TOKEN_TYPES as readonly string[]).indexOf(TOKEN_TYPE_ALIASES[t] ?? t));
   const modifierBit = legend.modifiers.map((m) => (SEMANTIC_TOKEN_MODIFIERS as readonly string[]).indexOf(m));
   const out: number[] = [];
   let line = 0;
