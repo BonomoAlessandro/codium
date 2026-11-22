@@ -63,6 +63,8 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 
 ## Übersicht
 
+Stand 2026-11-22: Tickets 01 bis 21 und 23 erledigt, Ticket 22 wartet auf die Abnahme von Hand ([Prüfliste](../abnahme.md)). Offene Punkte, Entscheide und bekannte Grenzen: [offene-punkte.md](../offene-punkte.md).
+
 | Nr. | Ticket | Typ | Blockiert durch | Etappe | Stand |
 |---|---|---|---|---|---|
 | 01 | [Kern-Gerüst, Ports, Zustand und Testläufe](01-kern-geruest.md) | AFK | – | 1 | erledigt |
