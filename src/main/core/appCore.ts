@@ -31,6 +31,7 @@ import { DEFAULT_CLEANUP_TIMEOUT_MS, ProjectCore } from './projectCore';
 import { FolderQueries, type FolderStatus } from './folderQueries';
 import { startClone, type CloneJob } from './clone';
 import { detectShells, shellFor } from './shells';
+import type { BundledTypeScript } from './language/typescriptServer';
 import { registerEditorCommands } from './editorCommands';
 import { JDTLS_MIN_JAVA, detectJdks, hasJavaMarkers, jdkForLanguageServer, sameJdkPath } from './jdks';
 import { registerFileCommands } from './fileCommands';
@@ -100,6 +101,10 @@ export interface AppCoreOptions {
   ripgrepPath: string;
   /** Terminals gleich über die ConPTY von Windows statt der mitgelieferten (Tests des Rückfallwegs). */
   windowsConpty?: boolean;
+  /** Mitgelieferte TypeScript-Sprachserver; ohne Angabe startet kein Sprachserver (schnelle Tests). */
+  typescript?: BundledTypeScript;
+  /** Uhr des Sprach-Dienstes für die Neustart-Regel (Tests). */
+  languageClock?: () => number;
   /** Pfad zum mitgelieferten README (im Paket ausserhalb des App-Archivs), für „Open README“. */
   readmePath?: string;
   /** Umgebung für gestartete Programme (Git); ohne Angabe die des Prozesses. Tests schirmen damit die Git-Konfiguration ab. */
@@ -840,6 +845,11 @@ export class AppCore {
         shell: () => shellFor(detectShells(this.ports.system), this.appState.settings.terminalShell),
         env: this.options.processEnv,
         ...(this.options.windowsConpty ? { bundledConpty: false } : {}),
+      },
+      language: {
+        ...(this.options.typescript ? { typescript: this.options.typescript } : {}),
+        env: this.options.processEnv,
+        ...(this.options.languageClock ? { now: this.options.languageClock } : {}),
       },
     });
     this.projects.set(windowId, core);

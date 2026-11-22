@@ -10,6 +10,7 @@ import { expandedFolderPaths } from './fileCommands';
 import { FileService } from './fileService';
 import { SearchService } from './searchService';
 import { TerminalService, type TerminalServiceOptions } from './terminalService';
+import { LanguageService, type LanguageServiceOptions } from './language/languageService';
 import type { EventSink, ShellActionsPort } from './ports';
 import { ProgressReporter } from './progress';
 import { projectName } from './projectPath';
@@ -43,6 +44,8 @@ export interface ProjectCoreOptions {
   ripgrepPath: string;
   /** Shell und Umgebung für den Terminal-Dienst. */
   terminal: Omit<TerminalServiceOptions, 'log'>;
+  /** Sprachserver für den Sprach-Dienst. */
+  language: Omit<LanguageServiceOptions, 'log'>;
 }
 
 export class ProjectCore {
@@ -69,6 +72,8 @@ export class ProjectCore {
   readonly search: SearchService;
   /** Terminal-Dienst: Shells über node-pty. */
   readonly terminals: TerminalService;
+  /** Sprach-Dienst: Sprachserver (ab Ticket 12 TypeScript). */
+  readonly language: LanguageService;
 
   constructor(options: ProjectCoreOptions) {
     this.path = options.path;
@@ -88,6 +93,7 @@ export class ProjectCore {
     });
     this.search = new SearchService(this, options.ripgrepPath, this.log);
     this.terminals = new TerminalService(this, { ...options.terminal, log: this.log });
+    this.language = new LanguageService(this, { ...options.language, log: this.log });
     // Tabs und Cursor im Zustand folgen Umbenennungen und Löschungen in Codium.
     this.subscribe('files.operation', (op) => {
       if (op.kind === 'renamed' || op.kind === 'deleted') this.updateState((state) => followFileOperation(this.path, state, op));

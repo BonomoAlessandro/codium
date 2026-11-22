@@ -446,7 +446,7 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
   - **Projekt mit eigenem TypeScript ab Version 7:** dessen nativer Sprachserver.
   - **Projekt mit eigenem TypeScript bis Version 6:** typescript-language-server mit dem tsserver des Projekts.
   - **Projekt ohne eigenes TypeScript:** der native Sprachserver eines mitgelieferten TypeScript 7.
-  - **Rückfall:** Liefert der native Sprachserver eine der Funktionen dieser Version noch nicht (etwa semantische Token oder Symbolsuche), gilt für Projekte ohne eigenes TypeScript stattdessen typescript-language-server mit einem mitgelieferten TypeScript 6. Das klärt das umsetzende Ticket zuerst und hält es hier fest.
+  - **Kein Rückfall nötig:** Der native Sprachserver liefert alle Funktionen dieser Version (geklärt in Ticket 12, siehe „Grundlage der Entscheidungen“); ein mitgeliefertes TypeScript 6 gibt es nicht.
 - **Start:**
   - Pro Projektfenster höchstens ein Server je Sprache.
   - Er startet beim Öffnen des Projekts, wenn das Projekt Kennzeichen der Sprache hat (Java: Maven- oder Gradle-Baudatei; TypeScript/JavaScript: tsconfig, jsconfig oder package.json), sonst beim Öffnen der ersten Datei dieser Sprache.
@@ -840,6 +840,7 @@ Die Klickwege der Teststelle 2 kommen jeweils mit dem Ticket dazu, dessen Funkti
   - Die Entscheidungen setzen nichts davon voraus ausser dem, was im README steht.
 - **jdtls** läuft laut seinem README seit Oktober 2026 nur noch mit Java 25 oder neuer. Deshalb wählt Codium das JDK für jdtls selbst und nicht über JAVA_HOME (mit dem Nutzer nach dem Review abgestimmt).
 - **TypeScript 7** (Juli 2026) ist die native Umsetzung mit eigenem Sprachserver und ohne tsserver; typescript-language-server funktioniert nur mit TypeScript bis Version 6.
+- **Nativer Sprachserver von TypeScript 7** (geklärt in Ticket 12, am 2026-11-22 mit TypeScript 7.0.2, `tsc --lsp --stdio`): Er liefert alle Funktionen dieser Version: Definition, Verwendungen, Implementierungen, Hover mit Typ und JSDoc als Markdown, Fehler und Warnungen (als Pull-Diagnosen, `textDocument/diagnostic`), Vervollständigung mit nachgeladenen Details, semantische Token (mit der vom Client gemeldeten Legende) und Symbolsuche (`workspace/symbol`). Der Rückfall auf typescript-language-server mit einem mitgelieferten TypeScript 6 entfällt deshalb: Projekte ohne eigenes TypeScript bekommen den nativen Server des mitgelieferten TypeScript 7. typescript-language-server wird nur für Projekte mit eigenem TypeScript bis Version 6 mitgeliefert, mit dem tsserver des Projekts.
 - **THub** (ein Projekt desselben Nutzers) dient als technische Vorlage für Terminal (node-pty mit xterm.js), Testmodus, Ports und die Spielregeln der Tickets.
 
 ### Präzisierungen beim Schreiben

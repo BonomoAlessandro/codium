@@ -40,7 +40,9 @@
     },
     "asarUnpack": [
       "node_modules/@vscode/ripgrep-win32-x64/**",
-      "node_modules/node-pty/**"
+      "node_modules/node-pty/**",
+      "node_modules/@typescript/typescript-win32-x64/**",
+      "node_modules/typescript-language-server/**"
     ],
     "extraResources": [
       {
@@ -50,10 +52,12 @@
     ]
   },
   "dependencies": {
+    "@typescript/typescript-win32-x64": "^7.0.2",
     "@vscode/ripgrep": "^1.18.0",
     "node-pty": "^1.1.0",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "typescript-language-server": "^6.1.0"
   },
   "devDependencies": {
     "@fontsource/jetbrains-mono": "^5.3.0",
@@ -71,6 +75,7 @@
     "monaco-editor": "^0.57.0",
     "playwright-core": "^1.65.1",
     "typescript": "^7.0.2",
+    "typescript6": "npm:typescript@^6.0.3",
     "vitest": "^5.1.1"
   }
 }

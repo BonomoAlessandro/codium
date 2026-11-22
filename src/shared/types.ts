@@ -216,6 +216,35 @@ export interface SearchMatch {
   lineOffset: number;
 }
 
+/** Eine Stelle in einer Datei wie im Language Server Protocol: Zeilen und Zeichen ab 0, Zeichen in UTF-16. */
+export interface TextRange {
+  start: { line: number; character: number };
+  end: { line: number; character: number };
+}
+
+/**
+ * Ein Ziel des Sprach-Dienstes (Definition, Verwendung, Implementierung). `readOnly` bei Zielen in Bibliotheken
+ * (unter node_modules oder ausserhalb des Projekts); ihren Inhalt liefert `language.readTarget`.
+ */
+export interface CodeLocation {
+  path: string;
+  range: TextRange;
+  readOnly?: true;
+  /** Die Zeile des Ziels (nur bei Verwendungen, für das Werkzeugfenster „Find“). */
+  lineText?: string;
+}
+
+/** Ein Fehler oder eine Warnung eines Sprachservers. */
+export interface LanguageDiagnostic {
+  range: TextRange;
+  severity: 'error' | 'warning' | 'info' | 'hint';
+  message: string;
+  source?: string;
+  code?: string;
+  /** Unnötiger oder veralteter Code (grau bzw. durchgestrichen). */
+  tags?: Array<'unnecessary' | 'deprecated'>;
+}
+
 /** So viele Treffer liefert die Projektsuche höchstens; danach meldet sie „more results“. */
 export const SEARCH_MATCH_LIMIT = 2000;
 
@@ -414,6 +443,23 @@ export interface Commands {
   'search.start': { params: SearchOptions; result: { searchId: number } };
   /** Bricht eine laufende Projektsuche ab. */
   'search.cancel': { params: { searchId: number }; result: void };
+  /**
+   * Ein Dokument ist in der Oberfläche offen (mit dem aktuellen Text, auch ungespeichert). Der Sprach-Dienst startet
+   * nötigenfalls den Server der Sprache. Dateien ohne Sprachserver und Tabs ab 5 MB meldet die Oberfläche nicht.
+   */
+  'language.didOpen': { params: { path: string; text: string; version: number }; result: void };
+  /** Der Text eines offenen Dokuments hat sich geändert (der ganze Text). */
+  'language.didChange': { params: { path: string; text: string; version: number }; result: void };
+  'language.didClose': { params: { path: string }; result: void };
+  /** Definition an einer Stelle; ohne Server oder Ziel eine leere Liste. */
+  'language.definition': { params: { path: string; line: number; character: number }; result: CodeLocation[] };
+  /** Verwendungen (mit der Deklaration), jeweils mit der Zeile. */
+  'language.references': { params: { path: string; line: number; character: number }; result: CodeLocation[] };
+  'language.implementations': { params: { path: string; line: number; character: number }; result: CodeLocation[] };
+  /** Typ und Dokumentation an einer Stelle, als Markdown; `null` ohne. */
+  'language.hover': { params: { path: string; line: number; character: number }; result: { markdown: string; range?: TextRange } | null };
+  /** Inhalt eines schreibgeschützten Ziels (siehe `CodeLocation.readOnly`). */
+  'language.readTarget': { params: { path: string }; result: { text: string } };
   /** Die gemerkte Ansicht einer Markdown-Datei; `null` ohne gemerkte (dann gilt „Split“). */
   'project.markdownView': { params: { path: string }; result: MarkdownView | null };
   /** Merkt die Ansicht einer Markdown-Datei; sie folgt Umbenennungen in Codium und entfällt beim Löschen. */
@@ -555,6 +601,8 @@ export interface Events {
   'terminal.data': { terminalId: number; data: string };
   /** Die Shell eines Terminals ist beendet (auch nach `terminal.close`). */
   'terminal.exit': { terminalId: number; exitCode: number };
+  /** Fehler und Warnungen einer Datei (ersetzen die bisherigen). */
+  'language.diagnostics': { path: string; diagnostics: LanguageDiagnostic[] };
 }
 
 export type CommandName = keyof Commands;

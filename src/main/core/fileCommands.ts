@@ -32,6 +32,14 @@ export function registerFileCommands(register: RegisterProjectCommand): void {
   register('terminal.write', (project, params) => project.terminals.write(params));
   register('terminal.resize', (project, params) => project.terminals.resize(params));
   register('terminal.close', (project, params) => project.terminals.close(params));
+  register('language.didOpen', (project, params) => project.language.didOpen(params));
+  register('language.didChange', (project, params) => project.language.didChange(params));
+  register('language.didClose', (project, params) => project.language.didClose(params));
+  register('language.definition', (project, params) => project.language.definition(params));
+  register('language.references', (project, params) => project.language.references(params));
+  register('language.implementations', (project, params) => project.language.implementations(params));
+  register('language.hover', (project, params) => project.language.hover(params));
+  register('language.readTarget', (project, params) => project.language.readTarget(params));
   register('project.expandedFolders', (project) => expandedFolders(project));
   register('project.setExpandedFolders', (project, params) => setExpandedFolders(project, params));
 }

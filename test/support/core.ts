@@ -3,6 +3,7 @@
 import * as path from 'node:path';
 import { ripgrepPath } from '../../src/main/ripgrepPath';
 import { AppCore } from '../../src/main/core/appCore';
+import type { BundledTypeScript } from '../../src/main/core/language/typescriptServer';
 import { createFakePorts, FakeEventSink, type FakePorts, type FakeSystemOptions } from './fakePorts';
 import { beforeTempDirRemoval } from './tempDir';
 
@@ -34,6 +35,10 @@ export interface TestCoreOptions {
   fileProgressDelayMs?: number;
   /** Terminals über die ConPTY von Windows (Rückfallweg). */
   windowsConpty?: boolean;
+  /** Mitgelieferte TypeScript-Server (nur im langsamen Lauf); ohne Angabe startet kein Sprachserver. */
+  typescript?: BundledTypeScript;
+  /** Uhr des Sprach-Dienstes für die Neustart-Regel. */
+  languageClock?: () => number;
 }
 
 /** Erzeugt einen App-Kern auf einem Datenordner, mit nachgemachten Ports und sofortigem Schreiben. */
@@ -54,6 +59,8 @@ export function createTestCore(dataDir: string, options: TestCoreOptions = {}): 
     readmePath: path.resolve(__dirname, '..', '..', 'README.md'),
     processEnv: options.processEnv,
     ...(options.windowsConpty ? { windowsConpty: true } : {}),
+    ...(options.typescript ? { typescript: options.typescript } : {}),
+    ...(options.languageClock ? { languageClock: options.languageClock } : {}),
     folderQueryTimeoutMs: options.folderQueryTimeoutMs,
     log: (message) => logs.push(message),
   });

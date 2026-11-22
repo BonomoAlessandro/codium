@@ -11,6 +11,7 @@ import { ElectronFolderPicker, ElectronSecrets, ElectronShellActions } from './e
 import { ElectronWindowPort } from './electron/windowPort';
 import { isAllowedPageRequest } from './pageRequests';
 import { ripgrepPath } from './ripgrepPath';
+import { bundledTypeScript } from './typescriptPaths';
 import { NodeSystem } from './system/nodeSystem';
 import { readTestMode, TEST_HOOKS_GLOBAL, TEST_RECORDER_GLOBAL, TestRecorder, type TestHooks } from './testMode';
 
@@ -81,6 +82,8 @@ async function startCore(): Promise<void> {
     events,
     appInfo: { name: app.getName(), version: app.getVersion() },
     ripgrepPath: ripgrepPath(app.getAppPath(), app.isPackaged),
+    // typescript-language-server läuft mit Electron als Node; ein installiertes Node.js ist nicht nötig.
+    typescript: bundledTypeScript(app.getAppPath(), app.isPackaged, { execPath: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } }),
     // Das README liegt im Paket neben dem App-Archiv (`extraResources`), unpaketiert im Projekt.
     readmePath: app.isPackaged ? path.join(process.resourcesPath, 'README.md') : path.join(app.getAppPath(), 'README.md'),
     ports: {
