@@ -12,6 +12,7 @@ import {
   TOOL_WINDOW_SIDES,
   isToolWindowId,
   type AppSettings,
+  type DbConnectionInput,
   type MarkdownView,
   type CursorState,
   type ShellId,
@@ -83,6 +84,8 @@ export interface ProjectState {
   markdownViews?: Record<string, MarkdownView>;
   /** Werkzeugfenster „Commit“: nach Ordnern gruppiert (Ticket 16). */
   commitGroupByDirectory?: boolean;
+  /** Datenbank-Verbindungen (Ticket 20); das Passwort nur verschlüsselt (Port „Geheimnisse“). */
+  databaseConnections?: StoredDbConnection[];
   /**
    * Cursor und Scrollstand je Datei, Schlüssel wie bei `tabs` (unter Windows klein geschrieben, damit eine andere
    * Schreibweise derselben Datei keinen zweiten Eintrag anlegt). Die zuletzt geänderten stehen am Ende; es bleiben
@@ -90,6 +93,16 @@ export interface ProjectState {
    */
   cursors?: Record<string, CursorState>;
 }
+
+/** Eine Datenbank-Verbindung im Projekt-Zustand. */
+export interface StoredDbConnection extends DbConnectionInput {
+  id: string;
+  /** Verschlüsseltes Passwort (Base64 aus dem Port „Geheimnisse“); fehlt bei „Ask for password every time“. */
+  password?: string;
+}
+
+/** Höchstzahl gespeicherter Datenbank-Verbindungen. */
+export const MAX_DB_CONNECTIONS = 200;
 
 /** Höchstzahl gespeicherter Tabs. */
 export const MAX_TABS = 1000;
@@ -268,7 +281,34 @@ export function normalizeProjectState(projectPath: string, raw: Record<string, u
     ...(recentFiles ? { recentFiles } : {}),
     ...(markdownViews ? { markdownViews } : {}),
     ...(typeof raw.commitGroupByDirectory === 'boolean' ? { commitGroupByDirectory: raw.commitGroupByDirectory } : {}),
+    ...(Array.isArray(raw.databaseConnections) ? { databaseConnections: normalizeDbConnections(raw.databaseConnections) } : {}),
   };
+}
+
+/** Gespeicherte Verbindungen: nur vollständige, mit eindeutiger Kennung. */
+function normalizeDbConnections(value: unknown[]): StoredDbConnection[] {
+  const seen = new Set<string>();
+  const result: StoredDbConnection[] = [];
+  for (const raw of value) {
+    if (!isRecord(raw)) continue;
+    const { id, name, host, port, database, user, ssl, askPassword, password } = raw;
+    if (typeof id !== 'string' || id === '' || seen.has(id)) continue;
+    if (typeof name !== 'string' || typeof host !== 'string' || typeof database !== 'string' || typeof user !== 'string') continue;
+    if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > 65535) continue;
+    seen.add(id);
+    result.push({
+      id,
+      name,
+      host,
+      port,
+      database,
+      user,
+      ssl: ssl === true,
+      askPassword: askPassword === true,
+      ...(typeof password === 'string' && askPassword !== true ? { password } : {}),
+    });
+  }
+  return result.slice(0, MAX_DB_CONNECTIONS);
 }
 
 /** Die gespeicherten Cursor: nur gültige Einträge mit relativem Pfad, höchstens die letzten `MAX_CURSORS`. */

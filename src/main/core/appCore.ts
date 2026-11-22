@@ -86,6 +86,8 @@ export interface AppCoreOptions {
   saveDebounceMs?: number;
   /** Höchstdauer einer Aufräumarbeit beim Abbau eines Projekt-Kerns. */
   cleanupTimeoutMs?: number;
+  /** Wartezeit beim Verbinden mit einer Datenbank (Ticket 20); Tests setzen eine kürzere. */
+  dbConnectTimeoutMs?: number;
   /** Zeitlimit einer Abfrage auf einem Projektordner; danach gilt sein Laufwerk eine Weile als nicht erreichbar. */
   folderQueryTimeoutMs?: number;
   /**
@@ -861,6 +863,7 @@ export class AppCore {
         env: this.options.processEnv,
         ...(this.options.windowsConpty ? { bundledConpty: false } : {}),
       },
+      database: { secrets: this.ports.secrets, ...(this.options.dbConnectTimeoutMs ? { connectTimeoutMs: this.options.dbConnectTimeoutMs } : {}) },
       git: { git: this.gitPath, env: this.options.processEnv, trash: (file) => this.ports.shell.trash(file), writeClipboard: (text) => this.ports.shell.writeClipboard(text) },
       language: {
         ...(this.options.typescript ? { typescript: this.options.typescript } : {}),

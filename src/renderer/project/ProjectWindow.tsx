@@ -14,6 +14,7 @@ import { CodiumError, ErrorCode } from '../../shared/types';
 import { BranchPopup, type BranchActions } from '../git/BranchPopup';
 import { GitToolWindow } from '../git/GitToolWindow';
 import { CommitToolWindow, changeKind } from '../git/CommitToolWindow';
+import { DatabaseToolWindow } from '../database/DatabaseToolWindow';
 import { GIT_NOT_FOUND_TEXT, useGitState } from '../git/gitState';
 import { useGitAvailable } from '../CloneDialog';
 import { EditorArea, type EditorAreaHandle, type EditorStatus } from '../editor/EditorArea';
@@ -758,6 +759,8 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
                 onOpenMatch={openMatch}
                 onHide={() => hide(s)}
               />
+            ) : id === 'database' ? (
+              <DatabaseToolWindow api={api} notify={notify} onHide={() => hide(s)} />
             ) : (
               <>
                 <ToolWindowHeader title={TOOL_WINDOWS[id].title} onHide={() => hide(s)} />

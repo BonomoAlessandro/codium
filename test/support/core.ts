@@ -44,6 +44,8 @@ export interface TestCoreOptions {
   /** jdtls und Lombok (nur im langsamen Lauf). */
   java?: BundledJava;
   mavenUserSettings?: string;
+  /** Wartezeit beim Verbinden mit einer Datenbank (Ticket 20). */
+  dbConnectTimeoutMs?: number;
 }
 
 /** Erzeugt einen App-Kern auf einem Datenordner, mit nachgemachten Ports und sofortigem Schreiben. */
@@ -68,6 +70,7 @@ export function createTestCore(dataDir: string, options: TestCoreOptions = {}): 
     ...(options.languageClock ? { languageClock: options.languageClock } : {}),
     ...(options.java ? { java: options.java } : {}),
     ...(options.mavenUserSettings ? { mavenUserSettings: options.mavenUserSettings } : {}),
+    ...(options.dbConnectTimeoutMs ? { dbConnectTimeoutMs: options.dbConnectTimeoutMs } : {}),
     folderQueryTimeoutMs: options.folderQueryTimeoutMs,
     log: (message) => logs.push(message),
   });

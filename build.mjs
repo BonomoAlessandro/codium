@@ -46,7 +46,8 @@ await Promise.all([
     format: 'cjs',
     target: 'node22',
     // node-pty ist ein natives Modul und wird zur Laufzeit aus node_modules geladen (im Paket ausserhalb des Archivs).
-    external: ['electron', 'node-pty'],
+    // pg-native: optionaler Treiber von node-postgres, den Codium nicht verwendet (reines JavaScript; Ticket 20).
+    external: ['electron', 'node-pty', 'pg-native'],
   }),
   build({
     ...common,

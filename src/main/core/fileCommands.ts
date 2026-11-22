@@ -68,6 +68,14 @@ export function registerFileCommands(register: RegisterProjectCommand): void {
   register('git.commitFile', (project, params) => project.git.commitFile(params));
   register('git.checkoutRevision', (project, params) => project.git.checkoutRevision(params));
   register('git.copyRevision', (project, params) => project.git.copyRevision(params));
+  register('db.connections', (project) => project.database.connections());
+  register('db.saveConnection', (project, params) => project.database.saveConnection(params));
+  register('db.deleteConnection', (project, params) => project.database.deleteConnection(params));
+  register('db.testConnection', (project, params) => project.database.testConnection(params));
+  register('db.setPassword', (project, params) => project.database.setPassword(params));
+  register('db.schemas', (project, params) => project.database.schemas(params));
+  register('db.relations', (project, params) => project.database.relations(params));
+  register('db.columns', (project, params) => project.database.columns(params));
   register('git.lastMessage', (project) => project.git.lastMessage());
   register('git.rollback', (project, params) => project.git.rollback(params));
   register('git.addToGitignore', (project, params) => project.git.addToGitignore(params));

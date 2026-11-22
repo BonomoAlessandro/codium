@@ -44,6 +44,8 @@ export interface AskTextOptions {
   checkbox?: { label: string; checked: boolean; onChange: (checked: boolean) => void };
   /** Beschriftung des bestätigenden Knopfs, sonst „OK“. */
   okLabel?: string;
+  /** Verdeckte Eingabe (etwa ein Passwort, Ticket 20). */
+  password?: boolean;
   /**
    * Führt die Eingabe aus, bevor sich der Dialog schliesst. Liefert sie eine Meldung, bleibt der Dialog offen und
    * zeigt sie (etwa „already exists“).
@@ -292,7 +294,7 @@ function TextDialog({ options, onAnswer }: { options: AskTextOptions; onAnswer: 
             ref={inputRef}
             id={`${titleId}-input`}
             className={shown ? 'dialog-input invalid' : 'dialog-input'}
-            type="text"
+            type={options.password ? 'password' : 'text'}
             spellCheck={false}
             autoComplete="off"
             value={value}

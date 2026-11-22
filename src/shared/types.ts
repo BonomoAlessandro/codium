@@ -361,6 +361,40 @@ export interface GitBranches {
   remote: Array<{ name: string; remote: string }>;
 }
 
+/** Die Felder einer Datenbank-Verbindung, wie der Nutzer sie eingibt (Ticket 20). */
+export interface DbConnectionInput {
+  name: string;
+  host: string;
+  /** Standard 5432. */
+  port: number;
+  database: string;
+  user: string;
+  /** Verschlüsselt ohne Zertifikatsprüfung (wie sslmode=require). */
+  ssl: boolean;
+  /** Das Passwort nie speichern, sondern je Fenster einmal fragen. */
+  askPassword: boolean;
+}
+
+/** Eine gespeicherte Verbindung, ohne Passwort. */
+export interface DbConnection extends DbConnectionInput {
+  id: string;
+  /** Ob ein (verschlüsseltes) Passwort gespeichert ist. */
+  hasPassword: boolean;
+}
+
+export interface DbRelation {
+  name: string;
+  kind: 'table' | 'view';
+}
+
+export interface DbColumn {
+  name: string;
+  /** Typ wie in PostgreSQL geschrieben (etwa `character varying(40)`). */
+  type: string;
+  nullable: boolean;
+  primaryKey: boolean;
+}
+
 /** Filter des Git-Logs (Ticket 19). Mit `text` oder `author` gibt es keinen Graph. */
 export interface GitLogFilter {
   /** Teil der Nachricht (ohne Gross-/Kleinschreibung) oder Anfang des Hashs. */
@@ -572,6 +606,10 @@ export const ErrorCode = {
   gitPushRejected: 'GIT_PUSH_REJECTED',
   /** Der Projektordner liegt in keinem Git-Repository. */
   notARepository: 'NOT_A_REPOSITORY',
+  /** Die Datenbank meldet einen Fehler (Verbindung, Abfrage); die Meldung kommt im Wortlaut (Ticket 20). */
+  dbFailed: 'DB_FAILED',
+  /** Für diese Verbindung fehlt ein Passwort („Ask for password every time“ oder abgelehnt); die Oberfläche fragt. */
+  dbPasswordRequired: 'DB_PASSWORD_REQUIRED',
   /** Es gibt keine Shell fürs Terminal. */
   shellNotFound: 'SHELL_NOT_FOUND',
 } as const;
@@ -740,6 +778,24 @@ export interface Commands {
   'git.checkoutRevision': { params: { hash: string }; result: void };
   /** „Copy Revision Number“: der volle Hash in die Zwischenablage. */
   'git.copyRevision': { params: { hash: string }; result: void };
+  /** Die Datenbank-Verbindungen des Projekts (Ticket 20). */
+  'db.connections': { params: void; result: DbConnection[] };
+  /**
+   * Legt eine Verbindung an (ohne `id`) oder ändert sie. `password`: ohne Angabe bleibt ein gespeichertes; mit
+   * „Ask for password every time“ wird keines gespeichert (ein vorhandenes entfällt).
+   */
+  'db.saveConnection': { params: { id?: string; connection: DbConnectionInput; password?: string }; result: DbConnection };
+  'db.deleteConnection': { params: { id: string }; result: void };
+  /** „Test Connection“ mit den eingegebenen Feldern; ohne `password` das gespeicherte der Verbindung `id`. */
+  'db.testConnection': { params: { id?: string; connection: DbConnectionInput; password?: string }; result: { serverVersion: string } };
+  /** Ein abgefragtes Passwort, nur bis zum Schliessen des Fensters im Arbeitsspeicher. */
+  'db.setPassword': { params: { id: string; password: string }; result: void };
+  /** Schemas der konfigurierten Datenbank, ohne die Systemschemas. */
+  'db.schemas': { params: { id: string }; result: string[] };
+  /** Tabellen und Views eines Schemas. */
+  'db.relations': { params: { id: string; schema: string }; result: DbRelation[] };
+  /** Spalten einer Tabelle oder View mit Typ, Nullbarkeit und Primärschlüssel. */
+  'db.columns': { params: { id: string; schema: string; table: string }; result: DbColumn[] };
   /**
    * Inhalt einer Datei in einem Commit (Standard HEAD), so wie Git ihn auschecken würde (Zeilenende, Filter), mit der
    * Kodierung der Datei dekodiert; `exists: false` und leer, wenn es sie dort nicht gibt (Ticket 17).

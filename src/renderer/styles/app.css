@@ -2174,3 +2174,81 @@ kbd {
 .git-log-hash {
   font-family: var(--font-mono);
 }
+
+/* ---------- Datenbank: Verbindungen und Baum (Ticket 20) ---------- */
+
+.connection-dialog {
+  width: min(520px, calc(100vw - 80px));
+}
+
+.connection-dialog .settings-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 20px;
+}
+
+.connection-dialog .settings-hint,
+.connection-dialog .settings-error {
+  margin: 6px 20px;
+  white-space: pre-wrap;
+}
+
+.dialog-buttons .dialog-left-button {
+  margin-right: auto;
+}
+
+.settings-input.invalid {
+  border-color: #e0605e;
+}
+
+.database-body {
+  overflow: auto;
+}
+
+.database-tree {
+  padding: 4px 0;
+}
+
+.database-node {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding-right: 8px;
+  white-space: nowrap;
+  cursor: default;
+  outline: none;
+}
+
+.database-node.selected {
+  background: var(--selection, rgba(75, 140, 232, 0.25));
+}
+
+.database-arrow {
+  width: 12px;
+  flex: none;
+  text-align: center;
+  opacity: 0.7;
+}
+
+.database-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.database-detail {
+  margin-left: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.6;
+}
+
+.database-pk {
+  margin-right: 3px;
+  font-size: 10px;
+}
+
+.database-view .database-label {
+  font-style: italic;
+}
