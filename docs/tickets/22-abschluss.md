@@ -19,8 +19,8 @@ Spezifikation: „Auslieferung und Abhängigkeiten“, „Weitere Hinweise“
 
 ## Akzeptanzkriterien
 
-- [ ] Das README ist aktuell und beschreibt das tatsächliche Verhalten.
-- [ ] `docs/abnahme.md` enthält alle Prüfpunkte der Tickets 01 bis 21 und 23.
+- [x] Das README ist aktuell und beschreibt das tatsächliche Verhalten.
+- [x] `docs/abnahme.md` enthält alle Prüfpunkte der Tickets 01 bis 21 und 23.
 
 ## Abnahme von Hand
 
@@ -34,3 +34,10 @@ Spezifikation: „Auslieferung und Abhängigkeiten“, „Weitere Hinweise“
 - [ ] Ohne JDK 25: Codium startet ohne Fehler, der JDK-Hinweis erscheint erst bei einem Java-Projekt, alles andere funktioniert.
 - [ ] Ohne Git: Hinweis „Git not found“, alles ausser Git funktioniert.
 - [ ] Gefundene Fehler sind als neue Tickets erfasst.
+
+## Umsetzung (Agent, 2026-11-22)
+
+- README neu geschrieben: Umfang, Tastenkürzel (aus der zentralen Tastenbelegung), Voraussetzungen samt C++-Compiler und PostgreSQL, Installieren, Entwicklung mit eigenem Datenordner und Testmodus, die vier Testläufe, Aufbau, „Bewusst nicht dabei“ mit Verweis auf die Spezifikation. Die „Offenen Punkte“ sind weg.
+- `docs/abnahme.md` per Skript aus den Abschnitten „Abnahme von Hand“ erzeugt (96 Punkte aus den Tickets 01 bis 21 und 23, nach Bereichen, mit Herkunft) und um die Prüfung auf dem frischen Rechner ergänzt.
+- Installer gebaut: `releaseCodium Setup 0.1.0.exe` (rund 189 MB, nicht signiert, noch mit dem Standard-Symbol von Electron); die Prüfungen am Paket bestehen.
+- Offen ist die Abnahme von Hand durch den Nutzer.
