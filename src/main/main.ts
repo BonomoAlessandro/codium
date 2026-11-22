@@ -57,7 +57,8 @@ async function start(): Promise<void> {
 }
 
 function javaToolsFor() {
-  if (testMode.hidden && process.env.CODIUM_TEST_JAVA !== '1') return null;
+  // Im Testmodus nur mit eigenen Maven-Einstellungen; sonst nähme jdtls still die des Nutzers (Review von Ticket 14).
+  if (testMode.hidden && (process.env.CODIUM_TEST_JAVA !== '1' || !process.env.CODIUM_TEST_MAVEN_SETTINGS)) return null;
   return javaTools(app.getAppPath(), app.isPackaged);
 }
 

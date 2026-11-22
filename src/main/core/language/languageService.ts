@@ -163,6 +163,7 @@ export class LanguageService {
     await this.stop(java);
     java.gaveUp = false;
     java.crashes = [];
+    this.javaJdkCache = undefined;
     if (this.disposed) return;
     if (this.hasJavaMarkers() || [...this.documents.values()].some((d) => d.server === 'java')) await this.ensure(java);
   }
@@ -361,8 +362,13 @@ export class LanguageService {
     // Über alle Sprachserver des Projekts; einer, der nicht läuft, startet dafür nicht.
     const results = await Promise.all(
       Object.values(this.servers).map(async (server) => {
-        if (!server.connection?.running || !(await server.ready)) return [];
-        return (await server.connection?.request<unknown[] | null>('workspace/symbol', { query: p.query }).catch(() => null)) ?? [];
+        if (!server.connection?.running) return [];
+        // Ein Server, der noch importiert (jdtls), hält die Treffer der anderen nicht auf (Review von Ticket 14).
+        const answer = (async () => {
+          if (!(await server.ready)) return [];
+          return (await server.connection?.request<unknown[] | null>('workspace/symbol', { query: p.query }).catch(() => null)) ?? [];
+        })();
+        return Promise.race([answer, new Promise<unknown[]>((resolve) => setTimeout(() => resolve([]), SYMBOL_WAIT_MS))]);
       }),
     );
     const result = results.flat();
@@ -585,20 +591,34 @@ export class LanguageService {
   private available(server: Server): boolean {
     if (server.id === 'typescript') return this.options.typescript !== undefined;
     const java = this.options.java;
-    return java !== undefined && fs.existsSync(java.bundled.jdtls) && java.jdk() !== null;
+    return java !== undefined && fs.existsSync(java.bundled.jdtls) && this.javaJdk() !== null;
+  }
+
+  /**
+   * Das JDK für jdtls, einmal ermittelt: Die JDK-Erkennung liest Ordner und Dateien und soll nicht bei jeder Anfrage
+   * laufen (Review von Ticket 14). `restartJava` ermittelt es neu.
+   */
+  private javaJdkCache: JdkInfo | null | undefined = undefined;
+  private javaJdk(): JdkInfo | null {
+    if (this.javaJdkCache === undefined) this.javaJdkCache = this.options.java?.jdk() ?? null;
+    return this.javaJdkCache;
   }
 
   private launchFor(server: Server): Launch | null {
     if (server.id === 'typescript') return typescriptLaunch(this.project.path, this.options.typescript!);
     const java = this.options.java!;
-    const jdk = java.jdk();
+    const jdk = this.javaJdk();
     if (!jdk) return null;
+    const mavenHome = this.options.env?.MAVEN_HOME ?? this.options.env?.M2_HOME ?? process.env.MAVEN_HOME ?? process.env.M2_HOME;
+    const globalSettings = mavenHome ? path.join(mavenHome, 'conf', 'settings.xml') : null;
     return javaLaunch(this.project.path, {
       bundled: java.bundled,
       jdk,
       jdks: java.jdks(),
       dataDir: java.dataDir,
       ...(java.mavenUserSettings ? { mavenUserSettings: java.mavenUserSettings } : {}),
+      // Globale Maven-Einstellungen (etwa ein Firmen-Mirror); nicht, wenn eigene vorgegeben sind (Tests).
+      ...(!java.mavenUserSettings && globalSettings && fs.existsSync(globalSettings) ? { mavenGlobalSettings: globalSettings } : {}),
     });
   }
 
@@ -618,16 +638,25 @@ export class LanguageService {
     const work = this.project.progress.begin(server.id === 'java' ? 'Importing Java project…' : 'Starting TypeScript language server…');
     // Java: Der Import läuft nach `initialize` weiter, bis jdtls „ServiceReady“ meldet.
     if (server.id === 'java') server.importing = work;
-    const connection = new LspConnection({
-      command: launch.command,
-      args: launch.args,
-      cwd: this.project.path,
-      env: { ...(this.options.env ?? process.env), ...launch.env },
-      log: this.options.log,
-      onRequest: (method, params) => this.answer(method, params),
-      onNotification: (method, params) => this.onNotification(server, method, params),
-      onExit: (code) => this.onExit(server, connection, code),
-    });
+    let connection: LspConnection;
+    try {
+      connection = new LspConnection({
+        command: launch.command,
+        args: launch.args,
+        cwd: this.project.path,
+        env: { ...(this.options.env ?? process.env), ...launch.env },
+        log: this.options.log,
+        onRequest: (method, params) => this.answer(method, params),
+        onNotification: (method, params) => this.onNotification(server, method, params),
+        onExit: (code) => this.onExit(server, connection, code),
+      });
+    } catch (err) {
+      // Ein Programm, das sich gar nicht starten lässt (etwa ein kaputtes java.exe), wirft schon beim Start.
+      this.options.log(`${server.label}-Sprachserver startet nicht: ${(err as Error).message}`);
+      work.end();
+      if (server.importing === work) server.importing = null;
+      return false;
+    }
     server.connection = connection;
     try {
       const init = await connection.request<{
@@ -814,6 +843,9 @@ const CLIENT_CAPABILITIES = {
 
 /** Klassen, Interfaces, Enums und Structs (`SymbolKind`) für Ctrl + N. */
 const TYPE_KINDS = new Set([5, 10, 11, 23]);
+
+/** So lange wartet die Symbolsuche höchstens auf einen einzelnen Server. */
+const SYMBOL_WAIT_MS = 5000;
 
 /** So viele Vorschläge gehen nach dem Filtern höchstens an die Oberfläche. */
 const COMPLETION_LIMIT = 1000;

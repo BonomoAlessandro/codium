@@ -555,6 +555,7 @@ export class AppCore {
         ErrorCode.invalidParams,
       );
     }
+    const jdkBefore = 'jdk' in changes ? (jdkForLanguageServer(detectJdks(this.ports.system), this.appState.settings.jdk ?? null)?.path ?? null) : null;
     this.updateState((state) => {
       if (isFontSize(changes.fontSize)) state.settings.fontSize = changes.fontSize;
       if (changes.jdk === null) delete state.settings.jdk;
@@ -563,8 +564,10 @@ export class AppCore {
       else if (isShellId(changes.terminalShell)) state.settings.terminalShell = changes.terminalShell;
     });
     const settings = appSettings(this.appState.settings);
-    // Ein anderes JDK: laufende Java-Server starten mit ihm neu (Ticket 14).
-    if ('jdk' in changes) for (const project of this.projects.values()) void project.language.restartJava();
+    // Ein anderes JDK: laufende Java-Server starten mit ihm neu (Ticket 14), aber nur, wenn sich das verwendete JDK
+    // wirklich ändert (Review von Ticket 14: ein Neustart kostet einen vollen Import).
+    const jdkAfter = jdkForLanguageServer(detectJdks(this.ports.system), this.appState.settings.jdk ?? null)?.path ?? null;
+    if ('jdk' in changes && jdkAfter !== jdkBefore) for (const project of this.projects.values()) void project.language.restartJava();
     const windows = [...this.projects.keys(), ...(this.welcomeWindowId === null ? [] : [this.welcomeWindowId])];
     for (const windowId of windows) this.emitToWindow(windowId, 'app.settingsChanged', settings);
     return settings;

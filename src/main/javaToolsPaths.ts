@@ -13,14 +13,8 @@ export function javaTools(appPath: string, packaged: boolean): BundledJava | nul
     const tools = { jdtls: path.join(resources, 'jdtls'), lombok: path.join(resources, 'lombok.jar') };
     return fs.existsSync(tools.jdtls) && fs.existsSync(tools.lombok) ? tools : null;
   }
+  // Feste Namen ohne Version (scripts/fetch-java-tools.mjs); fertig ausgepackt erst mit dem Stempel.
   const cache = path.join(appPath, '.cache', 'java-tools');
-  let entries: string[];
-  try {
-    entries = fs.readdirSync(cache);
-  } catch {
-    return null;
-  }
-  const jdtls = entries.filter((e) => /^jdtls-\d/.test(e) && fs.existsSync(path.join(cache, e, '.codium-extracted'))).sort().at(-1);
-  const lombok = entries.filter((e) => /^lombok-\d.*\.jar$/.test(e)).sort().at(-1);
-  return jdtls && lombok ? { jdtls: path.join(cache, jdtls), lombok: path.join(cache, lombok) } : null;
+  const tools = { jdtls: path.join(cache, 'jdtls'), lombok: path.join(cache, 'lombok.jar') };
+  return fs.existsSync(path.join(tools.jdtls, '.codium-extracted')) && fs.existsSync(tools.lombok) ? tools : null;
 }

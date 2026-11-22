@@ -3,6 +3,7 @@
 // Konfigurationsordners pro Projekt im Datenordner. Die erkannten JDKs gehen als Laufzeiten an jdtls, der Gradle-Daemon
 // bekommt ein JDK passend zur Gradle-Version des Wrappers. Lädt nie Electron.
 
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { JdkInfo } from '../../../shared/types';
@@ -24,6 +25,8 @@ export interface JavaLaunchOptions {
   dataDir: string;
   /** Eigene Maven-Einstellungen (Tests: Maven Central, lokales Repository im Test-Zwischenspeicher). */
   mavenUserSettings?: string;
+  /** Globale Maven-Einstellungen (`%MAVEN_HOME%\conf\settings.xml`, etwa mit einem Firmen-Mirror). */
+  mavenGlobalSettings?: string;
 }
 
 /** Kennzeichen eines Java-Projekts im Projektordner. */
@@ -52,6 +55,9 @@ export function javaLaunch(projectPath: string, options: JavaLaunchOptions) {
       '-Declipse.product=org.eclipse.jdt.ls.core.product',
       '-Dosgi.checkConfiguration=true',
       '-Dlog.level=WARNING',
+      // Keine .project, .classpath, .factorypath und .settings im Projekt des Nutzers: Die Arbeitsdaten gehören in den
+      // Datenordner (Spezifikation; Review von Ticket 14). Nur als JVM-Argument wirksam.
+      '-Djava.import.generatesMetadataFilesAtProjectRoot=false',
       '-Xms256m',
       '-Xmx2G',
       `-javaagent:${options.bundled.lombok}`,
@@ -79,12 +85,19 @@ export function javaLaunch(projectPath: string, options: JavaLaunchOptions) {
 }
 
 /** Einstellungen für jdtls: Laufzeiten, Quellen herunterladen, Methoden in der Symbolsuche, Gradle-JDK, Maven. */
-export function javaSettings(options: Pick<JavaLaunchOptions, 'jdk' | 'jdks' | 'mavenUserSettings'>, gradleJdk: JdkInfo | null) {
+export function javaSettings(options: Pick<JavaLaunchOptions, 'jdk' | 'jdks' | 'mavenUserSettings' | 'mavenGlobalSettings'>, gradleJdk: JdkInfo | null) {
   return {
     home: options.jdk.path,
     configuration: {
       runtimes: javaRuntimes(options.jdks),
-      ...(options.mavenUserSettings ? { maven: { userSettings: options.mavenUserSettings } } : {}),
+      ...(options.mavenUserSettings || options.mavenGlobalSettings
+        ? {
+            maven: {
+              ...(options.mavenUserSettings ? { userSettings: options.mavenUserSettings } : {}),
+              ...(options.mavenGlobalSettings ? { globalSettings: options.mavenGlobalSettings } : {}),
+            },
+          }
+        : {}),
       updateBuildConfiguration: 'automatic',
     },
     import: {
@@ -94,7 +107,7 @@ export function javaSettings(options: Pick<JavaLaunchOptions, 'jdk' | 'jdks' | '
     maven: { downloadSources: true },
     eclipse: { downloadSources: true },
     symbols: { includeSourceMethodDeclarations: true },
-    contentProvider: { preferred: 'fernflower' },
+    // Ohne Quellen zeigt jdtls die Signaturen, die es selbst erzeugt (Spezifikation), keinen dekompilierten Code.
     autobuild: { enabled: true },
     format: { enabled: false },
     signatureHelp: { enabled: true },
@@ -158,27 +171,51 @@ export function gradleJavaRange(version: string): [number, number] {
   return [8, 14];
 }
 
-/** Das JDK für den Gradle-Daemon: das neueste erkannte, das die Gradle-Version des Wrappers verträgt. */
+/**
+ * Das JDK für den Gradle-Daemon: das neueste erkannte, das die Gradle-Version des Wrappers verträgt. Der Wrapper liegt
+ * im Projektordner oder in einem Unterordner der ersten Ebene (Review von Ticket 14).
+ */
 export function gradleJdkFor(projectPath: string, jdks: readonly JdkInfo[]): JdkInfo | null {
-  const version = wrapperGradleVersion(projectPath);
+  const version = wrapperGradleVersion(projectPath) ?? subfolderWrapperVersion(projectPath);
   if (!version) return null;
   const [min, max] = gradleJavaRange(version);
   return [...jdks].filter((j) => j.major >= min && j.major <= max).sort((a, b) => b.major - a.major || compareVersions(b.version, a.version))[0] ?? null;
 }
 
+function subfolderWrapperVersion(projectPath: string): string | null {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(projectPath, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+    const version = wrapperGradleVersion(path.join(projectPath, entry.name));
+    if (version) return version;
+  }
+  return null;
+}
+
 /**
  * Eine beschreibbare Kopie des Konfigurationsordners von jdtls (der Programmordner der installierten App ist nicht
- * beschreibbar). Neu kopiert, wenn sich jdtls geändert hat.
+ * beschreibbar). Neu kopiert, wenn sich jdtls geändert hat: Der Stempel kommt aus dem Inhalt (config.ini und
+ * Launcher), nicht aus dem Pfad, der im Paket bei jeder Version gleich ist (Review von Ticket 14).
  */
-function writableConfiguration(jdtls: string, dataDir: string): string {
+export function writableConfiguration(jdtls: string, dataDir: string): string {
   const source = path.join(jdtls, process.platform === 'win32' ? 'config_win' : process.platform === 'darwin' ? 'config_mac' : 'config_linux');
   const target = path.join(dataDir, 'config');
   const stamp = path.join(target, '.codium-source');
-  if (!fs.existsSync(stamp) || fs.readFileSync(stamp, 'utf8') !== source) {
+  const launcher = fs.readdirSync(path.join(jdtls, 'plugins')).filter((f) => f.startsWith('org.eclipse.equinox.launcher_')).sort().join(',');
+  const expected = createHash('sha256')
+    .update(fs.readFileSync(path.join(source, 'config.ini')))
+    .update(launcher)
+    .digest('hex');
+  if (!fs.existsSync(stamp) || fs.readFileSync(stamp, 'utf8') !== expected) {
     fs.rmSync(target, { recursive: true, force: true });
     fs.mkdirSync(target, { recursive: true });
     fs.cpSync(source, target, { recursive: true });
-    fs.writeFileSync(stamp, source);
+    fs.writeFileSync(stamp, expected);
   }
   return target;
 }

@@ -7,6 +7,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { detectJdks } from '../../src/main/core/jdks';
+import { gradleJdkFor } from '../../src/main/core/language/javaServer';
+import { isAlive } from '../../src/main/core/processTree';
 import { NodeSystem } from '../../src/main/system/nodeSystem';
 import { javaTools } from '../../src/main/javaToolsPaths';
 import { SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES, type CommandArgs, type CommandName, type CommandResult, type LanguageDiagnostic } from '../../src/shared/types';
@@ -71,15 +73,20 @@ const pom = (release: number, extra = '') =>
 describe.skipIf(skip !== null)('Java-Sprachserver (jdtls)', () => {
   const tempDir = useTempDirs();
 
-  afterAll(() => {
+  afterAll(async () => {
     // Gradle-Daemons dieses Testlaufs (im eigenen Benutzerordner) beenden; sie laufen sonst stundenlang weiter.
-    for (const daemon of processesWith(GRADLE_HOME).filter((p) => p.commandLine.includes('GradleDaemon'))) {
+    const daemons = processesWith(GRADLE_HOME).filter((p) => p.commandLine.includes('GradleDaemon'));
+    for (const daemon of daemons) {
       try {
         process.kill(daemon.pid);
       } catch {
         // Schon weg.
       }
     }
+    await until(() => daemons.some((d) => isAlive(d.pid)), (alive) => !alive, 'Gradle-Daemons beendet', 20_000);
+    // Am Ende läuft nichts mehr aus jdtls oder dem Gradle-Benutzerordner der Tests.
+    expect(processesWith(path.join('.cache', 'java-tools')).map((p) => p.commandLine)).toEqual([]);
+    expect(processesWith(GRADLE_HOME).map((p) => p.commandLine)).toEqual([]);
   });
 
   function call<K extends CommandName>(test: TestCore, windowId: number, name: K, ...args: CommandArgs<K>): Promise<CommandResult<K>> {
@@ -125,7 +132,8 @@ describe.skipIf(skip !== null)('Java-Sprachserver (jdtls)', () => {
     test.ports.windows.close(windowId);
     await test.core.shutdown();
     // Kein jdtls mehr.
-    if (pid !== undefined) await until(() => processesWith(String(pid)).some((p) => p.pid === pid), (alive) => !alive, 'jdtls beendet', 20_000);
+    // Nach Prozessnummer, nicht nach Befehlszeile (Review von Ticket 14).
+    if (pid !== undefined) await until(() => isAlive(pid), (alive) => !alive, 'jdtls beendet', 20_000);
   }
 
   const SHAPE = 'package demo;\n\npublic interface Shape {\n  /** The area of the shape. */\n  double area();\n}\n';
@@ -211,10 +219,13 @@ describe.skipIf(skip !== null)('Java-Sprachserver (jdtls)', () => {
     const all = await until(() => call(test, windowId, 'language.symbols', { query: 'area', kinds: 'all' }), (r) => r.some((s) => s.name.startsWith('area')), 'Methode');
     expect(all.some((s) => s.name.startsWith('area') && s.path.endsWith('Square.java'))).toBe(true);
 
-    // Ein anderes JDK in den Einstellungen startet den Server neu.
+    // Ausdrücklich dasselbe JDK wie „Newest detected“: kein Neustart (der kostete einen vollen Import). Den Neustart bei
+    // einem wirklich anderen JDK prüft test/main/javaRestart.test.ts mit nachgemachten JDKs; hier gibt es nur eines ab 25.
     const before = language().javaPid;
-    await call(test, windowId, 'app.updateSettings', { jdk: JDK25!.path });
-    await until(() => language().javaPid, (p) => p !== undefined && p !== before, 'Neustart nach JDK-Wechsel');
+    const newest = JDKS.filter((j) => j.major >= 25).sort((a, b) => b.major - a.major)[0];
+    await call(test, windowId, 'app.updateSettings', { jdk: newest.path });
+    await new Promise((r) => setTimeout(r, 3000));
+    expect(language().javaPid).toBe(before);
     await closeAndCheck(test, windowId, language);
   });
 
@@ -240,6 +251,8 @@ describe.skipIf(skip !== null)('Java-Sprachserver (jdtls)', () => {
     await until(() => diagnostics('src/main/java/demo/Use.java'), (d) => d !== undefined, 'Fehlerliste');
     await new Promise((r) => setTimeout(r, 3000));
     expect((diagnostics('src/main/java/demo/Use.java') ?? []).filter((d) => d.severity === 'error')).toEqual([]);
+    // Keine Eclipse-Dateien im Projekt: Die Arbeitsdaten liegen im Datenordner (Review von Ticket 14).
+    for (const name of ['.project', '.classpath', '.factorypath', '.settings']) expect(fs.existsSync(at(name)), name).toBe(false);
     await closeAndCheck(test, windowId, language);
   });
 
@@ -275,8 +288,11 @@ describe.skipIf(skip !== null)('Java-Sprachserver (jdtls)', () => {
     // Gradle 8.14 läuft bis Java 24: Der Daemon nimmt das JDK 21, nicht das JDK 25 von jdtls.
     const daemons = processesWith(GRADLE_HOME).filter((p) => p.commandLine.includes('GradleDaemon'));
     expect(daemons.length).toBeGreaterThan(0);
-    const jdk21 = JDKS.find((j) => j.major === 21);
-    if (jdk21) expect(daemons.some((d) => d.commandLine.toLowerCase().includes(jdk21.path.toLowerCase()))).toBe(true);
+    // Das erwartete JDK nach der Verträglichkeitstabelle; es ist nicht das JDK 25 von jdtls (Review von Ticket 14).
+    const expected = gradleJdkFor(at(''), JDKS);
+    expect(expected).not.toBeNull();
+    expect(expected!.major).toBeLessThan(25);
+    expect(daemons.some((d) => d.commandLine.toLowerCase().includes(expected!.path.toLowerCase()))).toBe(true);
     await closeAndCheck(test, windowId, language);
   });
 });
@@ -297,5 +313,17 @@ describe('Beschaffung von jdtls und Lombok', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/Lombok: Prüfsumme weicht ab/);
     expect(fs.readdirSync(cache)).toEqual([]);
+  });
+
+  it.skipIf(!online)('bricht bei einem HTTP-Fehler ab (etwa einem Tippfehler im Manifest), statt „ohne Netz“ weiterzumachen', { timeout: 120_000 }, async () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(REPO, 'scripts', 'java-tools.json'), 'utf8'));
+    manifest.lombok.url = manifest.lombok.url.replace('1.18.48', '0.0.0-gibt-es-nicht');
+    const dir = tempDir();
+    fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest));
+    const result = spawnSync(process.execPath, [path.join(REPO, 'scripts', 'fetch-java-tools.mjs'), '--manifest', path.join(dir, 'manifest.json'), '--cache', path.join(dir, 'cache')], {
+      encoding: 'utf8',
+      timeout: 100_000,
+    });
+    expect(result.status).toBe(1);
   });
 });

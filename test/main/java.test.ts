@@ -4,7 +4,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { gradleJavaRange, gradleJdkFor, javaRuntimes, wrapperGradleVersion } from '../../src/main/core/language/javaServer';
+import { gradleJavaRange, gradleJdkFor, javaRuntimes, wrapperGradleVersion, writableConfiguration } from '../../src/main/core/language/javaServer';
 import type { CommandArgs, CommandName, CommandResult, JdkInfo } from '../../src/shared/types';
 import { createTestCore, type TestCore } from '../support/core';
 import { useTempDirs } from '../support/tempDir';
@@ -23,6 +23,10 @@ describe('Java im Sprach-Dienst', () => {
     const root = tempDir();
     const tools = path.join(root, 'tools');
     fs.mkdirSync(path.join(tools, 'jdtls', 'plugins'), { recursive: true });
+    fs.mkdirSync(path.join(tools, 'jdtls', 'config_win'), { recursive: true });
+    // Ein vollständiges nachgemachtes jdtls: Fehlte nur der Launcher, entstünde aus anderem Grund kein Server (Review).
+    fs.writeFileSync(path.join(tools, 'jdtls', 'plugins', 'org.eclipse.equinox.launcher_1.0.0.jar'), '');
+    fs.writeFileSync(path.join(tools, 'jdtls', 'config_win', 'config.ini'), 'x=1\n');
     fs.writeFileSync(path.join(tools, 'lombok.jar'), '');
     const project = path.join(root, 'Shapes');
     fs.mkdirSync(path.join(project, 'src'), { recursive: true });
@@ -43,6 +47,24 @@ describe('Java im Sprach-Dienst', () => {
     // Kein Fehlerhinweis über einen abgestürzten Server (der Hinweis auf das fehlende JDK kommt aus Ticket 09).
     const notices = test.events.forWindow(windowId).filter((e) => e.name === 'app.notice').map((e) => (e.payload as { text: string }).text);
     expect(notices.some((t) => /language server stopped/.test(t))).toBe(false);
+    // Kein Startversuch (der schlüge mit dem nachgemachten jdtls fehl und stünde im Protokoll), dafür der JDK-Hinweis.
+    expect(test.logs.filter((l) => /Java-Sprachserver|starten/.test(l))).toEqual([]);
+    expect(notices.some((t) => /JDK/.test(t))).toBe(true);
+  });
+
+  it('erneuert die Kopie der Konfiguration, wenn sich jdtls am selben Ort ändert', () => {
+    const root = tempDir();
+    const jdtls = path.join(root, 'jdtls');
+    fs.mkdirSync(path.join(jdtls, 'plugins'), { recursive: true });
+    fs.mkdirSync(path.join(jdtls, 'config_win'), { recursive: true });
+    fs.writeFileSync(path.join(jdtls, 'plugins', 'org.eclipse.equinox.launcher_1.0.0.jar'), '');
+    fs.writeFileSync(path.join(jdtls, 'config_win', 'config.ini'), 'osgi.framework=org.eclipse.osgi_1.jar\n');
+    const data = path.join(root, 'data');
+    const config = writableConfiguration(jdtls, data);
+    expect(fs.readFileSync(path.join(config, 'config.ini'), 'utf8')).toContain('osgi_1');
+    // Ein Update von jdtls am selben Pfad (wie im Paket): neue config.ini.
+    fs.writeFileSync(path.join(jdtls, 'config_win', 'config.ini'), 'osgi.framework=org.eclipse.osgi_2.jar\n');
+    expect(fs.readFileSync(path.join(writableConfiguration(jdtls, data), 'config.ini'), 'utf8')).toContain('osgi_2');
   });
 });
 
@@ -78,5 +100,10 @@ describe('Laufzeiten und Gradle', () => {
     write('9.1.0');
     expect(gradleJdkFor(project, jdks)?.major).toBe(25);
     expect(gradleJdkFor(tempDir(), jdks)).toBeNull();
+    // Der Wrapper in einem Unterordner (Review von Ticket 14).
+    const nested = tempDir();
+    fs.mkdirSync(path.join(nested, 'backend', 'gradle', 'wrapper'), { recursive: true });
+    fs.writeFileSync(path.join(nested, 'backend', 'gradle', 'wrapper', 'gradle-wrapper.properties'), 'distributionUrl=https\\://x/gradle-8.5-bin.zip\n');
+    expect(gradleJdkFor(nested, jdks)?.major).toBe(21);
   });
 });

@@ -52,13 +52,14 @@ async function fetchChecked(name, entry) {
 
 try {
   const lombok = await fetchChecked('Lombok', manifest.lombok);
-  const lombokTarget = path.join(cache, `lombok-${manifest.lombok.version}.jar`);
-  if (!existsSync(lombokTarget)) writeFileSync(lombokTarget, readFileSync(lombok));
+  // Feste Namen ohne Version (package.json und javaToolsPaths.ts verweisen darauf); der Stempel nennt die Prüfsumme.
+  const lombokTarget = path.join(cache, 'lombok.jar');
+  if (!existsSync(lombokTarget) || (await sha256(lombokTarget)) !== manifest.lombok.sha256) writeFileSync(lombokTarget, readFileSync(lombok));
 
   const archive = await fetchChecked('jdtls', manifest.jdtls);
-  const jdtls = path.join(cache, `jdtls-${manifest.jdtls.version}`);
+  const jdtls = path.join(cache, 'jdtls');
   const marker = path.join(jdtls, '.codium-extracted');
-  if (!existsSync(marker)) {
+  if (!existsSync(marker) || readFileSync(marker, 'utf8') !== manifest.jdtls.sha256) {
     rmSync(jdtls, { recursive: true, force: true });
     mkdirSync(jdtls, { recursive: true });
     // Das tar von Windows (bsdtar, seit Windows 10); ein GNU-tar etwa aus Git Bash läse „C:“ als Rechnernamen.
@@ -68,8 +69,10 @@ try {
   }
   console.log(`jdtls ${manifest.jdtls.version} und Lombok ${manifest.lombok.version} liegen in ${cache}`);
 } catch (err) {
-  // Nur fehlendes Netz ist kein Abbruch (fetch scheitert mit TypeError, der Server mit einem HTTP-Fehler).
-  const offline = err instanceof TypeError || /HTTP \d+/.test(err.message);
+  // Nur fehlendes Netz ist kein Abbruch (fetch scheitert mit TypeError und einer Ursache wie ENOTFOUND). Ein
+  // HTTP-Fehler (etwa 404 nach einem Tippfehler im Manifest) bricht ab (Review von Ticket 14).
+  const NETWORK = new Set(['ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH', 'UND_ERR_CONNECT_TIMEOUT']);
+  const offline = err instanceof TypeError && NETWORK.has(err.cause?.code);
   if (err instanceof ChecksumError || !offline) {
     console.error(err.message);
     process.exit(1);
