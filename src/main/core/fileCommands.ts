@@ -44,6 +44,15 @@ export function registerFileCommands(register: RegisterProjectCommand): void {
   register('language.resolveCompletion', (project, params) => project.language.resolveCompletion(params));
   register('language.semanticTokens', (project, params) => project.language.semanticTokens(params));
   register('language.symbols', (project, params) => project.language.symbols(params));
+  register('git.state', (project) => project.git.current());
+  register('git.refresh', (project) => project.git.refresh());
+  register('git.branches', (project) => project.git.branches());
+  register('git.createBranch', (project, params) => project.git.createBranch(params));
+  register('git.checkout', (project, params) => project.git.checkout(params));
+  register('git.checkoutRemote', (project, params) => project.git.checkoutRemote(params));
+  register('git.renameBranch', (project, params) => project.git.renameBranch(params));
+  register('git.deleteBranch', (project, params) => project.git.deleteBranch(params));
+  register('git.console', (project) => project.git.console());
   register('project.expandedFolders', (project) => expandedFolders(project));
   register('project.setExpandedFolders', (project, params) => setExpandedFolders(project, params));
 }

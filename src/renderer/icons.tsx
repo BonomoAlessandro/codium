@@ -129,6 +129,13 @@ export const PlusIcon = () => (
   </Icon>
 );
 
+/** Branch in der Kopfzeile. */
+export const BranchIcon = () => (
+  <Icon>
+    <path d="M5 3v10M5 9c0-3 6-2 6-5M5 13a1.5 1.5 0 1 0 0-.01M11 4a1.5 1.5 0 1 0 0-.01M5 3a1.5 1.5 0 1 0 0-.01" />
+  </Icon>
+);
+
 export const CloseIcon = () => (
   <Icon size={12}>
     <path d="M4 4l8 8M12 4l-8 8" />

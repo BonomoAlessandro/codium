@@ -263,8 +263,11 @@ export class FakeSystem implements SystemPort {
 /** Zeichnet alle Ereignisse an Fenster auf. */
 export class FakeEventSink implements EventSink {
   readonly sent: Array<{ windowId: number; name: string; payload: unknown }> = [];
+  /** Einträge der Git-Konsole (Ticket 15) nur auf Wunsch; sonst stünden sie in allen Ereignislisten. */
+  recordGitConsole = false;
 
   send(windowId: number, name: string, payload: unknown): void {
+    if (name === 'git.console' && !this.recordGitConsole) return;
     this.sent.push({ windowId, name, payload });
   }
 

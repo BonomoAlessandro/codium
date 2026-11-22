@@ -6,6 +6,7 @@ import { AppCore } from '../../src/main/core/appCore';
 import type { BundledJava } from '../../src/main/core/language/javaServer';
 import type { BundledTypeScript } from '../../src/main/core/language/typescriptServer';
 import { createFakePorts, FakeEventSink, type FakePorts, type FakeSystemOptions } from './fakePorts';
+import { shieldedGitEnv } from './git';
 import { beforeTempDirRemoval } from './tempDir';
 
 /** Alle Kerne des laufenden Tests; nach dem Test werden sie beendet, bevor ihre Temp-Ordner verschwinden. */
@@ -56,7 +57,7 @@ export function createTestCore(dataDir: string, options: TestCoreOptions = {}): 
     events,
     appInfo: { name: 'Codium', version: '0.0.0-test' },
     saveDebounceMs: 5,
-    cleanupTimeoutMs: options.cleanupTimeoutMs ?? 200,
+    cleanupTimeoutMs: options.cleanupTimeoutMs ?? 2000,
     fileProgressDelayMs: options.fileProgressDelayMs,
     flushTimeoutMs: options.flushTimeoutMs ?? 0,
     ripgrepPath: ripgrepPath(path.resolve(__dirname, '..', '..'), false),

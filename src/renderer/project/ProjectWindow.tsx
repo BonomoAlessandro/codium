@@ -9,7 +9,11 @@
 // Im Code-Bereich liegen die Datei-Tabs mit Monaco (editor/EditorArea.tsx). „Datei öffnen“ aus dem Dateibaum öffnet
 // dort einen Tab; der aktive Tab geht an den Dateibaum („Select Opened File“) und an die Statusleiste.
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
+import { CodiumError, ErrorCode } from '../../shared/types';
+import { BranchPopup, type BranchActions } from '../git/BranchPopup';
+import { GitToolWindow } from '../git/GitToolWindow';
+import { useGitState } from '../git/gitState';
 import { EditorArea, type EditorAreaHandle, type EditorStatus } from '../editor/EditorArea';
 import { FindInFilesPopup, type SearchOutcome } from '../search/FindInFilesPopup';
 import { GotoFilePopup, RecentFilesPopup, SymbolPopup } from '../search/FilePopups';
@@ -31,10 +35,11 @@ import {
 import { TOOL_WINDOW_ICONS } from '../icons';
 import { bindingForKey, commandForKey, shortcutLabel, type KeyCommand, type ToolWindowCommand } from '../keymap';
 import type { Notify } from '../Notices';
-import { isDialogOpen } from '../popup/Dialogs';
+import { isDialogOpen, useAsk, useAskText } from '../popup/Dialogs';
 import { closeOpenMenus } from '../popup/Menu';
 import type { RunningWork } from '../progress';
 import type { ProjectActions } from '../RecentProjects';
+import { relativeLabel } from './filePaths';
 import { Header } from './Header';
 import { ProjectView } from './ProjectView';
 import { TerminalToolWindow, type TerminalToolWindowHandle } from '../terminal/TerminalToolWindow';
@@ -111,6 +116,92 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
   const settings = useSettings(api);
   const editorRef = useRef<EditorAreaHandle>(null);
   const terminalRef = useRef<TerminalToolWindowHandle>(null);
+
+  // ---------- Git (Ticket 15) ----------
+
+  const gitState = useGitState(api);
+  const [branchesOpen, setBranchesOpen] = useState(false);
+  const ask = useAsk();
+  const askText = useAskText();
+  const branchActions = useMemo((): BranchActions => {
+    /** Vor jeder schreibenden Git-Aktion: alle Tabs speichern (Ticket 07); Fehler von Git im Wortlaut. */
+    const act = async (work: () => Promise<unknown>): Promise<string | null> => {
+      await (editorRef.current?.saveAll() ?? Promise.resolve());
+      try {
+        await work();
+        return null;
+      } catch (err) {
+        return errorText(err);
+      }
+    };
+    const checkoutWith = async (work: () => Promise<unknown>) => {
+      await (editorRef.current?.saveAll() ?? Promise.resolve());
+      try {
+        await work();
+      } catch (err) {
+        if (err instanceof CodiumError && err.code === ErrorCode.gitCheckoutBlocked) {
+          const files = ((err.data as { files?: string[] } | undefined)?.files ?? []).map((f) => relativeLabel(project.path, f));
+          await ask({
+            title: 'Checkout Failed',
+            message: 'Your local changes to these files would be overwritten by checkout. Commit or revert them first.',
+            items: files,
+            buttons: [{ id: 'ok', label: 'OK', primary: true }],
+          });
+          return;
+        }
+        notify({ level: 'error', text: errorText(err) });
+      }
+    };
+    return {
+      newBranch: (from) => {
+        let checkout = true;
+        void askText({
+          title: 'Create New Branch',
+          message: from ? `New branch from '${from}'` : 'New branch name',
+          value: '',
+          okLabel: 'Create',
+          validate: (v) => (v.trim() === '' ? 'Enter a branch name.' : null),
+          checkbox: { label: 'Checkout branch', checked: true, onChange: (v) => (checkout = v) },
+          submit: (name) => act(() => api.request('git.createBranch', { name: name.trim(), ...(from ? { from } : {}), checkout })),
+        });
+      },
+      checkout: (name) => void checkoutWith(() => api.request('git.checkout', { name })),
+      checkoutRemote: (name) => void checkoutWith(() => api.request('git.checkoutRemote', { name })),
+      rename: (name) => {
+        void askText({
+          title: 'Rename Branch',
+          message: `New name for '${name}'`,
+          value: name,
+          okLabel: 'Rename',
+          validate: (v) => (v.trim() === '' ? 'Enter a branch name.' : null),
+          submit: (newName) => act(() => api.request('git.renameBranch', { name, newName: newName.trim() })),
+        });
+      },
+      remove: (name) => {
+        void (async () => {
+          try {
+            await api.request('git.deleteBranch', { name });
+          } catch (err) {
+            if (err instanceof CodiumError && err.code === ErrorCode.gitNotMerged) {
+              const choice = await ask({
+                title: 'Delete Branch',
+                message: `The branch '${name}' is not fully merged. Delete it anyway?`,
+                buttons: [
+                  { id: 'delete', label: 'Delete' },
+                  { id: 'cancel', label: 'Cancel', primary: true },
+                ],
+              });
+              if (choice === 'delete') {
+                await api.request('git.deleteBranch', { name, force: true }).catch((e: unknown) => notify({ level: 'error', text: errorText(e) }));
+              }
+              return;
+            }
+            notify({ level: 'error', text: errorText(err) });
+          }
+        })();
+      },
+    };
+  }, [api, ask, askText, notify, project.path]);
   const pendingTerminalCwd = useRef<string | undefined>(undefined);
   const takePendingTerminalCwd = useCallback(() => {
     const cwd = pendingTerminalCwd.current;
@@ -467,6 +558,15 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
                 openedFile={activeFile}
                 onOpenInTerminal={openInTerminal}
               />
+            ) : id === 'git' ? (
+              <GitToolWindow api={api} state={gitState} onHide={() => hide(s)} />
+            ) : id === 'commit' && gitState && !gitState.repository ? (
+              <>
+                <ToolWindowHeader title={TOOL_WINDOWS[id].title} onHide={() => hide(s)} />
+                <div className="tool-window-body">
+                  <p className="tool-window-placeholder">Not a Git repository</p>
+                </div>
+              </>
             ) : id === 'terminal' ? (
               <TerminalToolWindow
                 ref={terminalRef}
@@ -512,7 +612,21 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
 
   return (
     <div className="project-window">
-      <Header project={project} actions={actions} onExit={() => void api.request('app.exit')} onSettings={() => setSettingsOpen(true)} api={api} />
+      <Header
+        project={project}
+        actions={actions}
+        onExit={() => void api.request('app.exit')}
+        onSettings={() => setSettingsOpen(true)}
+        api={api}
+        git={gitState}
+        onBranches={() => {
+          closeOpenMenus();
+          setBranchesOpen(true);
+        }}
+      />
+      {branchesOpen && gitState?.repository && (
+        <BranchPopup api={api} state={gitState} actions={branchActions} onClose={() => setBranchesOpen(false)} />
+      )}
       <div className="workbench">
         <Stripe side="left" groups={[STRIPES.left.top, STRIPES.left.bottom]} layout={shown} available={available} onToggle={toggle} />
         <div className="tool-area" ref={areaRef}>

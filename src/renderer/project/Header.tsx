@@ -3,8 +3,9 @@
 // maximiert); rechts liegen die Fensterknöpfe von Windows als Überlagerung darüber.
 
 import { useRef, useState } from 'react';
-import type { CodiumApi, ProjectInfo } from '../../shared/types';
-import { ChevronDownIcon } from '../icons';
+import type { CodiumApi, GitState, ProjectInfo } from '../../shared/types';
+import { branchLabel } from '../git/gitState';
+import { BranchIcon, ChevronDownIcon } from '../icons';
 import { CLONE_WITHOUT_GIT, useCloneDialog, useGitAvailable } from '../CloneDialog';
 import { shortcutLabel } from '../keymap';
 import { Menu, type MenuEntry } from '../popup/Menu';
@@ -18,9 +19,13 @@ interface HeaderProps {
   /** „Settings…“: öffnet den Einstellungsdialog. */
   onSettings: () => void;
   api: CodiumApi;
+  /** Zustand des Repositorys; ohne Repository kein Branch-Menü (Ticket 15). */
+  git: GitState | null;
+  /** Öffnet das Branch-Menü. */
+  onBranches: () => void;
 }
 
-export function Header({ project, actions, onExit, onSettings, api }: HeaderProps) {
+export function Header({ project, actions, onExit, onSettings, api, git: gitState, onBranches }: HeaderProps) {
   const git = useGitAvailable(api);
   const clone = useCloneDialog(api);
   const [menu, setMenu] = useState<{ viaKeyboard: boolean } | null>(null);
@@ -74,8 +79,24 @@ export function Header({ project, actions, onExit, onSettings, api }: HeaderProp
           <span className="header-widget-label">{project.name}</span>
           <ChevronDownIcon />
         </button>
-        {/* Platz für das Branch-Menü (Ticket 15); in einem Ordner ohne Git-Repository bleibt er leer. */}
-        <div className="header-branch" />
+        {/* Branch-Menü (Ticket 15); in einem Ordner ohne Git-Repository bleibt der Platz leer. */}
+        <div className="header-branch">
+          {gitState?.repository && (
+            <button
+              type="button"
+              className="header-widget branch-widget"
+              aria-haspopup="dialog"
+              aria-label={`Branch ${branchLabel(gitState).name}`}
+              title={gitState.upstream ? `${branchLabel(gitState).name} → ${gitState.upstream}` : branchLabel(gitState).name}
+              onClick={onBranches}
+            >
+              <BranchIcon />
+              <span className="header-widget-label">{branchLabel(gitState).name}</span>
+              {branchLabel(gitState).sync && <span className="branch-sync">{branchLabel(gitState).sync}</span>}
+              <ChevronDownIcon />
+            </button>
+          )}
+        </div>
       </div>
       {menu && buttonRef.current && (
         <Menu

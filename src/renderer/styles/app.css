@@ -1737,3 +1737,83 @@ kbd {
 .terminal-view .xterm-viewport {
   background: var(--bg) !important;
 }
+
+/* ---------- Git (Ticket 15) ---------- */
+
+.branch-widget .branch-sync {
+  margin-left: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.branch-popup-header {
+  padding: 6px 12px 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.branch-popup .quick-popup-item.current .quick-popup-name {
+  font-weight: 600;
+}
+
+.dialog-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.git-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.git-console-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  color: var(--text-muted);
+}
+
+.git-console {
+  flex: 1;
+  min-height: 0;
+  padding: 0 10px 8px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  user-select: text;
+}
+
+.git-console-entry {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.git-console-command {
+  display: flex;
+  gap: 10px;
+}
+
+.git-console-time,
+.git-console-exit {
+  color: var(--text-muted);
+}
+
+.git-console-exit {
+  margin-left: auto;
+}
+
+.git-console-entry.failed .git-console-exit {
+  color: var(--error);
+}
+
+.git-console-output {
+  margin: 2px 0 0 72px;
+  white-space: pre-wrap;
+  color: var(--text-muted);
+}

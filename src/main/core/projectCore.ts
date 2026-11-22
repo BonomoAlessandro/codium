@@ -9,6 +9,7 @@ import { followFileOperation } from './editorCommands';
 import { expandedFolderPaths } from './fileCommands';
 import { FileService } from './fileService';
 import { SearchService } from './searchService';
+import { GitService, type GitServiceOptions } from './git/gitService';
 import { TerminalService, type TerminalServiceOptions } from './terminalService';
 import { LanguageService, type LanguageServiceOptions } from './language/languageService';
 import type { EventSink, ShellActionsPort } from './ports';
@@ -46,6 +47,8 @@ export interface ProjectCoreOptions {
   terminal: Omit<TerminalServiceOptions, 'log'>;
   /** Sprachserver für den Sprach-Dienst. */
   language: Omit<LanguageServiceOptions, 'log'>;
+  /** Das installierte Git für den Git-Dienst. */
+  git: Omit<GitServiceOptions, 'log'>;
 }
 
 export class ProjectCore {
@@ -74,6 +77,8 @@ export class ProjectCore {
   readonly terminals: TerminalService;
   /** Sprach-Dienst: Sprachserver (ab Ticket 12 TypeScript). */
   readonly language: LanguageService;
+  /** Git-Dienst (ab Ticket 15). */
+  readonly git: GitService;
 
   constructor(options: ProjectCoreOptions) {
     this.path = options.path;
@@ -94,6 +99,7 @@ export class ProjectCore {
     this.search = new SearchService(this, options.ripgrepPath, this.log);
     this.terminals = new TerminalService(this, { ...options.terminal, log: this.log });
     this.language = new LanguageService(this, { ...options.language, log: this.log });
+    this.git = new GitService(this, { ...options.git, log: this.log });
     // Tabs und Cursor im Zustand folgen Umbenennungen und Löschungen in Codium.
     this.subscribe('files.operation', (op) => {
       if (op.kind === 'renamed' || op.kind === 'deleted') this.updateState((state) => followFileOperation(this.path, state, op));

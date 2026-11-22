@@ -175,7 +175,7 @@ describe('App-Kern', () => {
 
       await test.core.closeProjectCore(windowId);
       expect(afterHang).toBe(true);
-      expect(test.logs.join('\n')).toMatch(/nach 200 ms abgebrochen/);
+      expect(test.logs.join('\n')).toMatch(/nach 2000 ms abgebrochen/);
     });
 
     it('räumt eine erst während des Abbaus angemeldete Arbeit trotzdem auf', async () => {

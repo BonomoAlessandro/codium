@@ -310,6 +310,57 @@ export const SEMANTIC_TOKEN_MODIFIERS = [
   'local',
 ] as const;
 
+/** Zustand einer Datei in Git (Ticket 15), nach `git status --porcelain=v2`: X für den Index, Y für die Arbeitskopie. */
+export interface GitFileStatus {
+  /** Absoluter Pfad. */
+  path: string;
+  /** Code für den Index: `.` unverändert, `M`, `A`, `D`, `R`, `C`, `T`, `U` (Konflikt), `?` unversioniert. */
+  index: string;
+  worktree: string;
+  /** Bei Umbenennungen der alte Pfad. */
+  origPath?: string;
+  /** Ein Konflikt eines laufenden Merges. */
+  conflict?: true;
+}
+
+/** Zustand des Repositorys eines Projekts (Ticket 15). */
+export interface GitState {
+  /** Ob der Projektordner in einem Git-Repository liegt; ohne sind alle Git-Funktionen aus. */
+  repository: boolean;
+  /** Wurzel des Repositorys (kann über dem Projektordner liegen). */
+  root?: string;
+  /** Aktueller Branch; `null`, wenn der HEAD abgekoppelt ist (dann `detached`) oder es noch keinen Commit gibt. */
+  branch: string | null;
+  /** Kurzer Hash des abgekoppelten HEAD. */
+  detached?: string;
+  upstream?: string;
+  ahead: number;
+  behind: number;
+  /** Eine laufende Operation. */
+  operation?: 'merge' | 'rebase' | 'cherry-pick' | 'revert';
+  files: GitFileStatus[];
+}
+
+/** Branches des Repositorys. */
+export interface GitBranches {
+  local: Array<{ name: string; upstream?: string; current: boolean }>;
+  remote: Array<{ name: string; remote: string }>;
+}
+
+/** Ein Eintrag der Git-Konsole (Ticket 15). */
+export interface GitConsoleEntry {
+  id: number;
+  /** Zeitpunkt des Starts (ms seit 1970). */
+  time: number;
+  /** Der Befehl, etwa `git checkout -b feature`. */
+  command: string;
+  output: string;
+  /** `null`, solange er läuft oder wenn er sich nicht starten liess. */
+  exitCode: number | null;
+  /** Eine Abfrage im Hintergrund (nicht vom Nutzer ausgelöst, nicht schreibend, ohne Netz). */
+  background: boolean;
+}
+
 /** Ein Fehler oder eine Warnung eines Sprachservers. */
 export interface LanguageDiagnostic {
   range: TextRange;
@@ -427,6 +478,12 @@ export const ErrorCode = {
   gitNotFound: 'GIT_NOT_FOUND',
   /** Git ist gescheitert; die Meldung ist die von Git im Wortlaut. */
   gitFailed: 'GIT_FAILED',
+  /** Ein Branch ist nicht gemergt; Löschen geht nur erzwungen (nach Rückfrage). */
+  gitNotMerged: 'GIT_NOT_MERGED',
+  /** Ein Wechsel wurde wegen lokaler Änderungen verweigert; `data.files` sind die betroffenen Dateien. */
+  gitCheckoutBlocked: 'GIT_CHECKOUT_BLOCKED',
+  /** Der Projektordner liegt in keinem Git-Repository. */
+  notARepository: 'NOT_A_REPOSITORY',
   /** Es gibt keine Shell fürs Terminal. */
   shellNotFound: 'SHELL_NOT_FOUND',
 } as const;
@@ -534,6 +591,22 @@ export interface Commands {
   'language.implementations': { params: { path: string; line: number; character: number }; result: CodeLocation[] };
   /** Typ und Dokumentation an einer Stelle, als Markdown; `null` ohne. */
   'language.hover': { params: { path: string; line: number; character: number }; result: { markdown: string; range?: TextRange } | null };
+  /** Zustand des Repositorys (Ticket 15). */
+  'git.state': { params: void; result: GitState };
+  /** Zustand neu lesen (etwa wenn das Fenster den Fokus bekommt); liefert ihn. */
+  'git.refresh': { params: void; result: GitState };
+  'git.branches': { params: void; result: GitBranches };
+  /** Neuer Branch vom aktuellen Stand oder von `from` (lokal oder remote), wahlweise ausgecheckt. */
+  'git.createBranch': { params: { name: string; from?: string; checkout: boolean }; result: void };
+  /** Wechselt auf einen lokalen Branch; verweigert: `GIT_CHECKOUT_BLOCKED` mit den Dateien. */
+  'git.checkout': { params: { name: string }; result: void };
+  /** Wechselt auf einen Remote-Branch: legt einen folgenden lokalen an oder checkt den gleichnamigen aus. */
+  'git.checkoutRemote': { params: { name: string }; result: { local: string } };
+  'git.renameBranch': { params: { name: string; newName: string }; result: void };
+  /** Löscht einen lokalen Branch; nicht gemergt: `GIT_NOT_MERGED`, mit `force` trotzdem. Der aktuelle nie. */
+  'git.deleteBranch': { params: { name: string; force?: boolean }; result: void };
+  /** Die Einträge der Git-Konsole (höchstens 1'000), älteste zuerst. */
+  'git.console': { params: void; result: GitConsoleEntry[] };
   /** Vorschläge an einer Stelle (Ticket 13); `incomplete`: beim Weitertippen neu fragen. */
   'language.completion': {
     params: { path: string; line: number; character: number; triggerCharacter?: string };
@@ -691,6 +764,10 @@ export interface Events {
   'terminal.data': { terminalId: number; data: string };
   /** Die Shell eines Terminals ist beendet (auch nach `terminal.close`). */
   'terminal.exit': { terminalId: number; exitCode: number };
+  /** Der Zustand des Repositorys hat sich geändert (Ticket 15). */
+  'git.stateChanged': GitState;
+  /** Ein Eintrag der Git-Konsole ist neu oder fertig. */
+  'git.console': GitConsoleEntry;
   /** Fehler und Warnungen einer Datei (ersetzen die bisherigen). */
   'language.diagnostics': { path: string; diagnostics: LanguageDiagnostic[] };
 }

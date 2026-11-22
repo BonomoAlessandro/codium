@@ -458,6 +458,8 @@ describe('Projektfenster und Willkommensfenster', () => {
       const welcome = await startWithWelcome(test);
       const [alphaWindow, betaWindow] = await openProjects(test, welcome, alpha, beta);
       test.ports.windows.close(betaWindow);
+      // Erst nach dem Abbau löschen: Bis dahin kann eine Git-Abfrage im Ordner laufen (Ticket 15).
+      await test.core.disposalsSettled();
       removeDir(beta);
 
       expect(await call(test, alphaWindow, 'app.recentProjects')).toEqual([

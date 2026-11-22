@@ -40,6 +40,8 @@ export interface AskTextOptions {
   validate?: (value: string) => string | null;
   /** Hinweis unter dem Feld, etwa dass Verweise nicht angepasst werden. */
   hint?: string;
+  /** Ein Häkchen unter dem Feld (etwa „Checkout branch“); sein Stand geht an `onChange`. */
+  checkbox?: { label: string; checked: boolean; onChange: (checked: boolean) => void };
   /** Beschriftung des bestätigenden Knopfs, sonst „OK“. */
   okLabel?: string;
   /**
@@ -309,6 +311,7 @@ function TextDialog({ options, onAnswer }: { options: AskTextOptions; onAnswer: 
             </p>
           )}
           {options.hint && <p className="dialog-hint">{options.hint}</p>}
+          {options.checkbox && <DialogCheckbox {...options.checkbox} />}
         </form>
         <div className="dialog-buttons">
           <button type="button" className="button-primary" disabled={!canSubmit} onClick={() => void confirm()}>
@@ -325,6 +328,24 @@ function TextDialog({ options, onAnswer }: { options: AskTextOptions; onAnswer: 
 }
 
 /** Hält Tab und Shift + Tab im Dialog: Am Ende geht es zum Anfang und umgekehrt. */
+/** Häkchen im Eingabedialog. */
+function DialogCheckbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  const [value, setValue] = useState(checked);
+  return (
+    <label className="dialog-checkbox">
+      <input
+        type="checkbox"
+        checked={value}
+        onChange={(e) => {
+          setValue(e.target.checked);
+          onChange(e.target.checked);
+        }}
+      />
+      {label}
+    </label>
+  );
+}
+
 export function keepFocusInside(e: KeyboardEvent, container: HTMLElement): void {
   const focusable = [...container.querySelectorAll<HTMLElement>(FOCUSABLE)];
   if (focusable.length === 0) return;

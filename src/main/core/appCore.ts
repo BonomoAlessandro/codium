@@ -171,6 +171,11 @@ export class AppCore {
     this.registerCommands();
   }
 
+  /** Wartet, bis alle laufenden Abbauten von Projekt-Kernen fertig sind (für Tests). */
+  async disposalsSettled(): Promise<void> {
+    await Promise.all([...this.disposals.values()]);
+  }
+
   /** Der Projekt-Kern eines Fensters (für Tests, etwa um laufende Sprachserver zu prüfen). */
   projectCore(windowId: number): ProjectCore | undefined {
     return this.projects.get(windowId);
@@ -856,6 +861,7 @@ export class AppCore {
         env: this.options.processEnv,
         ...(this.options.windowsConpty ? { bundledConpty: false } : {}),
       },
+      git: { git: this.gitPath, env: this.options.processEnv },
       language: {
         ...(this.options.typescript ? { typescript: this.options.typescript } : {}),
         env: this.options.processEnv,
