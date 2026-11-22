@@ -13,6 +13,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { CodiumError, ErrorCode } from '../../shared/types';
 import { BranchPopup, type BranchActions } from '../git/BranchPopup';
 import { GitToolWindow } from '../git/GitToolWindow';
+import { CommitToolWindow, changeKind } from '../git/CommitToolWindow';
 import { GIT_NOT_FOUND_TEXT, useGitState } from '../git/gitState';
 import { useGitAvailable } from '../CloneDialog';
 import { EditorArea, type EditorAreaHandle, type EditorStatus } from '../editor/EditorArea';
@@ -126,6 +127,8 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
   const [branchesOpen, setBranchesOpen] = useState(false);
   const ask = useAsk();
   const askText = useAskText();
+  /** Zeigt das Werkzeugfenster „Commit“ mit dem Fokus in der Nachricht. */
+  const openCommitRef = useRef(() => {});
   const branchActions = useMemo((): BranchActions => {
     /** Vor jeder schreibenden Git-Aktion: alle Tabs speichern (Ticket 07); Fehler von Git im Wortlaut. */
     const act = async (work: () => Promise<unknown>): Promise<string | null> => {
@@ -157,6 +160,7 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
       }
     };
     return {
+      commit: () => openCommitRef.current(),
       newBranch: (from) => {
         let checkout = true;
         void askText({
@@ -326,6 +330,29 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
     [change],
   );
 
+  openCommitRef.current = () => {
+    closeOpenMenus();
+    const current = shownLayout();
+    if (current && gitState?.repository) showAndFocus(current, 'commit');
+  };
+
+  // Git-Farben im Dateibaum (Ticket 16): Zustand je Pfad, ignorierte Ordner färben alles darin grau.
+  const gitStatusOf = useMemo(() => {
+    const byPath = new Map<string, string>();
+    const ignored: string[] = [];
+    for (const file of gitState?.files ?? []) {
+      const kind = changeKind(file);
+      byPath.set(file.path.toLowerCase(), kind);
+      if (kind === 'ignored') ignored.push(file.path.toLowerCase());
+    }
+    return (filePath: string): string | undefined => {
+      const k = filePath.toLowerCase();
+      const own = byPath.get(k);
+      if (own) return own;
+      return ignored.some((dir) => k.startsWith(`${dir}\\`) || k.startsWith(`${dir}/`)) ? 'ignored' : undefined;
+    };
+  }, [gitState]);
+
   /** „Open in Terminal“ aus dem Dateibaum: ein weiteres Terminal im Ordner, das Werkzeugfenster mit dem Fokus darin. */
   const openInTerminal = useCallback(
     (path: string) => {
@@ -430,6 +457,14 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
         stopDrag();
         setPopup(null);
         setSettingsOpen(true);
+        return;
+      }
+      // Ctrl + K (Ticket 16): die Änderungsansicht mit dem Fokus in der Commit-Nachricht, auch aus dem Editor.
+      if (command === 'vcs.commit') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.repeat) return;
+        openCommitRef.current();
         return;
       }
       if (command === 'symbol.gotoClass' || command === 'symbol.gotoSymbol') {
@@ -561,9 +596,20 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
                 onOpenFile={openFile}
                 openedFile={activeFile}
                 onOpenInTerminal={openInTerminal}
+                gitStatusOf={gitStatusOf}
               />
             ) : id === 'git' ? (
               <GitToolWindow api={api} state={gitState} gitAvailable={gitAvailable} onHide={() => hide(s)} />
+            ) : id === 'commit' && gitAvailable !== false && gitState?.repository ? (
+              <CommitToolWindow
+                api={api}
+                project={project}
+                state={gitState}
+                notify={notify}
+                onHide={() => hide(s)}
+                onOpenFile={openFile}
+                saveAll={() => editorRef.current?.saveAll() ?? Promise.resolve()}
+              />
             ) : id === 'commit' && (gitAvailable === false || (gitState && !gitState.repository)) ? (
               <>
                 <ToolWindowHeader title={TOOL_WINDOWS[id].title} onHide={() => hide(s)} />

@@ -607,6 +607,24 @@ export interface Commands {
   'git.deleteBranch': { params: { name: string; force?: boolean }; result: void };
   /** Die Einträge der Git-Konsole (höchstens 1'000), älteste zuerst. */
   'git.console': { params: void; result: GitConsoleEntry[] };
+  /**
+   * Commit nur mit den angehakten Pfaden (Ticket 16): nicht versionierte darunter kommen zuerst in den Index; für andere
+   * Dateien vorbereitete Index-Einträge bleiben unberührt. Bei einer Umbenennung gehören alter und neuer Pfad dazu.
+   * `amend` ergänzt den letzten Commit (auch ohne Pfade, dann nur mit neuer Nachricht).
+   */
+  'git.commit': { params: { paths: string[]; message: string; amend?: boolean }; result: void };
+  /** Die Nachricht des letzten Commits (für „Amend“); `null` ohne Commit. */
+  'git.lastMessage': { params: void; result: string | null };
+  /**
+   * Setzt Dateien auf den letzten Commit zurück, in Arbeitsordner und Index: geänderte und gelöschte wiederhergestellt,
+   * hinzugefügte aus dem Index und in den Papierkorb, Umbenennungen rückgängig.
+   */
+  'git.rollback': { params: { paths: string[] }; result: void };
+  /** Hängt den Pfad (relativ zum Repository) an die .gitignore im Wurzelordner an und legt sie bei Bedarf an. */
+  'git.addToGitignore': { params: { path: string }; result: void };
+  /** Ansicht des Werkzeugfensters „Commit“ (im Projekt-Zustand). */
+  'project.commitView': { params: void; result: { groupByDirectory: boolean } };
+  'project.setCommitView': { params: { groupByDirectory: boolean }; result: void };
   /** Vorschläge an einer Stelle (Ticket 13); `incomplete`: beim Weitertippen neu fragen. */
   'language.completion': {
     params: { path: string; line: number; character: number; triggerCharacter?: string };

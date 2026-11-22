@@ -80,6 +80,8 @@ interface ProjectViewProps {
   openedFile: string | null;
   /** „Open in Terminal“: ein Terminal im Ordner (bzw. im Ordner der Datei). */
   onOpenInTerminal: (path: string) => void;
+  /** Git-Zustand einer Datei für ihre Farbe (Ticket 16): modified, added, unversioned, ignored, conflict … */
+  gitStatusOf?: (path: string) => string | undefined;
 }
 
 interface ContextMenu {
@@ -88,7 +90,7 @@ interface ContextMenu {
   viaKeyboard: boolean;
 }
 
-export function ProjectView({ api, project, notify, onHide, onOpenFile, openedFile, onOpenInTerminal }: ProjectViewProps) {
+export function ProjectView({ api, project, notify, onHide, onOpenFile, openedFile, onOpenInTerminal, gitStatusOf }: ProjectViewProps) {
   const root = project.path;
   const rootKey = pathKey(root);
   const ask = useAsk();
@@ -850,7 +852,8 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile, openedFi
                 aria-expanded={row.isDirectory ? row.expanded : undefined}
                 aria-selected={selection.has(row.key)}
                 aria-description={row.blockedLink ? BLOCKED_LINK_HINTS[row.blockedLink] : undefined}
-                className={['file-tree-row', selection.has(row.key) && 'selected', index === leadIndex && 'lead', row.blockedLink && 'blocked']
+                data-git={gitStatusOf?.(row.path)}
+                className={['file-tree-row', selection.has(row.key) && 'selected', index === leadIndex && 'lead', row.blockedLink && 'blocked', gitStatusOf?.(row.path) && `git-${gitStatusOf(row.path)}`]
                   .filter(Boolean)
                   .join(' ')}
                 style={{ top: index * TREE_ROW_HEIGHT, paddingLeft: 6 + row.depth * 18 }}

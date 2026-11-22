@@ -89,9 +89,18 @@ describe('TypeScript im Editor', () => {
       await expect.poll(() => page.getByLabel('Line and column').innerText()).toBe('6:17');
 
       // Ctrl + Linksklick auf die Deklaration selbst: die Verwendungen als Auswahl.
-      await ctrlClick(page, 'double', /export function/);
       const peek = page.locator('.editor-host .zone-widget .ref-tree');
-      await peek.waitFor({ timeout: 15_000 });
+      // Unter Last kann der erste Klick vor der Antwort des Servers kommen: wiederholen, bis die Auswahl da ist.
+      await expect
+        .poll(
+          async () => {
+            if ((await peek.count()) === 0) await ctrlClick(page, 'double', /export function/).catch(() => {});
+            await page.waitForTimeout(500);
+            return peek.count();
+          },
+          { timeout: 30_000, interval: 500 },
+        )
+        .toBeGreaterThan(0);
       await expect.poll(() => peek.innerText()).toContain('main.ts');
       await page.keyboard.press('Escape');
 

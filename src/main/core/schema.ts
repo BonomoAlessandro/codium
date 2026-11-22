@@ -81,6 +81,8 @@ export interface ProjectState {
   recentFiles?: string[];
   /** Gemerkte Ansicht je Markdown-Datei, Schlüssel wie bei `cursors`; höchstens `MAX_CURSORS`. */
   markdownViews?: Record<string, MarkdownView>;
+  /** Werkzeugfenster „Commit“: nach Ordnern gruppiert (Ticket 16). */
+  commitGroupByDirectory?: boolean;
   /**
    * Cursor und Scrollstand je Datei, Schlüssel wie bei `tabs` (unter Windows klein geschrieben, damit eine andere
    * Schreibweise derselben Datei keinen zweiten Eintrag anlegt). Die zuletzt geänderten stehen am Ende; es bleiben
@@ -265,6 +267,7 @@ export function normalizeProjectState(projectPath: string, raw: Record<string, u
     ...(cursors ? { cursors } : {}),
     ...(recentFiles ? { recentFiles } : {}),
     ...(markdownViews ? { markdownViews } : {}),
+    ...(typeof raw.commitGroupByDirectory === 'boolean' ? { commitGroupByDirectory: raw.commitGroupByDirectory } : {}),
   };
 }
 

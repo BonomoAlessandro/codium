@@ -12,6 +12,8 @@ import { moveSelection } from '../search/searchResults';
 
 /** Die Aktionen des Menüs; der Aufrufer speichert vorher alle Tabs und zeigt Fehler. */
 export interface BranchActions {
+  /** „Commit…“: die Änderungsansicht (Ticket 16). */
+  commit(): void;
   newBranch(from?: string): void;
   checkout(name: string): void;
   checkoutRemote(name: string): void;
@@ -61,7 +63,10 @@ export function BranchPopup({ api, state, actions, onClose }: BranchPopupProps) 
     const local = (branches?.local ?? []).filter((b) => match(b.name));
     const remote = (branches?.remote ?? []).filter((b) => match(b.name));
     const result: Row[] = [];
-    if (q === '') result.push({ kind: 'action', label: 'New Branch…', run: () => actions.newBranch() });
+    if (q === '') {
+      result.push({ kind: 'action', label: 'Commit…', run: () => actions.commit() });
+      result.push({ kind: 'action', label: 'New Branch…', run: () => actions.newBranch() });
+    }
     if (local.length > 0) result.push({ kind: 'header', label: 'Local' }, ...local.map((b): Row => ({ kind: 'local', ...b })));
     if (remote.length > 0) result.push({ kind: 'header', label: 'Remote' }, ...remote.map((b): Row => ({ kind: 'remote', name: b.name })));
     return result;
@@ -148,7 +153,7 @@ export function BranchPopup({ api, state, actions, onClose }: BranchPopupProps) 
             </div>
           ) : (
             <div
-              key={row.kind === 'action' ? 'action' : `${row.kind}:${row.name}`}
+              key={row.kind === 'action' ? `action:${row.label}` : `${row.kind}:${row.name}`}
               data-row={i}
               role="option"
               aria-selected={i === selectedRow}

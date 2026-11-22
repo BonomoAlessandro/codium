@@ -27,6 +27,8 @@ export interface GitServiceOptions {
   git: string | null;
   /** Umgebung für Git; ohne Angabe die des Prozesses. */
   env?: NodeJS.ProcessEnv;
+  /** In den Papierkorb (Port „Shell-Aktionen“), für Rollback hinzugefügter Dateien. */
+  trash: (file: string) => Promise<void>;
   log: (message: string) => void;
 }
 
@@ -66,7 +68,11 @@ export class GitService {
     project.onDispose(() => this.dispose());
     project.subscribe('git.dataChanged', () => this.scheduleRefresh());
     project.subscribe('files.changed', () => this.scheduleRefresh());
-    project.subscribe('files.operation', () => this.scheduleRefresh());
+    project.subscribe('files.operation', (op) => {
+      // Umbenennen im Dateibaum: bei einer versionierten Datei im Index vormerken, damit Git die Umbenennung sieht.
+      if (op.kind === 'renamed') void this.recordRename(op.from, op.to);
+      this.scheduleRefresh();
+    });
     if (options.git) this.firstRead = this.refresh();
   }
 
@@ -143,7 +149,8 @@ export class GitService {
     this.gitDir = path.normalize(gitDir);
     // Worktrees: HEAD und Index im eigenen Git-Verzeichnis, Refs im gemeinsamen des Haupt-Repositorys.
     this.watchGitDir([...new Set([this.gitDir, path.normalize(common)])]);
-    const status = await this.run(['--no-optional-locks', 'status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all', '--', '.'], {
+    // Mit ignorierten Dateien (für die Farben im Dateibaum; ein ignorierter Ordner wie node_modules als ein Eintrag, nicht jede Datei darin).
+    const status = await this.run(['--no-optional-locks', 'status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all', '--ignored=matching', '--', '.'], {
       background: true,
     });
     if (status.code !== 0) return this.publish({ ...NO_REPOSITORY, repository: true, root: this.root });
@@ -294,6 +301,116 @@ export class GitService {
     return false;
   }
 
+  // ---------- Commit, Rollback, .gitignore (Ticket 16) ----------
+
+  async commit(params: CommandParams<'git.commit'>): Promise<void> {
+    const p = params as Partial<CommandParams<'git.commit'>>;
+    if (typeof p?.message !== 'string' || !Array.isArray(p.paths) || p.paths.some((x) => typeof x !== 'string')) {
+      throw new CommandError('Paths and a message are expected.', ErrorCode.invalidParams);
+    }
+    const message = p.message.trim();
+    if (message === '') throw new CommandError('Enter a commit message.', ErrorCode.invalidParams);
+    await this.requireRepository();
+    const paths = p.paths.map((x) => this.project.files.lexicalPath(x));
+    if (paths.length === 0 && p.amend !== true) throw new CommandError('Select the files to commit.', ErrorCode.invalidParams);
+    await this.serial(async () => {
+      const status = await this.readState();
+      const byKey = new Map(status.files.map((f) => [f.path.toLowerCase(), f]));
+      // Nicht versionierte zuerst in den Index; zu Umbenennungen gehört der alte Pfad dazu.
+      const untracked = paths.filter((x) => byKey.get(x.toLowerCase())?.index === '?');
+      const all = new Set(paths);
+      for (const x of paths) {
+        const orig = byKey.get(x.toLowerCase())?.origPath;
+        if (orig) all.add(orig);
+      }
+      if (untracked.length > 0) {
+        const added = await this.run(['add', '--', ...untracked.map((x) => this.relative(x))]);
+        if (added.code !== 0) throw this.failure(added);
+      }
+      // `--only`: nur diese Pfade, vorbereitete Einträge anderer Dateien bleiben im Index.
+      const args = ['commit', '--only', '-m', message, ...(p.amend === true ? ['--amend'] : []), ...(all.size > 0 ? ['--', ...[...all].map((x) => this.relative(x))] : [])];
+      const result = await this.run(args);
+      await this.refresh();
+      if (result.code !== 0) throw this.failure(result);
+    });
+  }
+
+  async lastMessage(): Promise<string | null> {
+    await this.requireRepository();
+    const result = await this.run(['log', '-1', '--format=%B'], { background: true });
+    return result.code === 0 ? result.stdout.replace(/\s+$/, '') : null;
+  }
+
+  async rollback(params: CommandParams<'git.rollback'>): Promise<void> {
+    const p = params as Partial<CommandParams<'git.rollback'>>;
+    if (!Array.isArray(p?.paths) || p.paths.length === 0) throw new CommandError('Paths are expected.', ErrorCode.invalidParams);
+    await this.requireRepository();
+    const paths = p.paths.map((x) => this.project.files.lexicalPath(x));
+    await this.serial(async () => {
+      const status = await this.readState();
+      const byKey = new Map(status.files.map((f) => [f.path.toLowerCase(), f]));
+      const restore = new Set<string>();
+      const removeAdded: string[] = [];
+      for (const x of paths) {
+        const file = byKey.get(x.toLowerCase());
+        if (!file || file.index === '?' || file.index === '!') continue;
+        if (file.origPath) {
+          // Umbenennung rückgängig: der alte Pfad aus dem letzten Commit, der neue fort.
+          restore.add(file.origPath);
+          removeAdded.push(file.path);
+        } else if (file.index === 'A') {
+          removeAdded.push(file.path);
+        } else {
+          restore.add(file.path);
+        }
+      }
+      if (removeAdded.length > 0) {
+        const removed = await this.run(['rm', '--cached', '--quiet', '-r', '--', ...removeAdded.map((x) => this.relative(x))]);
+        if (removed.code !== 0) throw this.failure(removed);
+        for (const file of removeAdded) {
+          if (fs.existsSync(file)) await this.options.trash(file);
+        }
+      }
+      if (restore.size > 0) {
+        const restored = await this.run(['restore', '--source=HEAD', '--staged', '--worktree', '--', ...[...restore].map((x) => this.relative(x))]);
+        if (restored.code !== 0) throw this.failure(restored);
+      }
+      await this.refresh();
+    });
+  }
+
+  async addToGitignore(params: CommandParams<'git.addToGitignore'>): Promise<void> {
+    await this.requireRepository();
+    const target = this.project.files.lexicalPath((params as { path?: unknown } | undefined)?.path);
+    const root = this.root!;
+    const isDir = fs.existsSync(target) && fs.statSync(target).isDirectory();
+    const entry = `/${path.relative(root, target).split(path.sep).join('/')}${isDir ? '/' : ''}`;
+    const file = path.join(root, '.gitignore');
+    const current = fs.existsSync(file) ? await fs.promises.readFile(file, 'utf8') : '';
+    if (current.split(/\r?\n/).includes(entry)) return;
+    const newline = current.includes('\r\n') ? '\r\n' : '\n';
+    const prefix = current === '' || current.endsWith('\n') ? '' : newline;
+    await fs.promises.writeFile(file, `${current}${prefix}${entry}${newline}`, 'utf8');
+    await this.refresh();
+  }
+
+  /** Merkt eine Umbenennung einer versionierten Datei im Index vor (Ticket 16). */
+  private async recordRename(from: string, to: string): Promise<void> {
+    if (!this.root || this.disposed) return;
+    const tracked = await this.run(['ls-files', '--error-unmatch', '--', this.relative(from)], { background: true });
+    if (tracked.code !== 0) return;
+    await this.serial(async () => {
+      await this.run(['rm', '-r', '--cached', '--quiet', '--', this.relative(from)]);
+      await this.run(['add', '--', this.relative(to)]);
+    });
+    this.scheduleRefresh();
+  }
+
+  /** Pfad relativ zum Projektordner (dem Arbeitsordner von Git), mit „/“. */
+  private relative(file: string): string {
+    return path.relative(this.project.path, file).split(path.sep).join('/') || '.';
+  }
+
   // ---------- Aufrufe ----------
 
   /** Eine schreibende Aktion: nacheinander, mit Fehler im Wortlaut von Git, danach neuer Zustand. */
@@ -438,6 +555,9 @@ export function parseStatus(output: string, root: string): GitState {
       state.files.push({ path: path.join(root, parts.slice(10).join(' ')), index: 'U', worktree: 'U', conflict: true });
     } else if (line.startsWith('? ')) {
       state.files.push({ path: path.join(root, line.slice(2)), index: '?', worktree: '?' });
+    } else if (line.startsWith('! ')) {
+      // Ignoriert; ein Ordner endet mit „/“.
+      state.files.push({ path: path.join(root, line.slice(2).replace(/\/$/, '')), index: '!', worktree: '!' });
     }
   }
   if (state.branch === null && oid && oid !== '(initial)') state.detached = oid.slice(0, 8);

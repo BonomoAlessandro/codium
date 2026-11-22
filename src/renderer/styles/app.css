@@ -1817,3 +1817,110 @@ kbd {
   white-space: pre-wrap;
   color: var(--text-muted);
 }
+
+/* ---------- Commit und Git-Farben (Ticket 16) ---------- */
+
+/* Farben wie in IntelliJ „Dark“: geändert blau, neu grün, nicht versioniert rotbraun, ignoriert grau, Konflikt rot. */
+.git-modified,
+.git-renamed {
+  color: #6897bb;
+}
+
+.git-added {
+  color: #629755;
+}
+
+.git-deleted,
+.git-ignored {
+  color: #6f737a;
+}
+
+.git-unversioned {
+  color: #d1675a;
+}
+
+.git-conflict {
+  color: #f75464;
+}
+
+.commit-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.commit-changes {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 6px;
+  overflow: auto;
+}
+
+.commit-group,
+.commit-file,
+.commit-folder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  white-space: nowrap;
+}
+
+.commit-group {
+  font-weight: 600;
+}
+
+.commit-count,
+.commit-file-folder,
+.commit-folder {
+  color: var(--text-muted);
+}
+
+.commit-file {
+  padding-left: 18px;
+}
+
+.commit-file.nested {
+  padding-left: 34px;
+}
+
+.commit-folder {
+  padding-left: 18px;
+}
+
+.commit-file-folder {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.commit-message-area {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.commit-message {
+  min-height: 70px;
+  padding: 6px;
+  color: var(--text);
+  font: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.commit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.commit-option {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+}

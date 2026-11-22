@@ -53,6 +53,18 @@ export function registerFileCommands(register: RegisterProjectCommand): void {
   register('git.renameBranch', (project, params) => project.git.renameBranch(params));
   register('git.deleteBranch', (project, params) => project.git.deleteBranch(params));
   register('git.console', (project) => project.git.console());
+  register('git.commit', (project, params) => project.git.commit(params));
+  register('git.lastMessage', (project) => project.git.lastMessage());
+  register('git.rollback', (project, params) => project.git.rollback(params));
+  register('git.addToGitignore', (project, params) => project.git.addToGitignore(params));
+  register('project.commitView', (project) => ({ groupByDirectory: project.state.commitGroupByDirectory === true }));
+  register('project.setCommitView', (project, params) => {
+    const value = (params as { groupByDirectory?: unknown } | undefined)?.groupByDirectory;
+    if (typeof value !== 'boolean') throw new CommandError('A boolean is expected.', ErrorCode.invalidParams);
+    project.updateState((state) => {
+      state.commitGroupByDirectory = value;
+    });
+  });
   register('project.expandedFolders', (project) => expandedFolders(project));
   register('project.setExpandedFolders', (project, params) => setExpandedFolders(project, params));
 }
