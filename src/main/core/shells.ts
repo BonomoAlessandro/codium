@@ -1,6 +1,7 @@
 // Die Shells fürs Terminal (Ticket 11): PowerShell 7, Windows PowerShell, cmd und Git Bash, über den Port „System“
 // gesucht. Standard ist PowerShell 7, sonst Windows PowerShell. Lädt nie Electron und kein node-pty.
 
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ShellId, ShellInfo } from '../../shared/types';
 import type { SystemPort } from './ports';
@@ -46,6 +47,11 @@ function gitBash(system: SystemPort, programFiles: string[]): string | null {
     candidates.push(path.join(root, 'bin', 'bash.exe'));
   }
   for (const p of programFiles) candidates.push(path.join(p, 'Git', 'bin', 'bash.exe'));
+  // Installation nur für den Benutzer und Scoop (dort ist git.exe ein Shim unter scoop\shims; Review von Ticket 11).
+  const local = system.getEnv('LOCALAPPDATA');
+  if (local) candidates.push(path.join(local, 'Programs', 'Git', 'bin', 'bash.exe'));
+  const profile = system.getEnv('USERPROFILE');
+  if (profile) candidates.push(path.join(profile, 'scoop', 'apps', 'git', 'current', 'bin', 'bash.exe'));
   return candidates.find((c) => system.exists(c)) ?? null;
 }
 
@@ -79,14 +85,17 @@ const DROPPED = /^(npm_|ELECTRON_|CODIUM_)/i;
  * PowerShell dort sonst deren Fassung von Modulen wie Microsoft.PowerShell.Security und könnte sie nicht laden
  * (Erfahrung aus THub). PowerShell 7 ergänzt seine Ordner beim Start selbst wieder.
  */
-export function shellEnvironment(inherited: NodeJS.ProcessEnv): Record<string, string> {
+export function shellEnvironment(inherited: NodeJS.ProcessEnv, isFile: (file: string) => boolean = fs.existsSync): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(inherited)) {
     if (value === undefined || DROPPED.test(key)) continue;
     if (key.toUpperCase() === 'PSMODULEPATH') {
       const kept = value
         .split(';')
-        .filter((dir) => dir !== '' && !/[\\/]PowerShell[\\/](7[\\/])?Modules[\\/]?$/i.test(dir));
+        .map((dir) => dir.trim())
+        // Benutzer- und gemeinsamer Modulordner von PowerShell 7 sowie `$PSHOME\Modules` (neben einem pwsh.exe, auch
+        // 7-preview und Store-Installationen; wie in THub).
+        .filter((dir) => dir !== '' && !/[\\/]PowerShell[\\/]Modules[\\/]?$/i.test(dir) && !isFile(path.join(path.dirname(dir.replace(/[\\/]+$/, '')), 'pwsh.exe')));
       if (kept.length > 0) env[key] = kept.join(';');
       continue;
     }

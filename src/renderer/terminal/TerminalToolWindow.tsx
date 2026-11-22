@@ -33,6 +33,11 @@ interface TerminalToolWindowProps {
   fontSize: number;
   onHide: () => void;
   notify: (notice: { level: 'error'; text: string }) => void;
+  /**
+   * Ein Ordner aus „Open in Terminal“, der kam, bevor das Werkzeugfenster eingehängt war (Review von Ticket 11): Das
+   * erste Terminal startet dann dort statt im Projektordner.
+   */
+  takePendingCwd: () => string | undefined;
 }
 
 interface TerminalTab {
@@ -42,7 +47,7 @@ interface TerminalTab {
 }
 
 export const TerminalToolWindow = forwardRef<TerminalToolWindowHandle, TerminalToolWindowProps>(function TerminalToolWindow(
-  { api, visible, fontSize, onHide, notify },
+  { api, visible, fontSize, onHide, notify, takePendingCwd },
   ref,
 ) {
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
@@ -61,10 +66,12 @@ export const TerminalToolWindow = forwardRef<TerminalToolWindowHandle, TerminalT
 
   useImperativeHandle(ref, () => ({ open: (cwd) => add(cwd) }), [add]);
 
-  // Beim Zeigen ohne Terminal: eines im Projektordner.
+  // Beim Zeigen ohne Terminal: eines im Projektordner (bzw. im Ordner aus „Open in Terminal“).
   useEffect(() => {
-    if (visible && tabsRef.current.length === 0) add();
-  }, [visible, add]);
+    if (visible && tabsRef.current.length === 0) add(takePendingCwd());
+  }, [visible, add, takePendingCwd]);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
 
   // Das aktive Terminal bekommt den Fokus, wenn das Werkzeugfenster erscheint oder der Tab wechselt.
   useEffect(() => {
@@ -73,11 +80,16 @@ export const TerminalToolWindow = forwardRef<TerminalToolWindowHandle, TerminalT
 
   const remove = useCallback(
     (key: number) => {
-      const remaining = tabsRef.current.filter((t) => t.key !== key);
       const index = tabsRef.current.findIndex((t) => t.key === key);
+      if (index < 0) return;
+      const remaining = tabsRef.current.filter((t) => t.key !== key);
+      // Sofort, damit ein zweiter Aufruf vor dem nächsten Zeichnen keinen entfernten Tab zurückholt.
+      tabsRef.current = remaining;
       setTabs(remaining);
       setActive((current) => (current !== key ? current : (remaining[Math.min(index, remaining.length - 1)]?.key ?? null)));
-      if (remaining.length === 0) onHide();
+      // Mit dem letzten Tab verschwindet das Werkzeugfenster, aber nur, wenn es das sichtbare ist: Endet eine Shell im
+      // Hintergrund, bleibt etwa „Git“ stehen (Review von Ticket 11).
+      if (remaining.length === 0 && visibleRef.current) onHide();
     },
     [onHide],
   );

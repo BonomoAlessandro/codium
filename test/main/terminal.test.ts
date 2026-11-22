@@ -106,9 +106,11 @@ describe('Shells fürs Terminal', () => {
       CODIUM_TEST_HIDDEN: '1',
       ELECTRON_RUN_AS_NODE: '1',
       npm_lifecycle_event: 'test',
-      PSModulePath: 'C:\\Users\\a\\Documents\\PowerShell\\Modules;C:\\Program Files\\PowerShell\\7\\Modules;C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules',
+      // Dazu $PSHOME\Modules einer Vorschau-Fassung: Neben ihm liegt ein pwsh.exe (wie in THub).
+      PSModulePath:
+        ' C:\\Users\\a\\Documents\\PowerShell\\Modules;C:\\Program Files\\PowerShell\\7-preview\\Modules;C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules',
       EMPTY: undefined,
-    });
+    }, (file) => file === 'C:\\Program Files\\PowerShell\\7-preview\\pwsh.exe');
     expect(env).toEqual({
       PATH: 'C:\\bin',
       PSModulePath: 'C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules',

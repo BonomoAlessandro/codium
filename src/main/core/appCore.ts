@@ -98,6 +98,8 @@ export interface AppCoreOptions {
   fileProgressDelayMs?: number;
   /** Pfad zu ripgrep (mitgeliefert, im Paket ausserhalb des App-Archivs). */
   ripgrepPath: string;
+  /** Terminals gleich über die ConPTY von Windows statt der mitgelieferten (Tests des Rückfallwegs). */
+  windowsConpty?: boolean;
   /** Pfad zum mitgelieferten README (im Paket ausserhalb des App-Archivs), für „Open README“. */
   readmePath?: string;
   /** Umgebung für gestartete Programme (Git); ohne Angabe die des Prozesses. Tests schirmen damit die Git-Konfiguration ab. */
@@ -157,6 +159,11 @@ export class AppCore {
     this.ports.windows.onSessionEnd(() => void this.quit());
     this.ports.windows.onCloseRequested((windowId) => this.closeRequested(windowId));
     this.registerCommands();
+  }
+
+  /** Der Projekt-Kern eines Fensters (für Tests, etwa um laufende Sprachserver zu prüfen). */
+  projectCore(windowId: number): ProjectCore | undefined {
+    return this.projects.get(windowId);
   }
 
   /** Eine Kopie des App-Zustands. */
@@ -832,6 +839,7 @@ export class AppCore {
       terminal: {
         shell: () => shellFor(detectShells(this.ports.system), this.appState.settings.terminalShell),
         env: this.options.processEnv,
+        ...(this.options.windowsConpty ? { bundledConpty: false } : {}),
       },
     });
     this.projects.set(windowId, core);

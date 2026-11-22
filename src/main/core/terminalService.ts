@@ -9,7 +9,7 @@
 
 import * as pty from 'node-pty';
 import { ErrorCode, type CommandParams, type CommandResult, type ShellInfo } from '../../shared/types';
-import { killProcessTree } from './processTree';
+import { consoleHostsOf, killProcessTree } from './processTree';
 import type { ProjectCore } from './projectCore';
 import { CommandError } from './router';
 import { shellArgs, shellEnvironment } from './shells';
@@ -26,16 +26,22 @@ export interface TerminalServiceOptions {
   /** Grundumgebung der Shells; ohne Angabe die des Prozesses. */
   env?: NodeJS.ProcessEnv;
   log: (message: string) => void;
+  /** `false`: gleich die ConPTY von Windows (der Rückfallweg; für Tests). */
+  bundledConpty?: boolean;
 }
 
 interface Terminal {
   proc: pty.IPty;
   exited: Promise<void>;
+  /** Ob Codium die Shell beendet (dann schliesst `kill` die Pseudokonsole). */
+  killed: boolean;
+  /** conhost.exe der Pseudokonsole (nur mit der ConPTY von Windows). */
+  host?: number;
 }
 
 /** Was node-pty 1.1.0 intern hat und hier gebraucht wird; jedes Feld kann in einer anderen Version fehlen. */
 interface PtyInternals {
-  _agent?: { _getConsoleProcessList?: () => Promise<number[]> };
+  _agent?: { _getConsoleProcessList?: () => Promise<number[]>; _conoutSocketWorker?: { dispose?: () => void } };
 }
 
 export class TerminalService {
@@ -49,6 +55,7 @@ export class TerminalService {
     private readonly project: ProjectCore,
     private readonly options: TerminalServiceOptions,
   ) {
+    this.bundledConpty = options.bundledConpty ?? true;
     project.onDispose(() => this.closeAll());
   }
 
@@ -61,17 +68,32 @@ export class TerminalService {
     const shell = this.options.shell();
     if (!shell) throw new CommandError('No shell was found for the terminal.', ErrorCode.shellNotFound);
 
+    // Mit der ConPTY von Windows bleibt nach dem Ende der Shell ihr conhost.exe stehen; er wird hier ermittelt (vorher
+    // und nachher abfragen, wie in THub) und nach dem Ende beendet. Die mitgelieferte ConPTY endet von selbst.
+    const windowsConpty = !this.bundledConpty;
+    const hostsBefore = windowsConpty ? await consoleHostsOf(process.pid) : [];
     const proc = this.spawn(shell, cwd, cols, rows);
+    const host = windowsConpty
+      ? consoleHostsOf(process.pid).then((after) => after.filter((h) => !hostsBefore.includes(h) && ![...this.terminals.values()].some((t) => t.host === h)))
+      : Promise.resolve([]);
     const terminalId = this.nextId++;
     const exited = new Promise<void>((resolve) => {
       proc.onExit(({ exitCode }) => {
+        const own = this.terminals.get(terminalId);
         this.terminals.delete(terminalId);
+        // Endet die Shell selbst (`exit`, Absturz), schliesst node-pty die Pseudokonsole nicht: ohne Aufräumen blieben ein
+        // Worker-Thread und mit der ConPTY von Windows ein conhost.exe bis zum Ende von Codium (THub, Review von Ticket 11).
+        if (own && !own.killed) closeEndedPty(proc, host);
         this.project.emit('terminal.exit', { terminalId, exitCode });
         resolve();
       });
     });
     proc.onData((data) => this.project.emit('terminal.data', { terminalId, data }));
-    this.terminals.set(terminalId, { proc, exited });
+    const terminal: Terminal = { proc, exited, killed: false };
+    void host.then((found) => {
+      terminal.host = found[0];
+    });
+    this.terminals.set(terminalId, terminal);
     return { terminalId, shell: shell.name, cwd };
   }
 
@@ -98,6 +120,11 @@ export class TerminalService {
     if (terminal) await this.kill(terminal);
   }
 
+  /** Prozessnummer der Shell eines Terminals (für Tests). */
+  pidOf(terminalId: number): number | undefined {
+    return this.terminals.get(terminalId)?.proc.pid;
+  }
+
   /** Beendet alle Shells (beim Abbau des Projekt-Kerns). */
   private async closeAll(): Promise<void> {
     this.disposed = true;
@@ -106,6 +133,7 @@ export class TerminalService {
 
   /** Beendet die Shell samt Kindern, dann die Pseudokonsole, und wartet auf das Ende (höchstens `EXIT_WAIT_MS`). */
   private async kill(terminal: Terminal): Promise<void> {
+    terminal.killed = true;
     await killProcessTree(terminal.proc.pid);
     try {
       terminal.proc.kill();
@@ -145,6 +173,25 @@ export class TerminalService {
     return started;
   }
 }
+
+/** Nach dem Ende einer Shell: Pseudokonsole schliessen und den Worker von node-pty freigeben. */
+function closeEndedPty(proc: pty.IPty, host: Promise<number[]>): void {
+  void host.then((found) => {
+    for (const pid of found) {
+      try {
+        process.kill(pid);
+      } catch {
+        // Schon beendet.
+      }
+    }
+  });
+  try {
+    (proc as unknown as PtyInternals)._agent?._conoutSocketWorker?.dispose?.();
+  } catch {
+    // Schon aufgeräumt.
+  }
+}
+
 
 function terminalIdOf(params: { terminalId?: unknown } | undefined): number {
   const id = params?.terminalId;

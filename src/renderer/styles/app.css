@@ -1702,7 +1702,9 @@ kbd {
   align-items: center;
   gap: 2px;
   min-width: 0;
-  overflow: hidden;
+  /* Viele Tabs: waagrecht blättern, „+“ bleibt erreichbar. */
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .terminal-tab-rename {

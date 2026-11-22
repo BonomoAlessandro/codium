@@ -111,6 +111,12 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
   const settings = useSettings(api);
   const editorRef = useRef<EditorAreaHandle>(null);
   const terminalRef = useRef<TerminalToolWindowHandle>(null);
+  const pendingTerminalCwd = useRef<string | undefined>(undefined);
+  const takePendingTerminalCwd = useCallback(() => {
+    const cwd = pendingTerminalCwd.current;
+    pendingTerminalCwd.current = undefined;
+    return cwd;
+  }, []);
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [status, setStatus] = useState<EditorStatus | null>(null);
   // Schliesst sich das Fenster oder endet Codium, speichert der Code-Bereich zuerst alle Tabs; der Kern wartet darauf.
@@ -229,7 +235,9 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
   const openInTerminal = useCallback(
     (path: string) => {
       // Erst den Tab anlegen: So startet das Zeigen des leeren Werkzeugfensters kein zweites Terminal.
-      flushSync(() => terminalRef.current?.open(path));
+      // Ist das Werkzeugfenster noch nicht eingehängt, übernimmt es den Ordner beim ersten Zeigen (Review von Ticket 11).
+      if (terminalRef.current) flushSync(() => terminalRef.current?.open(path));
+      else pendingTerminalCwd.current = path;
       const current = shownLayout();
       if (current) showAndFocus(current, 'terminal');
     },
@@ -446,6 +454,7 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
                 fontSize={settings.fontSize}
                 onHide={() => hide(s)}
                 notify={notify}
+                takePendingCwd={takePendingTerminalCwd}
               />
             ) : id === 'find' ? (
               <FindToolWindow

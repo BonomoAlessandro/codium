@@ -14,6 +14,10 @@ function item(page: Page, name: string): Locator {
   return page.getByRole('tree', { name: 'Project Files' }).getByRole('treeitem', { name, exact: true });
 }
 
+function terminalTabs(page: Page): Locator {
+  return page.getByRole('tablist', { name: 'Terminals' }).getByRole('tab');
+}
+
 function terminalTab(page: Page, name: string): Locator {
   return page.getByRole('tablist', { name: 'Terminals' }).getByRole('tab', { name, exact: true });
 }
@@ -24,7 +28,12 @@ async function visibleText(page: Page): Promise<string> {
 }
 
 async function focusInside(page: Page, selector: string): Promise<boolean> {
-  return page.evaluate((s) => document.activeElement?.closest(s) !== null && document.activeElement?.closest(s) !== undefined, selector);
+  return page.evaluate((s) => !!document.activeElement?.closest(s), selector);
+}
+
+/** Wartet auf die Eingabeaufforderung von cmd im sichtbaren Terminal. */
+async function prompt(page: Page): Promise<void> {
+  await expect.poll(() => visibleText(page), { timeout: 15_000 }).toMatch(/>\s*$/m);
 }
 
 describe('Terminal', () => {
@@ -42,26 +51,29 @@ describe('Terminal', () => {
     return { codium, page, alpha };
   }
 
-  it('öffnet mit Alt + F12 ein Terminal im Projektordner, führt echo aus und öffnet über den Baum ein zweites', async () => {
+  it('öffnet „Open in Terminal“ als erste Aktion im gewählten Ordner, „+“ ein weiteres im Projektordner', async () => {
     const { codium, page, alpha } = await launch();
     try {
-      await page.keyboard.press('Alt+F12');
-      await terminalTab(page, 'Local').waitFor();
-      await expect.poll(() => focusInside(page, '.terminal-view')).toBe(true);
-      await expect.poll(() => visibleText(page), { timeout: 15_000 }).toContain('>');
-      await page.keyboard.type('echo CODIUM_%OS%_[%CD%]');
-      await page.keyboard.press('Enter');
-      await expect.poll(() => visibleText(page), { timeout: 15_000 }).toContain(`CODIUM_Windows_NT_[${alpha}]`);
-
-      // „Open in Terminal“ auf einem Unterordner: ein zweites Terminal dort.
+      // Das Werkzeugfenster war in dieser Sitzung noch nie offen (Review von Ticket 11).
       await item(page, 'sub folder').click({ button: 'right' });
       await page.getByRole('menuitem', { name: 'Open in Terminal' }).click();
+      await terminalTab(page, 'Local').waitFor();
+      await expect.poll(() => focusInside(page, '.terminal-view')).toBe(true);
+      await prompt(page);
+      await page.keyboard.type('echo CODIUM_%OS%_[%CD%]');
+      await page.keyboard.press('Enter');
+      await expect.poll(() => visibleText(page), { timeout: 15_000 }).toContain(`CODIUM_Windows_NT_[${path.join(alpha, 'sub folder')}]`);
+      expect(await terminalTabs(page).count()).toBe(1);
+
+      // „+“: ein weiteres Terminal, im Projektordner.
+      await page.getByRole('button', { name: 'New Terminal' }).click();
       await terminalTab(page, 'Local (2)').waitFor();
       expect(await terminalTab(page, 'Local (2)').getAttribute('aria-selected')).toBe('true');
       await expect.poll(() => focusInside(page, '.terminal-view')).toBe(true);
+      await prompt(page);
       await page.keyboard.type('echo [%CD%]');
       await page.keyboard.press('Enter');
-      await expect.poll(() => visibleText(page), { timeout: 15_000 }).toContain(`[${path.join(alpha, 'sub folder')}]`);
+      await expect.poll(() => visibleText(page), { timeout: 15_000 }).toContain(`[${alpha}]`);
 
       // Umbenennen per Doppelklick, Schliessen beendet das Terminal.
       await terminalTab(page, 'Local (2)').dblclick();
@@ -69,35 +81,79 @@ describe('Terminal', () => {
       await page.keyboard.press('Enter');
       await terminalTab(page, 'Server').waitFor();
       await page.getByRole('button', { name: 'Close Server' }).click();
-      await expect.poll(() => page.getByRole('tablist', { name: 'Terminals' }).getByRole('tab').count()).toBe(1);
+      await expect.poll(() => terminalTabs(page).count()).toBe(1);
     } finally {
       await codium.close();
     }
   });
 
-  it('gibt Ctrl + R und Esc der Shell; Alt + 1 wechselt zum Werkzeugfenster „Project“', async () => {
+  it('gibt Esc und Fensterkürzel der Shell; Alt + 1 wechselt zum Werkzeugfenster „Project“', async () => {
     const { codium, page } = await launch();
     try {
-      // Eine Datei im Editor: Ctrl + R öffnete dort „Ersetzen“.
+      // Eine Datei im Editor: Ctrl + F4 schlösse ihren Tab, Ctrl + Shift + N öffnete „Go to File“.
       await item(page, 'notes.txt').dblclick();
       await page.locator('.editor-host .view-lines').waitFor();
       await page.keyboard.press('Alt+F12');
       await expect.poll(() => focusInside(page, '.terminal-view')).toBe(true);
-      await expect.poll(() => visibleText(page), { timeout: 15_000 }).toContain('>');
+      await prompt(page);
 
-      await page.keyboard.press('Control+r');
+      await page.keyboard.press('Control+F4');
       await page.keyboard.press('Control+Shift+n');
-      await page.keyboard.press('Escape');
       await new Promise((resolve) => setTimeout(resolve, 300));
-      // Keine IDE-Aktion: kein Suchen/Ersetzen im Editor, kein Suchfenster; Fokus und Werkzeugfenster bleiben.
-      expect(await page.locator('.editor-host .find-widget.visible').count()).toBe(0);
+      expect(await page.getByRole('tab', { name: /notes\.txt/ }).count()).toBe(1);
       expect(await page.getByRole('dialog').count()).toBe(0);
+
+      // Esc kommt bei der Shell an: cmd leert damit die Zeile.
+      await page.keyboard.type('abc');
+      await page.keyboard.press('Escape');
+      await page.keyboard.type('echo ESC_%OS%');
+      await page.keyboard.press('Enter');
+      await expect.poll(() => visibleText(page), { timeout: 15_000 }).toMatch(/^ESC_Windows_NT\s*$/m);
+      expect(await visibleText(page)).not.toContain('abcecho');
       expect(await focusInside(page, '.terminal-view')).toBe(true);
-      expect(await page.getByRole('region', { name: 'Shell: Local' }).isVisible()).toBe(true);
 
       // Alt + 1 wirkt auch im Terminal.
       await page.keyboard.press('Alt+1');
       await expect.poll(() => focusInside(page, 'section[aria-label="Project"]')).toBe(true);
+    } finally {
+      await codium.close();
+    }
+  });
+
+  it('lässt „Git“ stehen, wenn im Hintergrund die letzte Shell endet', async () => {
+    const { codium, page } = await launch();
+    try {
+      await page.keyboard.press('Alt+F12');
+      await prompt(page);
+      await page.keyboard.type('ping -n 3 127.0.0.1 >nul & exit');
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Alt+9');
+      const git = page.getByRole('region', { name: 'Git', exact: true });
+      await git.waitFor();
+      await expect.poll(() => terminalTabs(page).count(), { timeout: 15_000 }).toBe(0);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(await git.isVisible()).toBe(true);
+    } finally {
+      await codium.close();
+    }
+  });
+
+  it('zeigt im Einstellungsdialog die gefundenen Shells', async () => {
+    const { codium, page } = await launch();
+    try {
+      await page.keyboard.press('Control+Alt+S');
+      const dialog = page.getByRole('dialog', { name: 'Settings' });
+      const field = dialog.getByLabel('Terminal shell');
+      await expect
+        .poll(() => field.locator('option').allInnerTexts())
+        .toEqual(expect.arrayContaining([expect.stringMatching(/^Default \(/), expect.stringMatching(/^cmd – .*cmd\.exe$/i)]));
+      expect(await field.inputValue()).toBe('cmd');
+      await field.selectOption('');
+      await dialog.getByRole('button', { name: 'OK' }).click();
+      await expect.poll(() => dialog.count()).toBe(0);
+      await page.keyboard.press('Control+Alt+S');
+      expect(await page.getByRole('dialog', { name: 'Settings' }).getByLabel('Terminal shell').inputValue()).toBe('');
+      await page.keyboard.press('Escape');
     } finally {
       await codium.close();
     }

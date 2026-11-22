@@ -23,3 +23,19 @@ export function killProcessTree(pid: number): Promise<void> {
     killer.on('close', () => resolve());
   });
 }
+
+/** Die Konsolen-Hosts (conhost.exe), die ein Prozess gestartet hat; leer, wenn die Abfrage scheitert. */
+export function consoleHostsOf(parentPid: number): Promise<number[]> {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32') {
+      resolve([]);
+      return;
+    }
+    const query = `Get-CimInstance Win32_Process -Filter "ParentProcessId=${parentPid} AND Name='conhost.exe'" | ForEach-Object { $_.ProcessId }`;
+    const child = spawn('powershell', ['-NoProfile', '-NonInteractive', '-Command', query], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    let out = '';
+    child.stdout.on('data', (chunk: Buffer) => (out += chunk.toString('utf8')));
+    child.on('error', () => resolve([]));
+    child.on('close', () => resolve(out.split(/\r?\n/).map((l) => Number(l.trim())).filter((n) => n > 0)));
+  });
+}

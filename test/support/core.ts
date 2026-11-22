@@ -32,6 +32,8 @@ export interface TestCoreOptions {
   flushTimeoutMs?: number;
   /** Ab dieser Dauer zeigt eine Dateioperation Fortschritt (Standard des Kerns: 1 s). */
   fileProgressDelayMs?: number;
+  /** Terminals über die ConPTY von Windows (Rückfallweg). */
+  windowsConpty?: boolean;
 }
 
 /** Erzeugt einen App-Kern auf einem Datenordner, mit nachgemachten Ports und sofortigem Schreiben. */
@@ -51,6 +53,7 @@ export function createTestCore(dataDir: string, options: TestCoreOptions = {}): 
     ripgrepPath: ripgrepPath(path.resolve(__dirname, '..', '..'), false),
     readmePath: path.resolve(__dirname, '..', '..', 'README.md'),
     processEnv: options.processEnv,
+    ...(options.windowsConpty ? { windowsConpty: true } : {}),
     folderQueryTimeoutMs: options.folderQueryTimeoutMs,
     log: (message) => logs.push(message),
   });
