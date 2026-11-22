@@ -5,7 +5,20 @@
 
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
-import { ErrorCode, type CommandParams, type DbColumn, type DbConnection, type DbConnectionInput, type DbRelation } from '../../../shared/types';
+import {
+  ErrorCode,
+  type CommandParams,
+  type DbChangeSet,
+  type DbColumn,
+  type DbConnection,
+  type DbConnectionInput,
+  type DbRelation,
+  type DbRowsPage,
+  type DbSort,
+  type DbTableColumn,
+  type DbTableInfo,
+  type DbValue,
+} from '../../../shared/types';
 import type { SecretsPort } from '../ports';
 import type { ProjectCore } from '../projectCore';
 import { CommandError } from '../router';
@@ -19,6 +32,8 @@ export interface DatabaseServiceOptions {
 }
 
 const POOL_SIZE = 3;
+/** Zeilen je Seite im Tabelleninhalt. */
+const TABLE_PAGE = 500;
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 
 /** Alle Werte als Text, wie PostgreSQL sie schickt (grosse Zahlen, Zeitzonen, Genauigkeit bleiben erhalten). */
@@ -164,6 +179,188 @@ export class DatabaseService {
     );
     // Die Werte kommen als Text (siehe TEXT_TYPES): Wahrheitswerte als „true“/„false“.
     return rows.map((r) => ({ name: r.name, type: r.type, nullable: r.nullable === 'true', primaryKey: r.primary_key === 'true' }));
+  }
+
+  // ---------- Tabelleninhalt und Bearbeiten (Ticket 21) ----------
+
+  /** Aufbau: Spalten (bytea und JSON erkannt), Primärschlüssel in seiner Reihenfolge, Schreibschutz mit Grund. */
+  async tableInfo(params: CommandParams<'db.tableInfo'>): Promise<DbTableInfo> {
+    const p = params as Partial<CommandParams<'db.tableInfo'>>;
+    return this.describe(this.find(p?.id), identifier(p.schema, 'schema'), identifier(p.table, 'table'));
+  }
+
+  private async describe(connection: StoredDbConnection, schema: string, table: string): Promise<DbTableInfo> {
+    const rows = await this.query<{ name: string; type: string; base: string; nullable: string; pk_position: string | null; relkind: string }>(
+      connection,
+      `SELECT a.attname AS name,
+              pg_catalog.format_type(a.atttypid, a.atttypmod) AS type,
+              t.typname AS base,
+              (NOT a.attnotnull)::text AS nullable,
+              (SELECT array_position(i.indkey::int2[], a.attnum) FROM pg_catalog.pg_index i
+                WHERE i.indrelid = c.oid AND i.indisprimary)::text AS pk_position,
+              c.relkind::text AS relkind
+         FROM pg_catalog.pg_attribute a
+         JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+         JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
+        WHERE n.nspname = $1 AND c.relname = $2 AND a.attnum > 0 AND NOT a.attisdropped
+        ORDER BY a.attnum`,
+      [schema, table],
+    );
+    if (rows.length === 0) throw new CommandError(`The table ${schema}.${table} no longer exists.`, ErrorCode.dbFailed);
+    const kind = rows[0].relkind === 'v' || rows[0].relkind === 'm' ? 'view' : 'table';
+    const primaryKey = rows
+      .filter((r) => r.pk_position !== null)
+      .sort((a, b) => Number(a.pk_position) - Number(b.pk_position))
+      .map((r) => r.name);
+    const columns: DbTableColumn[] = rows.map((r) => ({
+      name: r.name,
+      type: r.type,
+      nullable: r.nullable === 'true',
+      primaryKey: r.pk_position !== null,
+      binary: r.base === 'bytea',
+      json: r.base === 'json' || r.base === 'jsonb',
+    }));
+    const readOnlyReason =
+      kind === 'view'
+        ? 'Views are read-only.'
+        : primaryKey.length === 0
+          ? 'This table has no primary key, so rows cannot be identified safely. It is read-only.'
+          : undefined;
+    return { kind, columns, primaryKey, ...(readOnlyReason ? { readOnlyReason } : {}) };
+  }
+
+  /** Eine Seite zu 500 Zeilen; Werte als Text, bytea als Länge. */
+  async tableRows(params: CommandParams<'db.tableRows'>): Promise<DbRowsPage> {
+    const p = params as Partial<CommandParams<'db.tableRows'>>;
+    const connection = this.find(p?.id);
+    const schema = identifier(p.schema, 'schema');
+    const table = identifier(p.table, 'table');
+    const offset = p.offset ?? 0;
+    if (typeof offset !== 'number' || !Number.isInteger(offset) || offset < 0) throw new CommandError('A row offset is expected.', ErrorCode.invalidParams);
+    if (p.filter !== undefined && typeof p.filter !== 'string') throw new CommandError('The filter must be a text.', ErrorCode.invalidParams);
+    const info = await this.describe(connection, schema, table);
+    const names = new Set(info.columns.map((c) => c.name));
+    let order: string[];
+    if (p.sort !== undefined) {
+      const sort = p.sort as Partial<DbSort> | null;
+      if (!sort || typeof sort.column !== 'string' || !names.has(sort.column) || (sort.direction !== 'asc' && sort.direction !== 'desc')) {
+        throw new CommandError('Not a valid sort column.', ErrorCode.invalidParams);
+      }
+      // Gleiche Werte in der gewählten Spalte: der Primärschlüssel hält die Seiten stabil.
+      order = [`${quoteIdent(sort.column)} ${sort.direction === 'asc' ? 'ASC' : 'DESC'}`, ...info.primaryKey.filter((k) => k !== sort.column).map(quoteIdent)];
+    } else {
+      order = info.primaryKey.map(quoteIdent);
+    }
+    const select = info.columns.map((c) => (c.binary ? `octet_length(${quoteIdent(c.name)})::text` : quoteIdent(c.name))).join(', ');
+    const filter = p.filter?.trim();
+    // Der Filter ist die WHERE-Bedingung des Nutzers, unverändert (seine eigene Datenbank, Spezifikation).
+    const sql =
+      `SELECT ${select} FROM ${quoteIdent(schema)}.${quoteIdent(table)}` +
+      (filter ? `\nWHERE (${filter}\n)` : '') +
+      (order.length > 0 ? ` ORDER BY ${order.join(', ')}` : '') +
+      ` LIMIT ${TABLE_PAGE + 1} OFFSET ${offset}`;
+    const pool = await this.poolFor(connection);
+    try {
+      const result = await pool.query<DbValue[]>({ text: sql, rowMode: 'array' });
+      const rows = result.rows.slice(0, TABLE_PAGE);
+      return { rows, hasMore: result.rows.length > TABLE_PAGE };
+    } catch (err) {
+      throw this.failure(connection, err);
+    }
+  }
+
+  /**
+   * Speichert einen Änderungssatz in einer Transaktion mit Parametern. Updates treffen die Zeile über den
+   * Primärschlüssel und die ursprünglichen Werte der geänderten Spalten (Textdarstellung, NULL-sicher), Deletes über den
+   * Primärschlüssel; trifft eine Anweisung keine Zeile, bricht alles ab. Bei jedem Fehler wird zurückgerollt.
+   */
+  async submitChanges(params: CommandParams<'db.submitChanges'>): Promise<void> {
+    const p = params as Partial<CommandParams<'db.submitChanges'>>;
+    const connection = this.find(p?.id);
+    const schema = identifier(p.schema, 'schema');
+    const table = identifier(p.table, 'table');
+    const changes = changeSet(p.changes);
+    const info = await this.describe(connection, schema, table);
+    if (info.readOnlyReason) throw new CommandError(info.readOnlyReason, ErrorCode.dbFailed);
+    const columns = new Map(info.columns.map((c) => [c.name, c]));
+    const checkColumns = (record: Record<string, DbValue>, what: string) => {
+      for (const name of Object.keys(record)) {
+        const column = columns.get(name);
+        if (!column) throw new CommandError(`Unknown column in ${what}: ${name}`, ErrorCode.invalidParams);
+        if (column.binary && what !== 'key') throw new CommandError(`Binary columns are read-only: ${name}`, ErrorCode.invalidParams);
+      }
+    };
+    const keyOf = (key: Record<string, DbValue>) => {
+      checkColumns(key, 'key');
+      for (const k of info.primaryKey) if (!(k in key) || key[k] === null) throw new CommandError('Each changed row needs its primary key.', ErrorCode.invalidParams);
+      return info.primaryKey.map((k) => [k, key[k]] as const);
+    };
+    const target = `${quoteIdent(schema)}.${quoteIdent(table)}`;
+    const describeKey = (key: ReadonlyArray<readonly [string, DbValue]>) => key.map(([k, v]) => `${k} = ${v}`).join(', ');
+
+    await this.project.progress.run('Saving changes…', async () => {
+      const pool = await this.poolFor(connection);
+      let client: pg.PoolClient;
+      try {
+        client = await pool.connect();
+      } catch (err) {
+        throw this.failure(connection, err);
+      }
+      try {
+        await client.query('BEGIN');
+        for (const update of changes.updates) {
+          checkColumns(update.values, 'update');
+          checkColumns(update.original, 'update');
+          const set = Object.keys(update.values);
+          if (set.length === 0) continue;
+          const key = keyOf(update.key);
+          const values: DbValue[] = [];
+          const param = (value: DbValue) => {
+            values.push(value);
+            return `$${values.length}`;
+          };
+          const assignments = set.map((name) => `${quoteIdent(name)} = ${param(update.values[name])}`);
+          const where = [
+            ...key.map(([name, value]) => `${quoteIdent(name)} = ${param(value)}`),
+            // Fremde Änderung: die ursprünglichen Werte der geänderten Spalten, als Text und NULL-sicher verglichen.
+            ...Object.keys(update.original).map((name) => `${quoteIdent(name)}::text IS NOT DISTINCT FROM ${param(update.original[name])}`),
+          ];
+          const result = await client.query(`UPDATE ${target} SET ${assignments.join(', ')} WHERE ${where.join(' AND ')}`, values);
+          if (result.rowCount !== 1) {
+            throw new CommandError(`The row (${describeKey(key)}) was changed or deleted in the meantime. Nothing was saved; reload to see the current values.`, ErrorCode.dbFailed);
+          }
+        }
+        for (const removal of changes.deletes) {
+          const key = keyOf(removal.key);
+          const values = key.map(([, value]) => value);
+          const where = key.map(([name], i) => `${quoteIdent(name)} = $${i + 1}`);
+          const result = await client.query(`DELETE FROM ${target} WHERE ${where.join(' AND ')}`, values);
+          if (result.rowCount !== 1) {
+            throw new CommandError(`The row (${describeKey(key)}) was already deleted. Nothing was saved; reload to see the current rows.`, ErrorCode.dbFailed);
+          }
+        }
+        for (const insert of changes.inserts) {
+          checkColumns(insert.values, 'insert');
+          // Leere Zellen fehlen schon (Standardwerte und automatische Schlüssel greifen); gesetztes NULL bleibt NULL.
+          const names = Object.keys(insert.values);
+          if (names.length === 0) {
+            await client.query(`INSERT INTO ${target} DEFAULT VALUES`);
+            continue;
+          }
+          await client.query(
+            `INSERT INTO ${target} (${names.map(quoteIdent).join(', ')}) VALUES (${names.map((_, i) => `$${i + 1}`).join(', ')})`,
+            names.map((n) => insert.values[n]),
+          );
+        }
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw err instanceof CommandError ? err : this.failure(connection, err);
+      } finally {
+        client.release();
+      }
+    });
   }
 
   // ---------- Abfragen (auch für Ticket 21) ----------
@@ -337,4 +534,36 @@ function dbMessage(err: unknown): string {
 function dbError(err: unknown): CommandError {
   if (err instanceof CommandError) return err;
   return new CommandError(dbMessage(err), ErrorCode.dbFailed);
+}
+
+/** Ein Name als Bezeichner in SQL: in Anführungszeichen, eingebettete verdoppelt. */
+function quoteIdent(name: string): string {
+  if (name.includes('\0')) throw new CommandError('Not a valid name.', ErrorCode.invalidParams);
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+/** Werte eines Änderungssatzes: Text oder NULL. */
+function valueRecord(value: unknown): Record<string, DbValue> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new CommandError('Values are expected.', ErrorCode.invalidParams);
+  const result: Record<string, DbValue> = {};
+  for (const [key, v] of Object.entries(value)) {
+    if (v !== null && typeof v !== 'string') throw new CommandError(`The value of ${key} must be a text or null.`, ErrorCode.invalidParams);
+    result[key] = v;
+  }
+  return result;
+}
+
+/** Der Änderungssatz, geprüft. */
+function changeSet(value: unknown): DbChangeSet {
+  if (typeof value !== 'object' || value === null) throw new CommandError('A change set is expected.', ErrorCode.invalidParams);
+  const v = value as Record<string, unknown>;
+  const list = (key: string) => {
+    if (!Array.isArray(v[key])) throw new CommandError(`The change set needs ${key}.`, ErrorCode.invalidParams);
+    return v[key] as Array<Record<string, unknown>>;
+  };
+  return {
+    updates: list('updates').map((u) => ({ key: valueRecord(u?.key), original: valueRecord(u?.original), values: valueRecord(u?.values) })),
+    inserts: list('inserts').map((i) => ({ values: valueRecord(i?.values) })),
+    deletes: list('deletes').map((d) => ({ key: valueRecord(d?.key) })),
+  };
 }

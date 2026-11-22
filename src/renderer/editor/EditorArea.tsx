@@ -53,6 +53,7 @@ import { MarkdownPreview } from '../markdown/MarkdownPreview';
 import { isMarkdownFile } from '../markdown/markdown';
 import { EDITOR_ACTIONS } from './editorActions';
 import { DiffView } from './DiffView';
+import { TableView, type TableSpec } from '../database/TableView';
 import { ChangeBars, rollbackBlock } from './changeBars';
 import { NavigationHistory, type NavLocation } from './navigationHistory';
 import { EDITOR_FONT_FAMILY, editorFontReady, languageOf, monaco } from './monaco';
@@ -98,6 +99,8 @@ export interface EditorAreaHandle {
   openDocument(doc: ReadOnlyDocument): void;
   /** Öffnet eine Vergleichsansicht (Ticket 17). */
   openDiff(diff: DiffSpec): void;
+  /** Öffnet den Inhalt einer Tabelle oder View als Tab (Ticket 21). */
+  openTable(table: TableSpec): void;
 }
 
 /** Ein schreibgeschütztes Dokument für einen Tab. */
@@ -116,6 +119,8 @@ const DOCUMENT_PREFIX = 'codium:\\';
 /** Vergleichsansichten sind Dokument-Tabs (nicht gespeichert, keine Datei) mit eigenem Präfix. */
 const DIFF_PREFIX = `${DOCUMENT_PREFIX}diff\\`;
 const isDiffTab = (tabPath: string) => tabPath.startsWith(DIFF_PREFIX);
+/** Tabelleninhalte (Ticket 21) sind ebenfalls Dokument-Tabs. */
+const TABLE_PREFIX = `${DOCUMENT_PREFIX}table\\`;
 export const isDocumentTab = (tabPath: string) => tabPath.startsWith(DOCUMENT_PREFIX);
 
 /** Was ein Tab zeigt; `null`, solange die Datei noch nicht gelesen wurde. */
@@ -130,7 +135,9 @@ type TabContent =
       diff: DiffSpec;
       /** Der alte Stand, sobald geholt; `binary`, wenn eine Seite keine Textdatei ist. */
       original: { text: string } | { binary: true } | null;
-    };
+    }
+  /** Tabelleninhalt (Ticket 21); nicht gespeichert, nach einem Neustart nicht wiederhergestellt. */
+  | { kind: 'table'; table: TableSpec };
 
 /** Eine Vergleichsansicht (Ticket 17). */
 export interface DiffSpec {
@@ -673,14 +680,35 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
    * Lässt sich einer nicht speichern (etwa ein Zeichen, das die Kodierung nicht kennt, oder „File changed on disk“),
    * fragt Codium, bevor die Eingaben verloren gehen (Review von Ticket 07).
    */
+  /** Tabelleninhalte mit offenem Änderungssatz (Ticket 21). */
+  const dirtyTablesRef = useRef(new Set<string>());
   const closeByUser = useCallback(
-    async (paths: readonly string[]) => {
+    async (requested: readonly string[]) => {
+      let paths = requested;
       const keys = paths.map(pathKey);
       const unsavedNow = () => keys.filter((key) => {
         const entry = models.current.get(key);
         return entry !== undefined && entry.model.getAlternativeVersionId() !== entry.savedVersion;
       });
       await Promise.all(unsavedNow().map((key) => saveNowRef.current(key)));
+      // Tabelleninhalte mit offenem Änderungssatz (Ticket 21): erst fragen.
+      const dirtyTables = tabsRef.current.filter((t) => keys.includes(pathKey(t.path)) && dirtyTablesRef.current.has(pathKey(t.path)));
+      if (dirtyTables.length > 0) {
+        const choice = await askRef.current({
+          title: 'Close',
+          message: 'These tables have changes that are not submitted. Close them anyway and discard the changes?',
+          items: dirtyTables.map((t) => (t.content?.kind === 'table' ? `${t.content.table.schema}.${t.content.table.table}` : t.path)),
+          buttons: [
+            { id: 'discard', label: 'Discard and Close' },
+            { id: 'cancel', label: 'Cancel', primary: true },
+          ],
+        });
+        if (choice !== 'discard') {
+          const keep = new Set(dirtyTables.map((t) => pathKey(t.path)));
+          paths = paths.filter((p) => !keep.has(pathKey(p)));
+          if (paths.length === 0) return;
+        }
+      }
       const unsaved = new Set(unsavedNow());
       if (unsaved.size > 0) {
         const names = tabsRef.current.filter((t) => unsaved.has(pathKey(t.path))).map((t) => relativeLabel(project.path, t.path));
@@ -974,7 +1002,19 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   const [rollback, setRollback] = useState<{ block: ChangeBlock; model: monaco.editor.ITextModel; x: number; y: number } | null>(null);
   const changeBarsRef = useRef<ChangeBars | null>(null);
 
-  useImperativeHandle(ref, () => ({ open, handleCommand, saveAll, openDocument, openDiff }), [open, handleCommand, saveAll, openDocument, openDiff]);
+  /** Tabelleninhalt als Tab; derselbe Tab, wenn er schon offen ist. */
+  const openTable = useCallback(
+    (table: TableSpec) => {
+      const tablePath = `${TABLE_PREFIX}${table.connectionId}\\${table.schema}.${table.table}`;
+      if (!tabsRef.current.some((t) => pathKey(t.path) === pathKey(tablePath))) {
+        setTabs([...tabsRef.current, { path: tablePath, content: { kind: 'table', table }, pinned: false }]);
+      }
+      activate(tablePath, { focus: false });
+    },
+    [activate, setTabs],
+  );
+
+  useImperativeHandle(ref, () => ({ open, handleCommand, saveAll, openDocument, openDiff, openTable }), [open, handleCommand, saveAll, openDocument, openDiff, openTable]);
 
   // Verliert das Fenster den Fokus, wird alles gespeichert (etwa vor dem Wechsel in ein Terminal oder zu Git).
   useEffect(() => {
@@ -1555,6 +1595,10 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
         fileLabels.set(pathKey(tab.path), { name: tab.content.diff.title });
         continue;
       }
+      if (tab.content?.kind === 'table') {
+        fileLabels.set(pathKey(tab.path), { name: tab.content.table.table, hint: tab.content.table.schema });
+        continue;
+      }
       const name = tab.path.slice(DOCUMENT_PREFIX.length);
       const clash = tabs.some((t) => !isDocumentTab(t.path) && fileLabels.get(pathKey(t.path))?.name.toLowerCase() === name.toLowerCase());
       fileLabels.set(pathKey(tab.path), clash ? { name, hint: 'Codium' } : { name });
@@ -1565,7 +1609,12 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   }, [tabs, project.path]);
   /** Tooltip und Detail eines Tabs: der Pfad im Projekt, bei Dokumenten ein Hinweis. */
   const tabDescription = (tabPath: string) =>
-    isDiffTab(tabPath)
+    tabPath.startsWith(TABLE_PREFIX)
+      ? (() => {
+          const content = tabsRef.current.find((t) => t.path === tabPath)?.content;
+          return content?.kind === 'table' ? `Table ${content.table.schema}.${content.table.table} – ${content.table.connectionName}` : tabPath;
+        })()
+      : isDiffTab(tabPath)
       ? `Diff of ${relativeLabel(project.path, (tabsRef.current.find((t) => t.path === tabPath)?.content as { diff?: DiffSpec } | null)?.diff?.filePath ?? '')}`
       : isDocumentTab(tabPath)
       ? `${tabPath.slice(DOCUMENT_PREFIX.length)} – comes with Codium (read-only)`
@@ -1744,6 +1793,22 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
             )}
           </>
         )}
+        {tabs.map((t) =>
+          // Alle Tabelleninhalte bleiben eingehängt (mit ihrem Änderungssatz), nur der aktive ist sichtbar.
+          t.content?.kind === 'table' ? (
+            <div key={t.path} className="table-host" hidden={activeTab !== t}>
+              <TableView
+                api={api}
+                notify={notify}
+                spec={t.content.table}
+                onDirtyChange={(dirty) => {
+                  if (dirty) dirtyTablesRef.current.add(pathKey(t.path));
+                  else dirtyTablesRef.current.delete(pathKey(t.path));
+                }}
+              />
+            </div>
+          ) : null,
+        )}
         {activeTab?.content?.kind === 'diff' && (diffUnavailable(activeTab.content) ? (
           <div className="editor-notice" role="note">
             <p className="editor-notice-title">Binary files cannot be compared.</p>
@@ -1850,7 +1915,7 @@ function TabNotice({ tab }: { tab: Tab }) {
   const content = tab.content;
   if (content === null || content.kind === 'loading') return <div className="editor-notice" aria-busy="true" />;
   // Vergleichsansichten zeichnet der Code-Bereich selbst (DiffView).
-  if (content.kind === 'diff') return null;
+  if (content.kind === 'diff' || content.kind === 'table') return null;
   if (content.kind === 'image') {
     return (
       <div className="editor-image" role="img" aria-label={`Image ${baseNameOf(tab.path)}`}>

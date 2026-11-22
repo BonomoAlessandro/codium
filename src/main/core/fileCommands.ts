@@ -76,6 +76,9 @@ export function registerFileCommands(register: RegisterProjectCommand): void {
   register('db.schemas', (project, params) => project.database.schemas(params));
   register('db.relations', (project, params) => project.database.relations(params));
   register('db.columns', (project, params) => project.database.columns(params));
+  register('db.tableInfo', (project, params) => project.database.tableInfo(params));
+  register('db.tableRows', (project, params) => project.database.tableRows(params));
+  register('db.submitChanges', (project, params) => project.database.submitChanges(params));
   register('git.lastMessage', (project) => project.git.lastMessage());
   register('git.rollback', (project, params) => project.git.rollback(params));
   register('git.addToGitignore', (project, params) => project.git.addToGitignore(params));

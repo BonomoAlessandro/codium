@@ -395,6 +395,51 @@ export interface DbColumn {
   primaryKey: boolean;
 }
 
+/** Eine Spalte im Tabelleninhalt (Ticket 21). */
+export interface DbTableColumn extends DbColumn {
+  /** bytea: gezeigt wird nur die Länge, schreibgeschützt. */
+  binary: boolean;
+  /** json oder jsonb (für „Open Editor“ mit Farben). */
+  json: boolean;
+}
+
+/** Aufbau einer Tabelle oder View für den Tabelleninhalt. */
+export interface DbTableInfo {
+  kind: 'table' | 'view';
+  columns: DbTableColumn[];
+  /** Spalten des Primärschlüssels in ihrer Reihenfolge; leer ohne. */
+  primaryKey: string[];
+  /** Ohne Primärschlüssel oder bei Views schreibgeschützt, mit Grund. */
+  readOnlyReason?: string;
+}
+
+/** Ein Wert: die Textdarstellung aus PostgreSQL, `null` für NULL; bei bytea die Länge in Bytes als Text. */
+export type DbValue = string | null;
+
+/** Sortierung nach einer Spalte. */
+export interface DbSort {
+  column: string;
+  direction: 'asc' | 'desc';
+}
+
+/** Eine Seite des Tabelleninhalts. */
+export interface DbRowsPage {
+  /** Werte je Zeile in der Reihenfolge von `DbTableInfo.columns`. */
+  rows: DbValue[][];
+  /** Es gibt weitere Zeilen nach dieser Seite. */
+  hasMore: boolean;
+}
+
+/**
+ * Ein Änderungssatz (Ticket 21). `key`: die Werte des Primärschlüssels beim Laden. Updates tragen dazu die
+ * ursprünglichen Werte der geänderten Spalten; neue Zeilen nur die gesetzten Zellen (leere fallen weg).
+ */
+export interface DbChangeSet {
+  updates: Array<{ key: Record<string, DbValue>; original: Record<string, DbValue>; values: Record<string, DbValue> }>;
+  inserts: Array<{ values: Record<string, DbValue> }>;
+  deletes: Array<{ key: Record<string, DbValue> }>;
+}
+
 /** Filter des Git-Logs (Ticket 19). Mit `text` oder `author` gibt es keinen Graph. */
 export interface GitLogFilter {
   /** Teil der Nachricht (ohne Gross-/Kleinschreibung) oder Anfang des Hashs. */
@@ -796,6 +841,15 @@ export interface Commands {
   'db.relations': { params: { id: string; schema: string }; result: DbRelation[] };
   /** Spalten einer Tabelle oder View mit Typ, Nullbarkeit und Primärschlüssel. */
   'db.columns': { params: { id: string; schema: string; table: string }; result: DbColumn[] };
+  /** Aufbau einer Tabelle oder View für den Tabelleninhalt (Ticket 21). */
+  'db.tableInfo': { params: { id: string; schema: string; table: string }; result: DbTableInfo };
+  /**
+   * Eine Seite zu 500 Zeilen ab `offset`. Ohne `sort` nach dem Primärschlüssel (ohne ihn unsortiert); `filter` ist
+   * eine WHERE-Bedingung des Nutzers, unverändert übernommen.
+   */
+  'db.tableRows': { params: { id: string; schema: string; table: string; offset: number; sort?: DbSort; filter?: string }; result: DbRowsPage };
+  /** Speichert einen Änderungssatz in einer Transaktion; bei jedem Fehler wird alles zurückgerollt. */
+  'db.submitChanges': { params: { id: string; schema: string; table: string; changes: DbChangeSet }; result: void };
   /**
    * Inhalt einer Datei in einem Commit (Standard HEAD), so wie Git ihn auschecken würde (Zeilenende, Filter), mit der
    * Kodierung der Datei dekodiert; `exists: false` und leer, wenn es sie dort nicht gibt (Ticket 17).

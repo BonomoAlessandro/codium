@@ -760,7 +760,14 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
                 onHide={() => hide(s)}
               />
             ) : id === 'database' ? (
-              <DatabaseToolWindow api={api} notify={notify} onHide={() => hide(s)} />
+              <DatabaseToolWindow
+                api={api}
+                notify={notify}
+                onHide={() => hide(s)}
+                onOpenTable={(connection, schema, table) =>
+                  editorRef.current?.openTable({ connectionId: connection.id, connectionName: connection.name, schema, table })
+                }
+              />
             ) : (
               <>
                 <ToolWindowHeader title={TOOL_WINDOWS[id].title} onHide={() => hide(s)} />
