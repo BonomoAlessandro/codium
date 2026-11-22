@@ -18,6 +18,7 @@ import {
   ErrorCode,
   MAX_FONT_SIZE,
   MIN_FONT_SIZE,
+  type ChangeBlock,
   type CodeLocation,
   type CodiumApi,
   type FileContent,
@@ -51,6 +52,8 @@ import {
 import { MarkdownPreview } from '../markdown/MarkdownPreview';
 import { isMarkdownFile } from '../markdown/markdown';
 import { EDITOR_ACTIONS } from './editorActions';
+import { DiffView } from './DiffView';
+import { ChangeBars, rollbackBlock } from './changeBars';
 import { NavigationHistory, type NavLocation } from './navigationHistory';
 import { EDITOR_FONT_FAMILY, editorFontReady, languageOf, monaco } from './monaco';
 import { pinTab, recentOrder, tabLabels, tabsToClose, unpinTab, withTab, withoutTab } from './tabs';
@@ -93,6 +96,8 @@ export interface EditorAreaHandle {
    * sind keine Datei-Tabs: Sie werden weder gespeichert noch nach einem Neustart wiederhergestellt.
    */
   openDocument(doc: ReadOnlyDocument): void;
+  /** Öffnet eine Vergleichsansicht (Ticket 17). */
+  openDiff(diff: DiffSpec): void;
 }
 
 /** Ein schreibgeschütztes Dokument für einen Tab. */
@@ -108,6 +113,9 @@ export interface ReadOnlyDocument {
 
 /** Pfade schreibgeschützter Dokument-Tabs beginnen so; es sind keine Dateien. */
 const DOCUMENT_PREFIX = 'codium:\\';
+/** Vergleichsansichten sind Dokument-Tabs (nicht gespeichert, keine Datei) mit eigenem Präfix. */
+const DIFF_PREFIX = `${DOCUMENT_PREFIX}diff\\`;
+const isDiffTab = (tabPath: string) => tabPath.startsWith(DIFF_PREFIX);
 export const isDocumentTab = (tabPath: string) => tabPath.startsWith(DOCUMENT_PREFIX);
 
 /** Was ein Tab zeigt; `null`, solange die Datei noch nicht gelesen wurde. */
@@ -116,13 +124,33 @@ type TabContent =
   | { kind: 'text'; encoding: TextEncoding; lineEnding: LineEnding; large: boolean; readOnly?: true }
   | { kind: 'image'; dataUrl: string; size: number }
   | { kind: 'binary'; size: number }
-  | { kind: 'tooLarge'; size: number };
+  | { kind: 'tooLarge'; size: number }
+  | { kind: 'diff'; diff: DiffSpec };
+
+/** Eine Vergleichsansicht (Ticket 17). */
+export interface DiffSpec {
+  /** Titel im Tab und über der Ansicht. */
+  title: string;
+  /** Die Datei, um die es geht (für die Sprache und den Vergleich mit dem Arbeitsordner). */
+  filePath: string;
+  /** Linke Seite: der alte Stand. */
+  original: string;
+  /** Rechte Seite: `file` ist das gemeinsame Modell der Datei (bearbeitbar), sonst ein fester Text. */
+  modified: { kind: 'file' } | { kind: 'text'; text: string };
+  /** Unterscheidet Vergleiche derselben Datei (etwa verschiedene Commits). */
+  id: string;
+}
 
 interface Tab {
   path: string;
   content: TabContent | null;
   /** Angeheftet: steht links und bleibt bei „Close All Tabs“ und „Close Other Tabs“ offen. */
   pinned: boolean;
+  /**
+   * Unsichtbar: Die Datei einer Vergleichsansicht, ohne eigenen Tab. Sie lädt und speichert wie ein Datei-Tab und wird
+   * sichtbar, sobald man die Datei öffnet (Ticket 17).
+   */
+  hidden?: true;
 }
 
 /** Befehle im Editor, die auch mit dem Fokus in Monacos Suchfeld oder Eingabe wirken; die anderen brauchen den Text. */
@@ -208,7 +236,8 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   }, []);
 
   /** Tabs, die nach einem Neustart wiederkommen: keine mitgelieferten Dokumente, keine Ziele ausserhalb des Projekts. */
-  const persistable = (tabPathValue: string) => !isDocumentTab(tabPathValue) && isInside(tabPathValue, project.path);
+  const persistable = (tabPathValue: string) =>
+    !isDocumentTab(tabPathValue) && isInside(tabPathValue, project.path) && !tabsRef.current.some((t) => t.hidden && pathKey(t.path) === pathKey(tabPathValue));
 
   // Sprach-Dienst (Ticket 12): Dokumente melden, Sprachfunktionen in Monaco.
   const documentSync = useMemo(() => new DocumentSync(api), [api]);
@@ -556,6 +585,10 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
         filePath,
       );
       if (next.length !== tabsRef.current.length) setTabs([...tabsRef.current, { path: filePath, content: null, pinned: false }]);
+      // Die Datei einer Vergleichsansicht hat schon einen unsichtbaren Tab: Er wird sichtbar.
+      else if (tabsRef.current.some((t) => t.hidden && pathKey(t.path) === pathKey(filePath))) {
+        setTabs(tabsRef.current.map((t) => (pathKey(t.path) === pathKey(filePath) ? { path: t.path, content: t.content, pinned: t.pinned } : t)));
+      }
       activate(filePath, options);
       persistTabs();
     },
@@ -570,6 +603,29 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     (paths: readonly string[], { saveCursor = true }: { saveCursor?: boolean } = {}) => {
       const keys = new Set(paths.map(pathKey).filter((k) => tabsRef.current.some((t) => pathKey(t.path) === k)));
       if (keys.size === 0) return;
+      // Vergleichsansichten (Ticket 17): Ihre Datei bleibt als unsichtbarer Tab, solange eine offen bleibt; schliesst die
+      // letzte, schliesst auch der unsichtbare Tab.
+      const diffFiles = (exclude: Set<string>) =>
+        new Set(
+          tabsRef.current
+            .filter((t) => !exclude.has(pathKey(t.path)) && t.content?.kind === 'diff' && t.content.diff.modified.kind === 'file')
+            .map((t) => pathKey((t.content as { diff: DiffSpec }).diff.filePath)),
+        );
+      const stillUsed = diffFiles(keys);
+      const toHide = [...keys].filter((k) => stillUsed.has(k) && !isDiffTab(k));
+      for (const k of toHide) keys.delete(k);
+      if (toHide.length > 0) setTabs(tabsRef.current.map((t) => (toHide.includes(pathKey(t.path)) ? { ...t, hidden: true as const } : t)));
+      for (const t of tabsRef.current) {
+        if (t.hidden && !stillUsed.has(pathKey(t.path)) && !toHide.includes(pathKey(t.path))) keys.add(pathKey(t.path));
+      }
+      if (keys.size === 0) {
+        if (toHide.includes(pathKey(activeRef.current ?? ''))) {
+          const visible = tabsRef.current.filter((t) => !t.hidden && !toHide.includes(pathKey(t.path)));
+          if (visible[0]) activate(visible[0].path);
+        }
+        persistTabs();
+        return;
+      }
       const shownKey = entryOfModel(editorRef.current?.getModel() ?? null)?.[0];
       if (shownKey !== undefined && keys.has(shownKey)) {
         if (saveCursor) saveCursorNow();
@@ -578,7 +634,8 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
           cursorTimer.current = null;
         }
       }
-      let result = { tabs: tabsRef.current.map((t) => t.path), active: activeRef.current };
+      let result = { tabs: tabsRef.current.filter((t) => !t.hidden || keys.has(pathKey(t.path))).map((t) => t.path), active: activeRef.current };
+      for (const k of toHide) if (result.active !== null && pathKey(result.active) === k) result = withoutTab(result.tabs, result.active, result.active);
       for (const t of tabsRef.current) if (keys.has(pathKey(t.path))) result = withoutTab(result.tabs, result.active, t.path);
       for (const key of keys) {
         // Schliessen speichert vorher (Text und Stand werden sofort festgehalten); eine gelöschte Datei nicht.
@@ -654,7 +711,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   /** Ctrl + Tab (weiter in die Vergangenheit) bzw. Ctrl + Shift + Tab (zurück). */
   const switchRecent = useCallback(
     (step: 1 | -1) => {
-      switching.current ??= { order: recentOrder(tabsRef.current, recent.current), index: 0 };
+      switching.current ??= { order: recentOrder(tabsRef.current.filter((t) => !t.hidden), recent.current), index: 0 };
       const { order } = switching.current;
       if (order.length < 2) return;
       switching.current.index = (switching.current.index + step + order.length) % order.length;
@@ -844,7 +901,29 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     [activate, addModel, setTabs],
   );
 
-  useImperativeHandle(ref, () => ({ open, handleCommand, saveAll, openDocument }), [open, handleCommand, saveAll, openDocument]);
+  /** Öffnet eine Vergleichsansicht als Tab; beim Vergleich mit dem Arbeitsordner lädt die Datei (unsichtbar) mit. */
+  const openDiff = useCallback(
+    (diff: DiffSpec) => {
+      const diffPath = `${DIFF_PREFIX}${diff.id}`;
+      const key = pathKey(diffPath);
+      const known = tabsRef.current.find((t) => pathKey(t.path) === key);
+      const next = known
+        ? tabsRef.current.map((t) => (t === known ? { ...t, content: { kind: 'diff' as const, diff } } : t))
+        : [...tabsRef.current, { path: diffPath, content: { kind: 'diff' as const, diff }, pinned: false }];
+      const fileKey = pathKey(diff.filePath);
+      const needsFile = diff.modified.kind === 'file' && !next.some((t) => pathKey(t.path) === fileKey);
+      setTabs(needsFile ? [...next, { path: diff.filePath, content: null, pinned: false, hidden: true as const }] : next);
+      if (needsFile) void load(diff.filePath);
+      activate(diffPath, { focus: false });
+    },
+    [activate, load, setTabs],
+  );
+
+  /** Ein angeklickter Änderungsbalken: alter Stand und „Rollback Lines“. */
+  const [rollback, setRollback] = useState<{ block: ChangeBlock; model: monaco.editor.ITextModel; x: number; y: number } | null>(null);
+  const changeBarsRef = useRef<ChangeBars | null>(null);
+
+  useImperativeHandle(ref, () => ({ open, handleCommand, saveAll, openDocument, openDiff }), [open, handleCommand, saveAll, openDocument, openDiff]);
 
   // Verliert das Fenster den Fokus, wird alles gespeichert (etwa vor dem Wechsel in ein Terminal oder zu Git).
   useEffect(() => {
@@ -992,6 +1071,25 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
         ariaLabel: 'Editor',
       });
       editorRef.current = editor;
+      // Änderungsbalken (Ticket 17): nur für Datei-Tabs mit Text unter 5 MB; nicht versionierte liefern keine Blöcke.
+      const bars = new ChangeBars(
+        api,
+        editor,
+        (model) => {
+          const key = entryOfModel(model)?.[0];
+          const tab = key === undefined ? undefined : tabsRef.current.find((t) => pathKey(t.path) === key);
+          if (!tab || tab.content?.kind !== 'text' || tab.content.large || tab.content.readOnly) return null;
+          if (isDocumentTab(tab.path) || isJdtPath(tab.path)) return null;
+          return tab.path;
+        },
+        (block, position) => {
+          const model = editor?.getModel();
+          if (model) setRollback({ block, model, ...position });
+        },
+      );
+      changeBarsRef.current = bars;
+      const offGit = api.on('git.stateChanged', () => bars.refreshNow());
+      listeners.push({ dispose: () => offGit() }, bars);
       listeners.push(
         editor.onDidChangeCursorPosition((e) => {
           reportStatus();
@@ -1397,6 +1495,10 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     );
     for (const tab of tabs) {
       if (!isDocumentTab(tab.path)) continue;
+      if (tab.content?.kind === 'diff') {
+        fileLabels.set(pathKey(tab.path), { name: tab.content.diff.title });
+        continue;
+      }
       const name = tab.path.slice(DOCUMENT_PREFIX.length);
       const clash = tabs.some((t) => !isDocumentTab(t.path) && fileLabels.get(pathKey(t.path))?.name.toLowerCase() === name.toLowerCase());
       fileLabels.set(pathKey(tab.path), clash ? { name, hint: 'Codium' } : { name });
@@ -1407,7 +1509,9 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   }, [tabs, project.path]);
   /** Tooltip und Detail eines Tabs: der Pfad im Projekt, bei Dokumenten ein Hinweis. */
   const tabDescription = (tabPath: string) =>
-    isDocumentTab(tabPath)
+    isDiffTab(tabPath)
+      ? `Diff of ${relativeLabel(project.path, (tabsRef.current.find((t) => t.path === tabPath)?.content as { diff?: DiffSpec } | null)?.diff?.filePath ?? '')}`
+      : isDocumentTab(tabPath)
       ? `${tabPath.slice(DOCUMENT_PREFIX.length)} – comes with Codium (read-only)`
       : isJdtPath(tabPath)
         ? `${jdtTitle(tabPath)} – library class (read-only)`
@@ -1437,7 +1541,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       {hasTabs && (
         <div className="editor-tabs-bar">
           <div ref={tabListRef} className="editor-tabs" role="tablist" aria-label="Editor Tabs">
-            {tabs.map((tab) => {
+            {tabs.filter((t) => !t.hidden).map((tab) => {
               const key = pathKey(tab.path);
               const label = tabLabel(tab);
               const isActive = activeTab === tab;
@@ -1577,14 +1681,45 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
             )}
           </>
         )}
+        {activeTab?.content?.kind === 'diff' && (
+          <DiffView
+            key={activeTab.path}
+            title={activeTab.content.diff.title}
+            original={activeTab.content.diff.original}
+            language={languageOfPath(activeTab.content.diff.filePath)}
+            fontSize={fontSize}
+            modified={
+              activeTab.content.diff.modified.kind === 'text'
+                ? activeTab.content.diff.modified
+                : (models.current.get(pathKey(activeTab.content.diff.filePath))?.model ?? null)
+            }
+          />
+        )}
         {!hasTabs && empty}
         {activeTab && !showEditor && <TabNotice tab={activeTab} />}
       </div>
+      {rollback && (
+        <ChangePopup
+          block={rollback.block}
+          x={rollback.x}
+          y={rollback.y}
+          onClose={() => {
+            setRollback(null);
+            editorRef.current?.focus();
+          }}
+          onRollback={() => {
+            rollbackBlock(rollback.model, rollback.block);
+            setRollback(null);
+            changeBarsRef.current?.refreshNow();
+            editorRef.current?.focus();
+          }}
+        />
+      )}
       {menu?.kind === 'tab' && <Menu label="Editor Tab" entries={tabMenuEntries(menu.path)} anchor={menu.anchor} onClose={closeMenu} />}
       {menu?.kind === 'all' && (
         <Menu
           label="All Tabs"
-          entries={tabs.map((tab): MenuEntry => {
+          entries={tabs.filter((t) => !t.hidden).map((tab): MenuEntry => {
             const label = tabLabel(tab);
             return {
               kind: 'item',
@@ -1602,9 +1737,52 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
 });
 
 /** Was ein Tab ohne Editor zeigt: Bild, Hinweise für Binärdateien und zu grosse Dateien, Laden. */
+/** Alter Stand eines Änderungsblocks mit „Rollback Lines“ (Ticket 17). */
+function ChangePopup({ block, x, y, onClose, onRollback }: { block: ChangeBlock; x: number; y: number; onClose: () => void; onRollback: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.querySelector('button')?.focus();
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
+    window.addEventListener('mousedown', onDown, true);
+    return () => window.removeEventListener('mousedown', onDown, true);
+  }, [onClose]);
+  return (
+    <div
+      ref={ref}
+      className="change-popup"
+      role="dialog"
+      aria-label="Change"
+      style={{ left: x + 8, top: y }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onClose();
+        }
+      }}
+    >
+      <div className="change-popup-toolbar">
+        <button type="button" onClick={onRollback}>
+          Rollback Lines
+        </button>
+      </div>
+      {block.oldLines.length > 0 ? (
+        <pre className="change-popup-old" aria-label="Previous Content">
+          {block.oldLines.join('\n')}
+        </pre>
+      ) : (
+        <p className="change-popup-empty">Added lines</p>
+      )}
+    </div>
+  );
+}
+
 function TabNotice({ tab }: { tab: Tab }) {
   const content = tab.content;
   if (content === null || content.kind === 'loading') return <div className="editor-notice" aria-busy="true" />;
+  // Vergleichsansichten zeichnet der Code-Bereich selbst (DiffView).
+  if (content.kind === 'diff') return null;
   if (content.kind === 'image') {
     return (
       <div className="editor-image" role="img" aria-label={`Image ${baseNameOf(tab.path)}`}>

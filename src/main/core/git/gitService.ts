@@ -9,8 +9,10 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { ErrorCode, type CommandParams, type GitBranches, type GitConsoleEntry, type GitFileStatus, type GitState } from '../../../shared/types';
+import { ErrorCode, type ChangeBlock, type CommandParams, type GitBranches, type GitConsoleEntry, type GitFileStatus, type GitState } from '../../../shared/types';
 import { gitMessage, runGit, type GitRun } from '../gitProcess';
+import { decodeFileContent } from '../fileContent';
+import { changeBlocks } from './lineDiff';
 import type { ProjectCore } from '../projectCore';
 import { CommandError } from '../router';
 
@@ -70,7 +72,11 @@ export class GitService {
     private readonly options: GitServiceOptions,
   ) {
     project.onDispose(() => this.dispose());
-    project.subscribe('git.dataChanged', () => this.scheduleRefresh());
+    project.subscribe('git.dataChanged', () => {
+      // HEAD oder Index haben sich geändert: Der Vergleichsstand der Änderungsbalken gilt nicht mehr.
+      this.baseCache.clear();
+      this.scheduleRefresh();
+    });
     project.subscribe('files.changed', () => this.scheduleRefresh());
     project.subscribe('files.operation', (op) => {
       // Umbenennen im Dateibaum: bei einer versionierten Datei im Index vormerken, damit Git die Umbenennung sieht.
@@ -173,6 +179,8 @@ export class GitService {
 
   private publish(state: GitState): GitState {
     const changed = JSON.stringify(state) !== JSON.stringify(this.state);
+    // Jede Änderung des Zustands (etwa nach einem Commit, auch ausserhalb des Projekts) kann HEAD betreffen.
+    if (changed) this.baseCache.clear();
     this.state = state;
     if (changed && !this.disposed) this.project.emit('git.stateChanged', state);
     return state;
@@ -303,6 +311,57 @@ export class GitService {
       if ((await this.run(['merge-base', '--is-ancestor', `refs/heads/${name}`, base], { background: true })).code === 0) return true;
     }
     return false;
+  }
+
+  // ---------- Vergleich und Änderungsblöcke (Ticket 17) ----------
+
+  /**
+   * Inhalt einer Datei in einem Commit, so wie Git ihn auschecken würde (`cat-file --filters`: Zeilenende, Filter),
+   * mit der erkannten Kodierung dekodiert (Windows-1252, UTF-16 …).
+   */
+  async fileAtCommit(params: CommandParams<'git.fileAtCommit'>): Promise<{ exists: boolean; text: string }> {
+    const p = params as Partial<CommandParams<'git.fileAtCommit'>>;
+    const file = this.project.files.lexicalPath(p?.path);
+    const commit = p.commit ?? 'HEAD';
+    if (typeof commit !== 'string' || commit.startsWith('-') || /[\s:]/.test(commit)) throw new CommandError('Not a valid commit.', ErrorCode.invalidParams);
+    await this.requireRepository();
+    return this.readAtCommit(file, commit);
+  }
+
+  private async readAtCommit(file: string, commit: string): Promise<{ exists: boolean; text: string }> {
+    // „./“: relativ zum Arbeitsordner (dem Projekt), nicht zur Wurzel des Repositorys.
+    const result = await this.run(['cat-file', '--filters', `${commit}:./${this.relative(file)}`], { background: true });
+    if (result.code !== 0) return { exists: false, text: '' };
+    const content = decodeFileContent(path.basename(file), result.stdoutBytes);
+    return { exists: true, text: content.kind === 'text' ? content.text : '' };
+  }
+
+  /** Stand im letzten Commit je Datei, bis sich HEAD oder der Index ändern. */
+  private readonly baseCache = new Map<string, Promise<{ exists: boolean; text: string } | null>>();
+
+  /** Änderungsblöcke eines aktuellen Texts gegenüber dem letzten Commit, ohne Git-Aufruf pro Anfrage. */
+  async changes(params: CommandParams<'git.changes'>): Promise<ChangeBlock[]> {
+    const p = params as Partial<CommandParams<'git.changes'>>;
+    const file = this.project.files.lexicalPath(p?.path);
+    if (typeof p.text !== 'string') throw new CommandError('A text is expected.', ErrorCode.invalidParams);
+    if (!this.options.git) return [];
+    if (!this.root) await this.current();
+    if (!this.root) return [];
+    const k = file.toLowerCase();
+    let base = this.baseCache.get(k);
+    if (!base) {
+      base = (async () => {
+        const atHead = await this.readAtCommit(file, 'HEAD');
+        if (atHead.exists) return atHead;
+        // Nicht im letzten Commit: nicht versioniert (keine Blöcke) oder neu im Index (alles hinzugefügt).
+        const tracked = await this.run(['ls-files', '--', this.relative(file)], { background: true });
+        return tracked.code === 0 && tracked.stdout.trim() !== '' ? { exists: false, text: '' } : null;
+      })();
+      this.baseCache.set(k, base);
+    }
+    const resolved = await base;
+    if (!resolved) return [];
+    return changeBlocks(resolved.text, p.text);
   }
 
   // ---------- Commit, Rollback, .gitignore (Ticket 16) ----------
@@ -477,7 +536,7 @@ export class GitService {
       };
       this.addEntry(entry);
       let result: GitRun;
-      if (this.disposed) return { code: null, stdout: '', stderr: 'The project is closing.' };
+      if (this.disposed) return { code: null, stdout: '', stdoutBytes: Buffer.alloc(0), stderr: 'The project is closing.' };
       // Pfade immer wörtlich: Ein Name wie „[id].tsx“ ist sonst ein Muster und träfe andere Dateien (Review von
       // Ticket 16). Viele Pfade kommen über stdin statt über die Befehlszeile (Grenze von Windows).
       const env = { ...(this.options.env ?? process.env), GIT_LITERAL_PATHSPECS: '1' };
@@ -491,7 +550,7 @@ export class GitService {
       try {
         result = await call;
       } catch (err) {
-        result = { code: null, stdout: '', stderr: (err as Error).message };
+        result = { code: null, stdout: '', stdoutBytes: Buffer.alloc(0), stderr: (err as Error).message };
       }
       // Gekürzt und lesbar: `-z`-Ausgaben trennen mit NUL; sehr grosse Ausgaben (status in grossen Repositorys)
       // füllten sonst den Speicher (Review von Ticket 15).

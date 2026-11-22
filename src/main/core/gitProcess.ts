@@ -9,6 +9,8 @@ import { killProcessTree } from './processTree';
 export interface GitRun {
   code: number | null;
   stdout: string;
+  /** Die Ausgabe als Bytes (etwa der Inhalt einer Datei in einem Commit, in ihrer eigenen Kodierung). */
+  stdoutBytes: Buffer;
   stderr: string;
 }
 
@@ -81,7 +83,8 @@ export function startGit(git: string, args: string[], options: GitRunOptions): G
     child.on('close', (code) => {
       finished = true;
       if (pending !== '' && options.onStderrLine) options.onStderrLine(pending);
-      resolve({ code, stdout: Buffer.concat(out).toString('utf8'), stderr: err });
+      const bytes = Buffer.concat(out);
+      resolve({ code, stdout: bytes.toString('utf8'), stdoutBytes: bytes, stderr: err });
     });
   });
   return {

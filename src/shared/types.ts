@@ -343,6 +343,18 @@ export interface GitState {
   ignored?: Array<{ path: string; directory?: true }>;
 }
 
+/**
+ * Ein Änderungsblock einer Datei gegenüber dem letzten Commit (Ticket 17). `line` ist die erste Zeile im aktuellen
+ * Text (ab 1), bei `deleted` die Zeile, vor der gelöscht wurde; `count` die Zahl aktueller Zeilen (0 bei `deleted`).
+ */
+export interface ChangeBlock {
+  kind: 'modified' | 'added' | 'deleted';
+  line: number;
+  count: number;
+  /** Die Zeilen im letzten Commit, ohne Zeilenende. */
+  oldLines: string[];
+}
+
 /** Branches des Repositorys. */
 export interface GitBranches {
   local: Array<{ name: string; upstream?: string; current: boolean; ahead?: number; behind?: number }>;
@@ -624,6 +636,13 @@ export interface Commands {
   'git.rollback': { params: { paths: string[] }; result: void };
   /** Hängt den Pfad (relativ zum Repository) an die .gitignore im Wurzelordner an und legt sie bei Bedarf an. */
   'git.addToGitignore': { params: { path: string }; result: void };
+  /**
+   * Inhalt einer Datei in einem Commit (Standard HEAD), so wie Git ihn auschecken würde (Zeilenende, Filter), mit der
+   * Kodierung der Datei dekodiert; `exists: false` und leer, wenn es sie dort nicht gibt (Ticket 17).
+   */
+  'git.fileAtCommit': { params: { path: string; commit?: string }; result: { exists: boolean; text: string } };
+  /** Änderungsblöcke eines aktuellen Texts gegenüber dem letzten Commit; leer für nicht versionierte Dateien. */
+  'git.changes': { params: { path: string; text: string }; result: ChangeBlock[] };
   /** Ansicht des Werkzeugfensters „Commit“ (im Projekt-Zustand). */
   'project.commitView': { params: void; result: { groupByDirectory: boolean } };
   'project.setCommitView': { params: { groupByDirectory: boolean }; result: void };

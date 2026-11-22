@@ -54,6 +54,8 @@ export function registerFileCommands(register: RegisterProjectCommand): void {
   register('git.deleteBranch', (project, params) => project.git.deleteBranch(params));
   register('git.console', (project) => project.git.console());
   register('git.commit', (project, params) => project.git.commit(params));
+  register('git.fileAtCommit', (project, params) => project.git.fileAtCommit(params));
+  register('git.changes', (project, params) => project.git.changes(params));
   register('git.lastMessage', (project) => project.git.lastMessage());
   register('git.rollback', (project, params) => project.git.rollback(params));
   register('git.addToGitignore', (project, params) => project.git.addToGitignore(params));

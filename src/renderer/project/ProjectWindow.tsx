@@ -27,6 +27,7 @@ import { flushSync } from 'react-dom';
 import {
   TOOL_WINDOW_SIDE,
   type CodiumApi,
+  type GitFileStatus,
   type ProjectInfo,
   type SearchMatch,
   type SearchOptions,
@@ -230,6 +231,31 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
 
   /** „Datei öffnen“ aus dem Dateibaum (Doppelklick, Enter, neue Datei): ein Tab mit dem Fokus im Editor. */
   const openFile = useCallback((path: string) => editorRef.current?.open(path, { focus: true }), []);
+
+  // Vergleich letzter Commit gegen Arbeitsordner (Ticket 17): neue Dateien gegen leer, gelöschte gegen leer rechts,
+  // Umbenennungen alter gegen neuen Pfad.
+  const showDiff = useCallback(
+    async (file: GitFileStatus) => {
+      try {
+        const kind = changeKind(file);
+        const before =
+          kind === 'unversioned' || kind === 'added'
+            ? { exists: false, text: '' }
+            : await api.request('git.fileAtCommit', { path: file.origPath ?? file.path });
+        const name = relativeLabel(project.path, file.path);
+        editorRef.current?.openDiff({
+          id: file.path,
+          title: `${name.split(/[\/]/).pop()} (Diff)`,
+          filePath: file.path,
+          original: before.text,
+          modified: kind === 'deleted' ? { kind: 'text', text: '' } : { kind: 'file' },
+        });
+      } catch (err) {
+        notify({ level: 'error', text: errorText(err) });
+      }
+    },
+    [api, notify, project.path],
+  );
 
   // ---------- Suchen (Ticket 08) ----------
 
@@ -615,6 +641,7 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
                 notify={notify}
                 onHide={() => hide(s)}
                 onOpenFile={openFile}
+                onShowDiff={(file) => void showDiff(file)}
                 saveAll={() => editorRef.current?.saveAll() ?? Promise.resolve()}
               />
             ) : id === 'commit' && (gitAvailable === false || (gitState && !gitState.repository)) ? (

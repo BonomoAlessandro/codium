@@ -1928,3 +1928,99 @@ kbd {
 .commit-file.selected {
   background: var(--bg-selected);
 }
+
+/* ---------- Vergleichsansicht und Änderungsbalken (Ticket 17) ---------- */
+
+.diff-view {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.diff-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.diff-title {
+  margin-left: 8px;
+  overflow: hidden;
+  color: var(--text-muted, inherit);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-host {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.change-bar {
+  margin-left: 3px;
+}
+
+.change-bar.modified {
+  border-left: 3px solid #375fad;
+}
+
+.change-bar.added {
+  border-left: 3px solid #549159;
+}
+
+/* Gelöschte Zeilen: ein grauer Keil an der Grenze zur nächsten oder vorigen Zeile. */
+.change-bar.deleted::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid #868a91;
+}
+
+.change-bar.deleted.below::after {
+  bottom: -4px;
+}
+
+.change-bar.deleted.above::after {
+  top: -4px;
+}
+
+.change-popup {
+  position: fixed;
+  z-index: 60;
+  max-width: 640px;
+  max-height: 50vh;
+  overflow: auto;
+  background: var(--bg-popup);
+  border: 1px solid var(--border-popup);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+}
+
+.change-popup-toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border-popup);
+}
+
+.change-popup-old {
+  margin: 0;
+  padding: 6px 10px;
+  font-family: var(--editor-font, monospace);
+  font-size: 12px;
+  white-space: pre;
+}
+
+.change-popup-empty {
+  margin: 0;
+  padding: 6px 10px;
+}

@@ -21,6 +21,8 @@ interface CommitToolWindowProps {
   notify: Notify;
   onHide: () => void;
   onOpenFile: (path: string) => void;
+  /** Vergleichsansicht einer geänderten Datei (Ticket 17). */
+  onShowDiff: (file: GitFileStatus) => void;
   /** Vor jeder schreibenden Git-Aktion: alle Tabs speichern (Ticket 07). */
   saveAll: () => Promise<void>;
 }
@@ -36,7 +38,7 @@ export function changeKind(file: GitFileStatus): 'modified' | 'added' | 'deleted
   return 'modified';
 }
 
-export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFile, saveAll }: CommitToolWindowProps) {
+export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFile, onShowDiff, saveAll }: CommitToolWindowProps) {
   // Je Pfad ein Eintrag; gibt es zwei (etwa „D“ und „?“), gilt der versionierte (Review von Ticket 16).
   const files = useMemo(() => {
     const byPath = new Map<string, GitFileStatus>();
@@ -155,6 +157,7 @@ export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFi
   const menuEntries = (file: GitFileStatus): MenuEntry[] => {
     const targets = selection.has(file.path) ? files.filter((f) => selection.has(f.path)) : [file];
     const entries: MenuEntry[] = [
+      { kind: 'item', label: 'Show Diff', run: () => onShowDiff(file) },
       { kind: 'item', label: 'Rollback…', disabled: file.index === '?', run: () => void rollback(targets) },
       { kind: 'item', label: 'Jump to Source', disabled: changeKind(file) === 'deleted', run: () => onOpenFile(file.path) },
     ];
@@ -241,7 +244,7 @@ export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFi
                             });
                           }}
                           data-git={changeKind(entry.file)}
-                          onDoubleClick={() => changeKind(entry.file) !== 'deleted' && onOpenFile(entry.file.path)}
+                          onDoubleClick={() => onShowDiff(entry.file)}
                           onContextMenu={(e) => {
                             e.preventDefault();
                             setMenu({ x: e.clientX, y: e.clientY, file: entry.file });
