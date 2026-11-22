@@ -12,6 +12,33 @@ import { APP_STATE_FILE, emptyAppState, type AppState } from '../../src/main/cor
 import type { TestEvent, TestHooks } from '../../src/main/testMode';
 import type { EventName, Events } from '../../src/shared/types';
 import { shieldedGitEnv } from './git';
+import { beforeTempDirRemoval } from './tempDir';
+import { killProcessTree } from '../../src/main/core/processTree';
+
+/**
+ * Laufende Instanzen. Läuft ein Test ins Zeitlimit, erreicht er sein `codium.close()` womöglich nicht; die Instanz
+ * bliebe liegen und belastete alle folgenden Tests. Vor dem Löschen der Temp-Ordner werden übrige deshalb beendet,
+ * notfalls samt Prozessbaum.
+ */
+const running = new Set<ElectronApplication>();
+beforeTempDirRemoval(async () => {
+  for (const app of [...running]) await stopApp(app);
+});
+
+async function stopApp(app: ElectronApplication): Promise<void> {
+  running.delete(app);
+  const pid = app.process().pid;
+  let timer: NodeJS.Timeout | undefined;
+  const closed = await Promise.race([
+    app.close().then(
+      () => true,
+      () => false,
+    ),
+    new Promise<boolean>((resolve) => (timer = setTimeout(() => resolve(false), 15_000))),
+  ]);
+  clearTimeout(timer);
+  if (!closed && pid !== undefined) await killProcessTree(pid);
+}
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -75,10 +102,12 @@ export async function launchCodium(options: LaunchOptions): Promise<LaunchedApp>
 
   const electronPath = createRequire(__filename)('electron') as string;
   const app = await _electron.launch({ executablePath: electronPath, args: [PROJECT_ROOT], cwd: PROJECT_ROOT, env });
+  running.add(app);
   let hasExited = false;
   const closed = new Promise<void>((resolve) =>
     app.once('close', () => {
       hasExited = true;
+      running.delete(app);
       resolve();
     }),
   );
@@ -122,7 +151,7 @@ export async function launchCodium(options: LaunchOptions): Promise<LaunchedApp>
       const violations = await testModeViolations(app).catch((err: unknown) => [
         `Prüfung der Fenster nicht möglich: ${(err as Error).message}`,
       ]);
-      await app.close();
+      await stopApp(app);
       if (violations.length > 0) throw new Error(`Testmodus verletzt: ${violations.join('; ')}`);
     },
   };

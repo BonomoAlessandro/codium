@@ -94,8 +94,11 @@ describe('TypeScript im Editor', () => {
       await expect
         .poll(
           async () => {
-            if ((await peek.count()) === 0) await ctrlClick(page, 'double', /export function/).catch(() => {});
-            await page.waitForTimeout(500);
+            if ((await peek.count()) === 0) {
+              await ctrlClick(page, 'double', /export function/).catch(() => {});
+              // Nicht sofort wieder klicken: Ein zweiter Klick schlösse eine Auswahl, die gerade aufgeht.
+              await peek.waitFor({ timeout: 3000 }).catch(() => {});
+            }
             return peek.count();
           },
           { timeout: 30_000, interval: 500 },
