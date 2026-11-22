@@ -15,4 +15,9 @@ export const EDITOR_ACTIONS: Readonly<Record<EditorCommand, string>> = {
   'editor.moveLineDown': 'editor.action.moveLinesDownAction',
   'editor.undo': 'undo',
   'editor.redo': 'redo',
+  // Ctrl + B: Definition; steht der Cursor auf der Deklaration, zeigt Monaco stattdessen die Verwendungen
+  // (`gotoLocation.alternativeDefinitionCommand`).
+  'editor.gotoDeclaration': 'editor.action.revealDefinition',
+  'editor.gotoImplementation': 'editor.action.goToImplementation',
+  'editor.quickDoc': 'editor.action.showHover',
 };

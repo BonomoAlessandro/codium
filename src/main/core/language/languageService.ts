@@ -298,6 +298,17 @@ export class LanguageService {
   private notifyWatched(changes: Array<{ path: string; type: number }>): void {
     const connection = this.typescript.connection;
     if (!connection?.running || changes.length === 0) return;
+    // Selbst geöffnete Dokumente (siehe `connectionFor`) stimmen nach einer Änderung auf der Festplatte nicht mehr:
+    // schliessen, dann liest der Server die Datei selbst (oder weiss, dass sie fehlt).
+    for (const change of changes) {
+      const k = key(change.path);
+      for (const doc of [...this.implicit].filter((d) => d === k || d.startsWith(k + path.sep))) {
+        const open = this.documents.get(doc);
+        this.implicit.delete(doc);
+        this.documents.delete(doc);
+        if (open) connection.notify('textDocument/didClose', { textDocument: { uri: uriOf(open.path) } });
+      }
+    }
     connection.notify('workspace/didChangeWatchedFiles', { changes: changes.map((c) => ({ uri: uriOf(c.path), type: c.type })) });
     // Andere Dateien können die Fehler der offenen ändern.
     for (const doc of this.documents.values()) this.scheduleDiagnostics(doc.path);

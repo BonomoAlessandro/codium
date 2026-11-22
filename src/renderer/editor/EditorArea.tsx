@@ -18,6 +18,7 @@ import {
   ErrorCode,
   MAX_FONT_SIZE,
   MIN_FONT_SIZE,
+  type CodeLocation,
   type CodiumApi,
   type FileContent,
   type FilesChangedEvent,
@@ -26,6 +27,7 @@ import {
   type LineEnding,
   type MarkdownView,
   type ProjectInfo,
+  type SearchMatch,
   type TextEncoding,
 } from '../../shared/types';
 import { errorText } from '../errors';
@@ -34,7 +36,8 @@ import { shortcutLabel, type KeyCommand, type ToolWindowCommand } from '../keyma
 import type { Notify } from '../Notices';
 import { useAsk } from '../popup/Dialogs';
 import { Menu, type MenuAnchor, type MenuEntry } from '../popup/Menu';
-import { isSameOrInside, movedPath, pathKey, relativeLabel } from '../project/filePaths';
+import { baseName, isSameOrInside, movedPath, pathKey, relativeLabel } from '../project/filePaths';
+import { DocumentSync, hasLanguageServer, isReadOnlyTarget, pathOfUri, registerLanguageFeatures } from '../language/languageClient';
 import { MarkdownPreview } from '../markdown/MarkdownPreview';
 import { isMarkdownFile } from '../markdown/markdown';
 import { EDITOR_ACTIONS } from './editorActions';
@@ -158,10 +161,12 @@ interface EditorAreaProps {
   onStatusChange: (status: EditorStatus | null) => void;
   /** Ohne Tabs: der Inhalt des leeren Code-Bereichs. */
   empty: ReactNode;
+  /** Alt + F7: Verwendungen als Reiter im Werkzeugfenster „Find“. */
+  onShowUsages: (title: string, matches: SearchMatch[]) => void;
 }
 
 export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function EditorArea(
-  { api, project, notify, fontSize, onActiveFileChange, onStatusChange, empty },
+  { api, project, notify, fontSize, onActiveFileChange, onStatusChange, empty, onShowUsages },
   ref,
 ) {
   const [tabs, setTabsState] = useState<readonly Tab[]>([]);
@@ -191,14 +196,27 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     setActiveState(next);
   }, []);
 
+  /** Tabs, die nach einem Neustart wiederkommen: keine mitgelieferten Dokumente, keine Ziele ausserhalb des Projekts. */
+  const persistable = (tabPathValue: string) => !isDocumentTab(tabPathValue) && isInside(tabPathValue, project.path);
+
+  // Sprach-Dienst (Ticket 12): Dokumente melden, Sprachfunktionen in Monaco.
+  const documentSync = useMemo(() => new DocumentSync(api), [api]);
+  useEffect(() => {
+    const off = registerLanguageFeatures(api, (filePath) => documentSync.flush(filePath));
+    return () => {
+      off();
+      documentSync.dispose();
+    };
+  }, [api, documentSync]);
+
   /** Speichert Reihenfolge und aktiven Tab im Kern. */
   const persistTabs = useCallback(() => {
     if (!restored.current) return;
     api
       .request('project.setTabs', {
-        tabs: tabsRef.current.filter((t) => !isDocumentTab(t.path)).map((t) => t.path),
-        active: activeRef.current !== null && !isDocumentTab(activeRef.current) ? activeRef.current : null,
-        pinned: tabsRef.current.filter((t) => t.pinned && !isDocumentTab(t.path)).map((t) => t.path),
+        tabs: tabsRef.current.filter((t) => persistable(t.path)).map((t) => t.path),
+        active: activeRef.current !== null && persistable(activeRef.current) ? activeRef.current : null,
+        pinned: tabsRef.current.filter((t) => t.pinned && persistable(t.path)).map((t) => t.path),
       })
       .catch((err: unknown) => console.error('Tabs nicht gespeichert:', err));
   }, [api]);
@@ -268,6 +286,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     if (editorRef.current?.getModel() === entry.model) editorRef.current.setModel(null);
     if (entry.saveTimer !== null) window.clearTimeout(entry.saveTimer);
     entry.listener.dispose();
+    documentSync.didClose(pathOfUri(entry.model.uri));
     entry.model.dispose();
     models.current.delete(key);
     updateDirty(key);
@@ -381,8 +400,10 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       setContent(key, { kind: 'loading' });
       try {
         const [content, cursor] = await Promise.all([
-          api.request('files.read', { path: filePath }),
-          api.request('project.cursor', { path: filePath }),
+          libraryTab(filePath, project.path)
+            ? api.request('language.readTarget', { path: filePath }).then((target) => libraryContent(target.text))
+            : api.request('files.read', { path: filePath }),
+          api.request('project.cursor', { path: filePath }).catch(() => null),
         ]);
         if (loads.current.get(key) !== id) return;
         loads.current.delete(key);
@@ -401,7 +422,10 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
         addModel(key, model, model.getAlternativeVersionId(), { initialCursor: cursor, diskStamp: content.stamp });
         // Der Kern merkt sich `large` (ab 5 MB): Sprach-Dienst (Ticket 12) und Änderungsbalken (Ticket 17) bleiben für
         // solche Tabs aus.
-        setContent(key, { kind: 'text', encoding: content.encoding, lineEnding: content.lineEnding, large: content.large });
+        const readOnly = libraryTab(current, project.path);
+        setContent(key, { kind: 'text', encoding: content.encoding, lineEnding: content.lineEnding, large: content.large, ...(readOnly ? { readOnly: true as const } : {}) });
+        // Sprach-Dienst (Ticket 12): nicht für Tabs ab 5 MB und nicht für schreibgeschützte Bibliotheksziele.
+        if (!content.large && !readOnly) documentSync.didOpen(current, model);
         // Markdown: die gemerkte Ansicht („Split“ ohne gemerkte); ab 5 MB nur der Editor (Ticket 23).
         // Mitgelieferte Dokumente (README) gehören zu keinem Projekt: Ihre Ansicht gilt nur, solange der Tab offen ist.
         if (isMarkdownFile(current) && !content.large && isDocumentTab(current)) {
@@ -672,6 +696,27 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
           if (tabsRef.current.length === 0) return false;
           switchRecent(command === 'tab.recent' ? 1 : -1);
           return true;
+        case 'navigate.usages': {
+          // Alt + F7: die Verwendungen als Reiter ins Werkzeugfenster „Find“.
+          const model = editor?.getModel();
+          const position = editor?.getPosition();
+          if (!editor?.hasTextFocus() || !model || !position) return false;
+          if (repeat || !hasLanguageServer(pathOfUri(model.uri))) return true;
+          const filePath = pathOfUri(model.uri);
+          documentSync.flush(filePath);
+          const word = model.getWordAtPosition(position)?.word ?? baseName(filePath);
+          void api
+            .request('language.references', { path: filePath, line: position.lineNumber - 1, character: position.column - 1 })
+            .then((locations) => {
+              if (locations.length === 0) {
+                notify({ level: 'info', text: `No usages of “${word}” found.` });
+                return;
+              }
+              onShowUsages(`Usages of ${word}`, locations.map(usageMatch));
+            })
+            .catch((err: unknown) => notify({ level: 'error', text: errorText(err) }));
+          return true;
+        }
         case 'file.saveAll':
           if (!repeat) void saveAll();
           return true;
@@ -1048,6 +1093,8 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       disposeModel(oldKey);
       const newKey = pathKey(newPath);
       addModel(newKey, model, wasDirty ? -1 : model.getAlternativeVersionId(), { viewState, diskText: entry.diskText, diskStamp: entry.diskStamp });
+      const renamedContent = tabsRef.current.find((t) => pathKey(t.path) === oldKey)?.content;
+      if (renamedContent?.kind === 'text' && !renamedContent.large && !renamedContent.readOnly) documentSync.didOpen(newPath, model);
       // Die Ansicht einer Markdown-Datei wandert mit (solange es eine bleibt).
       setMarkdownViews((current) => {
         const view = current.get(oldKey);
@@ -1471,6 +1518,35 @@ export function formatSize(bytes: number): string {
 }
 
 /** Ein Pfad aus einer Monaco-Adresse in der Schreibweise von Windows (Laufwerksbuchstabe gross). */
+/** Ein Ziel in einer Bibliothek (unter node_modules oder ausserhalb des Projekts): schreibgeschützt. */
+function libraryTab(filePath: string, projectPath: string): boolean {
+  return isReadOnlyTarget(filePath) || !isInside(filePath, projectPath) || /[\\/]node_modules[\\/]/i.test(filePath);
+}
+
+function isInside(filePath: string, projectPath: string): boolean {
+  const file = filePath.toLowerCase();
+  const root = projectPath.toLowerCase().replace(/[\\/]+$/, '');
+  return file === root || file.startsWith(`${root}\\`) || file.startsWith(`${root}/`);
+}
+
+/** Inhalt eines Bibliotheksziels wie `files.read` (UTF-8, Zeilenende aus dem Text). */
+function libraryContent(text: string): FileContent {
+  return { kind: 'text', text, encoding: 'utf-8', lineEnding: text.includes('\r\n') ? 'CRLF' : 'LF', large: false, stamp: '' } as FileContent;
+}
+
+/** Eine Verwendung als Treffer für das Werkzeugfenster „Find“. */
+function usageMatch(location: CodeLocation): SearchMatch {
+  const { start, end } = location.range;
+  return {
+    path: location.path,
+    line: start.line + 1,
+    column: start.character + 1,
+    length: end.line === start.line ? Math.max(1, end.character - start.character) : 1,
+    lineText: location.lineText ?? '',
+    lineOffset: 0,
+  };
+}
+
 function windowsPath(fsPath: string): string {
   return /^[a-z]:/.test(fsPath) ? fsPath[0].toUpperCase() + fsPath.slice(1) : fsPath;
 }

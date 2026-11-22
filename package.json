@@ -27,7 +27,8 @@
       "package.json",
       "!node_modules/node-pty/prebuilds/{darwin-*,win32-arm64}/**",
       "!node_modules/node-pty/{src,deps,third_party,scripts}/**",
-      "!node_modules/node-pty/**/*.pdb"
+      "!node_modules/node-pty/**/*.pdb",
+      "!node_modules/@typescript/typescript-win32-x64/**"
     ],
     "npmRebuild": false,
     "win": {
@@ -41,13 +42,16 @@
     "asarUnpack": [
       "node_modules/@vscode/ripgrep-win32-x64/**",
       "node_modules/node-pty/**",
-      "node_modules/@typescript/typescript-win32-x64/**",
       "node_modules/typescript-language-server/**"
     ],
     "extraResources": [
       {
         "from": "README.md",
         "to": "README.md"
+      },
+      {
+        "from": "node_modules/@typescript/typescript-win32-x64/lib",
+        "to": "typescript-native"
       }
     ]
   },

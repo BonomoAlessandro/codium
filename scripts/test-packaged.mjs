@@ -95,6 +95,38 @@ if (existsSync(exe)) {
   }
   check(result === 'ok', `node-pty startet im Paket eine Shell (${result})`);
 }
+// Die mitgelieferten TypeScript-Sprachserver liegen ausserhalb des App-Archivs und starten (Ticket 12): der native
+// Server von TypeScript 7 und typescript-language-server mit Electron als Node. Die Pfade passen zu
+// src/main/typescriptPaths.ts.
+const unpackedModules = path.join(unpacked, 'resources', 'app.asar.unpacked', 'node_modules');
+const nativeTsc = path.join(unpacked, 'resources', 'typescript-native', 'tsc.exe');
+check(existsSync(nativeTsc), 'der native TypeScript-Server liegt ausserhalb des App-Archivs');
+if (existsSync(nativeTsc)) {
+  // Er braucht die lib.*.d.ts neben sich (deshalb extraResources statt node_modules).
+  let version;
+  try {
+    version = execFileSync(nativeTsc, ['--version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 }).trim();
+  } catch (err) {
+    version = String(err.stderr ?? err.message).split(/\r?\n/)[0];
+  }
+  check(/^Version 7\./.test(version), `der native TypeScript-Server startet (${version})`);
+}
+const tsLanguageServer = path.join(unpackedModules, 'typescript-language-server', 'lib', 'cli.mjs');
+check(existsSync(tsLanguageServer), 'typescript-language-server liegt ausserhalb des App-Archivs');
+if (existsSync(exe) && existsSync(tsLanguageServer)) {
+  let version;
+  try {
+    version = execFileSync(exe, [tsLanguageServer, '--version'], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 60_000,
+    }).trim();
+  } catch (err) {
+    version = String(err.stdout ?? err.message).trim();
+  }
+  check(/^\d+\.\d+\.\d+$/.test(version), `typescript-language-server startet mit Electron als Node (${version})`);
+}
 // Was esbuild bündelt (Monaco, Schrift), gehört nicht noch einmal ins Paket.
 const bundledTwice = ['monaco-editor', '@fontsource'].filter((name) => existsSync(path.join(unpacked, 'resources', 'app.asar.unpacked', 'node_modules', name)));
 check(bundledTwice.length === 0, 'Monaco und die Schrift liegen nur gebündelt im Paket');

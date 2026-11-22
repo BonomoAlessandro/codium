@@ -7,6 +7,9 @@ import * as path from 'node:path';
 import type { BundledTypeScript } from './core/language/typescriptServer';
 
 export const NATIVE_TSC_RELATIVE = path.join('node_modules', '@typescript', 'typescript-win32-x64', 'lib', 'tsc.exe');
+/** Im Paket liegt der native Server mit seinen lib.*.d.ts unter resources (`extraResources`): electron-builder lässt
+ * .d.ts-Dateien aus node_modules sonst weg, und ohne sie startet der Server nicht. */
+export const NATIVE_TSC_PACKAGED = path.join('typescript-native', 'tsc.exe');
 export const TS_LANGUAGE_SERVER_RELATIVE = path.join('node_modules', 'typescript-language-server', 'lib', 'cli.mjs');
 
 /**
@@ -16,7 +19,7 @@ export const TS_LANGUAGE_SERVER_RELATIVE = path.join('node_modules', 'typescript
 export function bundledTypeScript(appPath: string, packaged: boolean, node: BundledTypeScript['node']): BundledTypeScript {
   const base = packaged ? `${appPath}.unpacked` : appPath;
   return {
-    nativeTsc: path.join(base, NATIVE_TSC_RELATIVE),
+    nativeTsc: packaged ? path.join(path.dirname(appPath), NATIVE_TSC_PACKAGED) : path.join(base, NATIVE_TSC_RELATIVE),
     languageServerCli: path.join(base, TS_LANGUAGE_SERVER_RELATIVE),
     node,
   };

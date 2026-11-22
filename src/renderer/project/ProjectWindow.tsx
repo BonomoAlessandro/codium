@@ -260,6 +260,18 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
     [showAndFocus, shownLayout],
   );
 
+  /** Alt + F7 (Ticket 12): die Verwendungen als Reiter im Werkzeugfenster „Find“. */
+  const showUsages = useCallback(
+    (title: string, matches: SearchMatch[]) => {
+      openInFindWindow({
+        options: { query: title, matchCase: true, wholeWord: false, regex: false, fileMask: '', includeIgnored: true },
+        matches,
+        limitReached: false,
+      });
+    },
+    [openInFindWindow],
+  );
+
   /** Schliesst einen Reiter im Werkzeugfenster „Find“; mit dem letzten verschwindet das Werkzeugfenster. */
   const closeFindTab = useCallback(
     (id: number) => {
@@ -506,6 +518,7 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
                 fontSize={settings.fontSize}
                 onActiveFileChange={setActiveFile}
                 onStatusChange={setStatus}
+            onShowUsages={showUsages}
                 empty={<CodeHints />}
               />
             </main>

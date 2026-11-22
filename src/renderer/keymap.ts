@@ -26,7 +26,13 @@ export type EditorCommand =
   | 'editor.moveLineUp'
   | 'editor.moveLineDown'
   | 'editor.undo'
-  | 'editor.redo';
+  | 'editor.redo'
+  | 'editor.gotoDeclaration'
+  | 'editor.gotoImplementation'
+  | 'editor.quickDoc';
+
+/** Verwendungen in das Werkzeugfenster „Find“ (Ticket 12); der Code-Bereich fragt den Sprach-Dienst. */
+export type UsagesCommand = 'navigate.usages';
 
 export type TabCommand = 'tab.close' | 'tab.recent' | 'tab.recentForward' | 'file.saveAll';
 
@@ -34,9 +40,9 @@ export type TabCommand = 'tab.close' | 'tab.recent' | 'tab.recentForward' | 'fil
 export type SearchCommand = 'file.gotoFile' | 'file.recent' | 'find.inFiles';
 
 /** Kürzel für Funktionen späterer Tickets; sie sind schon belegt, damit Monaco sie nicht nimmt. */
-export type ReservedCommand = 'settings.open' | 'vcs.commit' | 'vcs.push' | 'vcs.pull' | 'navigate.declaration';
+export type ReservedCommand = 'settings.open' | 'vcs.commit' | 'vcs.push' | 'vcs.pull';
 
-export type KeyCommand = ToolWindowCommand | EditorCommand | TabCommand | SearchCommand | ReservedCommand;
+export type KeyCommand = ToolWindowCommand | EditorCommand | UsagesCommand | TabCommand | SearchCommand | ReservedCommand;
 
 export interface KeyBinding {
   /** Kürzel in der Schreibweise von `shortcutOf`, etwa „Alt+1“ oder „Ctrl+Shift+K“. */
@@ -86,11 +92,15 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   binding('Ctrl+Shift+N', 'file.gotoFile', 'window'),
   binding('Ctrl+E', 'file.recent', 'window'),
   binding('Ctrl+Shift+F', 'find.inFiles', 'window'),
-  // Spätere Tickets: Git (15, 16, 18), Definition (12).
+  // Sprachfunktionen (Ticket 12): Definition, Implementierungen, Dokumentation, Verwendungen.
+  binding('Ctrl+B', 'editor.gotoDeclaration', 'editor'),
+  binding('Ctrl+Alt+B', 'editor.gotoImplementation', 'editor'),
+  binding('Ctrl+Q', 'editor.quickDoc', 'editor'),
+  binding('Alt+F7', 'navigate.usages', 'editor'),
+  // Spätere Tickets: Git (15, 16, 18).
   binding('Ctrl+K', 'vcs.commit', 'window'),
   binding('Ctrl+Shift+K', 'vcs.push', 'window'),
   binding('Ctrl+T', 'vcs.pull', 'window'),
-  binding('Ctrl+B', 'navigate.declaration', 'editor'),
 ];
 
 /**
