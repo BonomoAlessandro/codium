@@ -387,6 +387,11 @@ export class GitService {
     await this.requireRepository();
     return this.project.progress.run('Pulling…', () =>
       this.serial(async () => {
+        // Ein schon laufender Merge oder Rebase ist kein neuer Konflikt dieses Pulls (Review von Ticket 18).
+        const before = await this.readState();
+        if (before.operation) {
+          throw new CommandError(`A ${before.operation} is in progress. Finish or abort it first.`, ErrorCode.gitFailed);
+        }
         const result = await this.run(['pull', '--progress']);
         const state = await this.refresh();
         if (result.code === 0) return { conflicts: false };
@@ -405,17 +410,24 @@ export class GitService {
         const branch = state.branch;
         if (!branch) throw new CommandError('Check out a branch to push.', ErrorCode.gitFailed);
         const configured = async (key: string) => {
-          const r = await this.run(['config', '--get', `branch.${branch}.${key}`], { background: true });
+          const r = await this.run(['config', '--get', key], { background: true });
           return r.code === 0 ? r.stdout.trim() : '';
         };
-        const upstreamRemote = await configured('remote');
-        const upstreamMerge = await configured('merge');
+        const upstreamRemote = await configured(`branch.${branch}.remote`);
+        const upstreamMerge = await configured(`branch.${branch}.merge`);
+        // Immer unter demselben Namen: Ein Branch, der „origin/main“ folgt (etwa „New Branch from 'origin/main'“),
+        // landete sonst auf main (Review von Ticket 18).
+        const target = `refs/heads/${branch}`;
+        const matching = upstreamRemote !== '' && upstreamRemote !== '.' && upstreamMerge === target;
+        // Ein eigenes Push-Ziel des Nutzers (Fork: holen von „upstream“, schieben nach „origin“) geht vor.
+        const pushRemote = (await configured(`branch.${branch}.pushRemote`)) || (await configured('remote.pushDefault'));
         let remote: string;
-        let target: string;
         let upstreamSet = false;
-        if (upstreamRemote && upstreamRemote !== '.' && upstreamMerge.startsWith('refs/heads/')) {
+        if (pushRemote) {
+          remote = pushRemote;
+          upstreamSet = upstreamRemote === '';
+        } else if (matching) {
           remote = upstreamRemote;
-          target = upstreamMerge;
         } else {
           const list = await this.run(['remote'], { background: true });
           const remotes = list.code === 0 ? list.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [];
@@ -423,7 +435,6 @@ export class GitService {
           const chosen = remotes.includes('origin') ? 'origin' : remotes.length === 1 ? remotes[0] : null;
           if (!chosen) throw new CommandError(`There are several remotes and none is called 'origin': ${remotes.join(', ')}.`, ErrorCode.gitFailed);
           remote = chosen;
-          target = `refs/heads/${branch}`;
           upstreamSet = true;
         }
         if (remote.startsWith('-')) throw new CommandError(`Not a valid remote: ${remote}`, ErrorCode.gitFailed);
@@ -495,8 +506,11 @@ export class GitService {
     const found: string[] = [];
     for (const f of state.files) {
       if (!f.conflict) continue;
-      const text = await fs.promises.readFile(f.path, 'utf8').catch(() => '');
-      if (/^(<{7}|={7}|>{7})(\s|$)/m.test(text)) found.push(f.path);
+      const data = await fs.promises.readFile(f.path).catch(() => Buffer.alloc(0));
+      if (data.subarray(0, 8000).includes(0)) continue;
+      // Nur „<<<<<<<“ und „>>>>>>>“: Eine Zeile „=======“ ist auch eine Überschrift in Markdown (Review).
+      const text = data.toString('utf8');
+      if (/^<{7}(\s|$)/m.test(text) && /^>{7}(\s|$)/m.test(text)) found.push(f.path);
     }
     return found;
   }

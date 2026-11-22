@@ -108,7 +108,9 @@ export function gitMessage(stderr: string): string {
     .filter((l) => l !== '' && !/^(remote: )?(Counting|Compressing|Receiving|Resolving|Enumerating|Total|Updating files)\b/.test(l))
     .filter((l) => !/^Cloning into /.test(l))
     // Statuszeilen von Fetch, Pull und Push (Ticket 18): Ziel und übertragene Refs; Ablehnungen („! [rejected]“) bleiben.
-    .filter((l) => !/^(From|To) \S/.test(l) && !/^(Unpacking|Writing|Delta compression|Auto packing)\b/.test(l))
+    // „From“ und „To“ nur mit Adresse oder Pfad, nicht Sätze wie „To push the current branch …“ (Review).
+    .filter((l) => !/^(From|To) ([a-z][a-z0-9+.-]*:\/\/|[^\s@]+@[^\s:]+:|[A-Za-z]:[\\/]|\\\\|\/|\.\.?[\\/])\S*$/.test(l))
+    .filter((l) => !/^(Unpacking|Writing|Delta compression|Auto packing)\b/.test(l))
     .filter((l) => !/^[*+ -]?\s*(\[new [a-z]+\]|\[deleted\]|[0-9a-f]{7,}\.\.\.?[0-9a-f]{7,})\s/.test(l))
     .join('\n');
 }

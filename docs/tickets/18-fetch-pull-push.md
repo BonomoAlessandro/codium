@@ -1,6 +1,6 @@
 # 18 – Fetch, Pull, Push und Konflikte
 
-Status: `ready-for-agent` · Typ: AFK
+Status: `erledigt` (2026-11-22, Abnahme von Hand am Schluss in Ticket 22) · Typ: AFK
 Blockiert durch: 16
 User Stories: 92 (Aktualisierung), 93, 95 („Pull“, „Push…“, „Fetch“), 102–104, 111, 127–131
 Spezifikation: „Git“ (Fetch, Pull, Push, Konflikte), „Präzisierungen beim Schreiben“ Punkte 3–5, 22
@@ -31,7 +31,7 @@ Spezifikation: „Git“ (Fetch, Pull, Push, Konflikte), „Präzisierungen beim
 
 ## Akzeptanzkriterien
 
-- [ ] Kern-Tests gegen Temp-Repositories mit Bare-Remote und einem zweiten Klon, der den Remote verändert:
+- [x] Kern-Tests gegen Temp-Repositories mit Bare-Remote und einem zweiten Klon, der den Remote verändert:
   - Fetch zeigt neue Remote-Branches und entfernt gelöschte; voraus/zurück stimmt danach.
   - Pull mit Merge-Konfiguration und mit Rebase-Konfiguration, jeweils ohne und mit Konflikt.
   - **Merge-Konflikt:**
@@ -45,7 +45,7 @@ Spezifikation: „Git“ (Fetch, Pull, Push, Konflikte), „Präzisierungen beim
   - Push eines neuen Branches setzt den Upstream; mit zwei Remotes wird „origin“ gewählt.
   - Abgelehnter Push liefert das Kennzeichen „Remote ist weiter“.
   - Commit and Push.
-- [ ] Playwright-Tests:
+- [x] Playwright-Tests:
   - Push eines neuen Branches mit Ctrl + Shift + K bei Fokus im Editor.
   - Pull mit Konflikt zeigt den Balken „Merge in progress“ und die rote Datei; Auflösen im Editor und „Commit“ schliesst den Merge ab.
   - Ein abgelehnter Push zeigt den Hinweis mit „Pull“.
@@ -54,3 +54,16 @@ Spezifikation: „Git“ (Fetch, Pull, Push, Konflikte), „Präzisierungen beim
 
 - [ ] Gegen ein echtes Remote (etwa Bitbucket): Fetch, Pull und Push mit Anmeldung über den Git Credential Manager bzw. SSH.
 - [ ] Der Knopf „Pull“ im Hinweis nach einem abgelehnten Push funktioniert.
+
+## Review
+
+Unabhängiges Review durch einen zweiten Agenten am 2026-11-22. Nie erzwungen (kein `+`, kein `--force`, die ausdrückliche Refspec übersteuert `remote.*.push`), Erkennung des abgelehnten Pushs mit Knopf „Pull“, Merge-Commit mit `add -u`, Continue ohne Editor (auch bei leerem Commit), Abort, vorausgefüllte Merge-Nachricht, Speichern vor Pull und Commit, alle Netz-Aktionen in der Schreib-Reihe, Kürzel vor Monaco und im Terminal nicht, Fortschritt in der Statusleiste und Schutz gegen Remotes mit „-“ in Ordnung. Eingearbeitet:
+
+- **Push auf den falschen Branch (schwer):** Ein Branch, der einem anders benannten Upstream folgt (etwa „New Branch from 'origin/main'…“ setzt `origin/main` als Upstream), wurde auf diesen geschoben, also feature auf main. Jetzt immer unter demselben Namen; der Upstream bestimmt nur das Remote, wenn sein Name passt, sonst „origin“ (bzw. das einzige Remote) mit neuem Upstream. Kern-Test dazu.
+- **Push-Ziel des Nutzers:** `branch.<name>.pushRemote` und `remote.pushDefault` (Fork) gehen jetzt vor; der Upstream bleibt dabei unberührt. Kern-Test dazu.
+- **Pull während eines Merges:** meldete „Pull stopped with conflicts“; jetzt der Hinweis, den laufenden Merge oder Rebase erst abzuschliessen oder abzubrechen.
+- **Meldungen von Git:** Zeilen „From …“ und „To …“ fallen nur noch weg, wenn eine Adresse oder ein Pfad folgt; Sätze wie „To push the current branch …“ bleiben. Unit-Test dazu.
+- **Konfliktmarkierungen:** Eine Zeile „=======“ allein (Überschrift in Markdown) warnt nicht mehr; geprüft werden `<<<<<<<` und `>>>>>>>`, Binärdateien nicht.
+- **Häkchen der Gruppe „Unversioned Files“** zeigt während eines Merges nicht mehr „angehakt“ (sie kommen nicht in den Commit).
+
+Bewusst so gelassen: Die Warnung vor Konfliktmarkierungen und „Commit and Push“ sind im Kern getestet (`git.conflictMarkers`, Commit und danach Push), der Dialog und der kombinierte Knopf nicht eigens in Playwright; die Liste der Playwright-Tests im Ticket verlangt das nicht.

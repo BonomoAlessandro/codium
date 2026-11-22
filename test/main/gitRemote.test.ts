@@ -4,6 +4,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { gitMessage } from '../../src/main/core/gitProcess';
 import { NodeSystem } from '../../src/main/system/nodeSystem';
 import type { CommandArgs, CommandName, CommandResult } from '../../src/shared/types';
 import { createTestCore, type TestCore } from '../support/core';
@@ -148,6 +149,42 @@ describe('Fetch, Pull, Push und Konflikte', { timeout: 60_000 }, () => {
     expect(state.ahead).toBe(0);
   });
 
+  it('schiebt einen Branch, der „origin/main“ folgt, unter seinem eigenen Namen (Review)', async () => {
+    const { test, windowId, at, run, remote } = await setup();
+    await call(test, windowId, 'git.createBranch', { name: 'feature', from: 'origin/main', checkout: true });
+    const mainBefore = git(path.dirname(remote), {}, '--git-dir', remote, 'rev-parse', 'main');
+    fs.writeFileSync(at('f.txt'), 'f\n');
+    run('add', 'f.txt');
+    run('commit', '-m', 'feature work');
+    expect(await call(test, windowId, 'git.push')).toEqual({ remote: 'origin', branch: 'feature', upstreamSet: true });
+    expect(git(path.dirname(remote), {}, '--git-dir', remote, 'rev-parse', 'main')).toBe(mainBefore);
+    expect(git(path.dirname(remote), {}, '--git-dir', remote, 'rev-parse', 'feature')).toBe(run('rev-parse', 'HEAD'));
+    expect(run('rev-parse', '--abbrev-ref', 'feature@{upstream}')).toBe('origin/feature');
+  });
+
+  it('beachtet remote.pushDefault (Fork) und verweigert einen Pull während eines Merges', async () => {
+    const { test, windowId, at, run, remote, commitInOther } = await setup((r) => r('config', 'pull.rebase', 'false'));
+    const fork = path.join(path.dirname(remote), 'fork.git');
+    git(path.dirname(remote), {}, 'init', '--bare', fork);
+    run('remote', 'add', 'fork', fork);
+    run('config', 'remote.pushDefault', 'fork');
+    fs.writeFileSync(at('g.txt'), 'g\n');
+    run('add', 'g.txt');
+    run('commit', '-m', 'g');
+    expect(await call(test, windowId, 'git.push')).toEqual({ remote: 'fork', branch: 'main', upstreamSet: false });
+    expect(git(path.dirname(remote), {}, '--git-dir', fork, 'rev-parse', 'main')).toBe(run('rev-parse', 'HEAD'));
+    expect(run('rev-parse', '--abbrev-ref', 'main@{upstream}')).toBe('origin/main');
+
+    commitInOther('a.txt', 'eins\nREMOTE\ndrei\n', 'remote');
+    fs.writeFileSync(at('a.txt'), 'eins\nLOKAL\ndrei\n');
+    run('commit', '-am', 'lokal');
+    expect((await call(test, windowId, 'git.pull')).conflicts).toBe(true);
+    await expect(call(test, windowId, 'git.pull')).rejects.toThrow(/merge is in progress/);
+    // Eine Zeile „=======“ allein (Markdown-Überschrift) ist keine Konfliktmarkierung.
+    fs.writeFileSync(at('a.txt'), 'Titel\n=======\n');
+    expect(await call(test, windowId, 'git.conflictMarkers')).toEqual([]);
+  });
+
   it('Ein abgelehnter Push liefert „Remote ist weiter“; Commit and Push', async () => {
     // Ohne `pull.rebase` verweigert Git den Pull auseinanderlaufender Branches; Codium hat keine eigene Strategie.
     const { test, windowId, at, run, commitInOther } = await setup((r) => r('config', 'pull.rebase', 'false'));
@@ -162,5 +199,23 @@ describe('Fetch, Pull, Push und Konflikte', { timeout: 60_000 }, () => {
     await call(test, windowId, 'git.commit', { paths: [at('d.txt')], message: 'd' });
     expect(await call(test, windowId, 'git.push')).toEqual({ remote: 'origin', branch: 'main', upstreamSet: false });
     expect((await call(test, windowId, 'git.state')).ahead).toBe(0);
+  });
+});
+
+describe('Meldungen von Git', () => {
+  it('lässt Ziel- und Ref-Zeilen von Fetch und Push weg, Ablehnungen und Sätze mit „To …“ bleiben', () => {
+    const lines = [
+      String.raw`From C:\Temp\remote`,
+      'From ../remote.git',
+      'To https://example.invalid/x.git',
+      'To git@host:x.git',
+      ' * [new branch]      feature -> origin/feature',
+      ' ! [rejected]        main -> main (fetch first)',
+      'To push the current branch and set the remote as upstream, use',
+      'hint: Updates were rejected',
+    ];
+    expect(gitMessage(lines.join('\n'))).toBe(
+      ['! [rejected]        main -> main (fetch first)', 'To push the current branch and set the remote as upstream, use', 'hint: Updates were rejected'].join('\n'),
+    );
   });
 });

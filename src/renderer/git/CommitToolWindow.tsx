@@ -311,7 +311,7 @@ export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFi
                         type="checkbox"
                         aria-label={group.label}
                         disabled={operation !== undefined}
-                        checked={operation !== undefined || group.list.every(isChecked)}
+                        checked={operation !== undefined ? group.list.every((f) => f.index !== '?') : group.list.every(isChecked)}
                         ref={(el) => {
                           if (el) el.indeterminate = group.list.some(isChecked) && !group.list.every(isChecked);
                         }}
