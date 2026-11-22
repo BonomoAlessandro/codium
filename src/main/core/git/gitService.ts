@@ -9,9 +9,9 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { ErrorCode, type ChangeBlock, type CommandParams, type GitBranches, type GitConsoleEntry, type GitFileStatus, type GitState } from '../../../shared/types';
+import { ErrorCode, type ChangeBlock, type CommandParams, type CommandResult, type TextEncoding, type GitBranches, type GitConsoleEntry, type GitFileStatus, type GitState } from '../../../shared/types';
 import { gitMessage, runGit, type GitRun } from '../gitProcess';
-import { decodeFileContent } from '../fileContent';
+import { decodeAs, decodeText } from '../fileContent';
 import { changeBlocks } from './lineDiff';
 import type { ProjectCore } from '../projectCore';
 import { CommandError } from '../router';
@@ -319,31 +319,38 @@ export class GitService {
    * Inhalt einer Datei in einem Commit, so wie Git ihn auschecken würde (`cat-file --filters`: Zeilenende, Filter),
    * mit der erkannten Kodierung dekodiert (Windows-1252, UTF-16 …).
    */
-  async fileAtCommit(params: CommandParams<'git.fileAtCommit'>): Promise<{ exists: boolean; text: string }> {
+  async fileAtCommit(params: CommandParams<'git.fileAtCommit'>): Promise<CommandResult<'git.fileAtCommit'>> {
     const p = params as Partial<CommandParams<'git.fileAtCommit'>>;
     const file = this.project.files.lexicalPath(p?.path);
     const commit = p.commit ?? 'HEAD';
     if (typeof commit !== 'string' || commit.startsWith('-') || /[\s:]/.test(commit)) throw new CommandError('Not a valid commit.', ErrorCode.invalidParams);
+    const encoding = validEncoding(p.encoding);
     await this.requireRepository();
-    return this.readAtCommit(file, commit);
+    const bytes = await this.bytesAtCommit(file, commit);
+    if (bytes === null) return { exists: false, text: '' };
+    const text = decodeContent(bytes, encoding);
+    return text === null ? { exists: true, text: '', binary: true } : { exists: true, text };
   }
 
-  private async readAtCommit(file: string, commit: string): Promise<{ exists: boolean; text: string }> {
+  /** Die Bytes einer Datei in einem Commit, wie Git sie auschecken würde; `null`, wenn es sie dort nicht gibt. */
+  private async bytesAtCommit(file: string, commit: string): Promise<Buffer | null> {
     // „./“: relativ zum Arbeitsordner (dem Projekt), nicht zur Wurzel des Repositorys.
     const result = await this.run(['cat-file', '--filters', `${commit}:./${this.relative(file)}`], { background: true });
-    if (result.code !== 0) return { exists: false, text: '' };
-    const content = decodeFileContent(path.basename(file), result.stdoutBytes);
-    return { exists: true, text: content.kind === 'text' ? content.text : '' };
+    return result.code === 0 ? result.stdoutBytes : null;
   }
 
-  /** Stand im letzten Commit je Datei, bis sich HEAD oder der Index ändern. */
-  private readonly baseCache = new Map<string, Promise<{ exists: boolean; text: string } | null>>();
+  /**
+   * Stand im letzten Commit je Datei (als Bytes; dekodiert wird je Anfrage mit der Kodierung der Arbeitsdatei), bis
+   * sich HEAD oder der Index ändern. `null`: nicht versioniert; leerer Puffer: neu im Index.
+   */
+  private readonly baseCache = new Map<string, Promise<Buffer | null>>();
 
   /** Änderungsblöcke eines aktuellen Texts gegenüber dem letzten Commit, ohne Git-Aufruf pro Anfrage. */
   async changes(params: CommandParams<'git.changes'>): Promise<ChangeBlock[]> {
     const p = params as Partial<CommandParams<'git.changes'>>;
     const file = this.project.files.lexicalPath(p?.path);
     if (typeof p.text !== 'string') throw new CommandError('A text is expected.', ErrorCode.invalidParams);
+    const encoding = validEncoding(p.encoding);
     if (!this.options.git) return [];
     if (!this.root) await this.current();
     if (!this.root) return [];
@@ -351,17 +358,20 @@ export class GitService {
     let base = this.baseCache.get(k);
     if (!base) {
       base = (async () => {
-        const atHead = await this.readAtCommit(file, 'HEAD');
-        if (atHead.exists) return atHead;
+        const atHead = await this.bytesAtCommit(file, 'HEAD');
+        if (atHead !== null) return atHead;
         // Nicht im letzten Commit: nicht versioniert (keine Blöcke) oder neu im Index (alles hinzugefügt).
         const tracked = await this.run(['ls-files', '--', this.relative(file)], { background: true });
-        return tracked.code === 0 && tracked.stdout.trim() !== '' ? { exists: false, text: '' } : null;
+        return tracked.code === 0 && tracked.stdout.trim() !== '' ? Buffer.alloc(0) : null;
       })();
       this.baseCache.set(k, base);
     }
-    const resolved = await base;
-    if (!resolved) return [];
-    return changeBlocks(resolved.text, p.text);
+    const bytes = await base;
+    if (bytes === null) return [];
+    const old = decodeContent(bytes, encoding);
+    // Im letzten Commit binär: keine sinnvollen Blöcke.
+    if (old === null) return [];
+    return changeBlocks(old, p.text);
   }
 
   // ---------- Commit, Rollback, .gitignore (Ticket 16) ----------
@@ -674,4 +684,18 @@ export function parseStatus(output: string, root: string): GitState {
   }
   if (state.branch === null && oid && oid !== '(initial)') state.detached = oid.slice(0, 8);
   return state;
+}
+
+const ENCODINGS: readonly TextEncoding[] = ['utf-8', 'utf-8-bom', 'utf-16le', 'utf-16be', 'windows-1252'];
+
+function validEncoding(value: unknown): TextEncoding | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !ENCODINGS.includes(value as TextEncoding)) throw new CommandError('Not a known encoding.', ErrorCode.invalidParams);
+  return value as TextEncoding;
+}
+
+/** Inhalt aus einem Commit als Text, mit der Kodierung der Arbeitsdatei, sonst erkannt; `null` für Binärinhalt. */
+function decodeContent(bytes: Buffer, encoding: TextEncoding | undefined): string | null {
+  if (bytes.length === 0) return '';
+  return encoding ? decodeAs(bytes, encoding) : (decodeText(bytes)?.text ?? null);
 }

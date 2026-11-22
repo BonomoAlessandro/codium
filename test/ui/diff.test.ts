@@ -68,6 +68,37 @@ describe('Vergleich und Änderungsbalken', () => {
     }
   });
 
+  it('schliesst einen Vergleich ohne Datei-Tab sauber; „Show Diff“ vergleicht neue Dateien gegen leer', async () => {
+    const { codium, page, file, repo } = await launch();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    try {
+      fs.writeFileSync(file, 'eins\nZWEI\ndrei\n');
+      fs.writeFileSync(path.join(repo, 'neu.txt'), 'ganz neu\n');
+      await page.keyboard.press('Alt+0');
+      await changesItem(page, 'a.txt').waitFor({ timeout: 15_000 });
+      await changesItem(page, 'a.txt').dblclick();
+      const diffTab = page.getByRole('tab', { name: /a\.txt \(Diff\)/ });
+      await diffTab.waitFor({ timeout: 15_000 });
+      await expect.poll(() => page.locator('.diff-host .editor.modified .view-lines').innerText(), { timeout: 15_000 }).toContain('ZWEI');
+      // Die Datei hat nur den unsichtbaren Tab: Mit dem Vergleich schliesst sie, ohne Fehler in der Seite.
+      await diffTab.click({ button: 'middle' });
+      await expect.poll(() => diffTab.count()).toBe(0);
+      expect(await page.getByRole('tab', { name: /^a\.txt/ }).count()).toBe(0);
+
+      await page.getByRole('tree', { name: 'Changes' }).getByRole('treeitem', { name: 'neu.txt', exact: true }).click({ button: 'right' });
+      await page.getByRole('menuitem', { name: 'Show Diff' }).click();
+      const diff = page.getByRole('region', { name: 'Diff neu.txt (Diff)' });
+      await diff.waitFor({ timeout: 15_000 });
+      await expect.poll(() => diff.locator('.editor.modified .view-lines').innerText().then((t) => t.replace(/\u00a0/g, ' ')), { timeout: 15_000 }).toContain('ganz neu');
+      expect((await diff.locator('.editor.original .view-lines').innerText()).trim()).toBe('');
+      await page.waitForTimeout(500);
+      expect(errors).toEqual([]);
+    } finally {
+      await codium.close();
+    }
+  });
+
   it('zeigt nach dem Tippen einen Änderungsbalken; „Rollback Lines“ stellt den Block wieder her', async () => {
     const { codium, page, file } = await launch();
     try {

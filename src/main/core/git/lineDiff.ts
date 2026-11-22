@@ -3,8 +3,11 @@
 
 import type { ChangeBlock } from '../../../shared/types';
 
-/** Ab so vielen Unterschieden gilt der mittlere Teil als ein einziger geänderter Block (Speicher und Zeit begrenzt). */
-const MAX_EDIT_DISTANCE = 4000;
+/**
+ * Ab so vielen Unterschieden gilt der mittlere Teil als ein einziger geänderter Block. Der Kern läuft im Hauptprozess und
+ * wird beim Tippen alle 250 ms gefragt: Zeit O((n + m) · D) und Speicher O(D²) bleiben so klein (Review von Ticket 17).
+ */
+const MAX_EDIT_DISTANCE = 1000;
 
 export function splitLines(text: string): string[] {
   if (text === '') return [];
@@ -70,9 +73,10 @@ function myers(a: readonly string[], b: readonly string[]): number[] | null {
   const max = Math.min(n + m, MAX_EDIT_DISTANCE);
   const offset = max + 1;
   const v = new Int32Array(2 * max + 3);
+  // Je Runde nur der Ausschnitt k = -d-1 … d+1, den der Rückweg braucht.
   const trace: Int32Array[] = [];
   for (let d = 0; d <= max; d++) {
-    trace.push(v.slice());
+    trace.push(v.slice(offset - d - 1, offset + d + 2));
     for (let k = -d; k <= d; k += 2) {
       let x = k === -d || (k !== d && v[offset + k - 1] < v[offset + k + 1]) ? v[offset + k + 1] : v[offset + k - 1] + 1;
       let y = x - k;
@@ -81,21 +85,22 @@ function myers(a: readonly string[], b: readonly string[]): number[] | null {
         y++;
       }
       v[offset + k] = x;
-      if (x >= n && y >= m) return backtrack(trace, offset, n, m);
+      if (x >= n && y >= m) return backtrack(trace, n, m);
     }
   }
   return null;
 }
 
-function backtrack(trace: Int32Array[], offset: number, n: number, m: number): number[] {
+function backtrack(trace: Int32Array[], n: number, m: number): number[] {
   const ops: number[] = [];
   let x = n;
   let y = m;
   for (let d = trace.length - 1; d >= 0; d--) {
     const v = trace[d];
+    const at = (k: number) => v[k + d + 1];
     const k = x - y;
-    const prevK = k === -d || (k !== d && v[offset + k - 1] < v[offset + k + 1]) ? k + 1 : k - 1;
-    const prevX = d === 0 ? 0 : v[offset + prevK];
+    const prevK = k === -d || (k !== d && at(k - 1) < at(k + 1)) ? k + 1 : k - 1;
+    const prevX = d === 0 ? 0 : at(prevK);
     const prevY = d === 0 ? 0 : prevX - prevK;
     while (x > prevX && y > prevY) {
       ops.push(0);

@@ -93,6 +93,18 @@ export function encodeExact(text: string, encoding: TextEncoding): Buffer {
   return encodeText(text, encoding, null);
 }
 
+/**
+ * Text in einer bekannten Kodierung (etwa der Stand einer Datei in einem Commit mit der Kodierung der Arbeitsdatei);
+ * `null` für Binärinhalt. Ein BOM gehört nicht zum Text; ein BOM im Inhalt gewinnt.
+ */
+export function decodeAs(data: Buffer, encoding: TextEncoding): string | null {
+  const detected = decodeText(data);
+  if (detected === null) return null;
+  if (detected.encoding !== 'utf-8' && detected.encoding !== 'windows-1252') return detected.text;
+  if (encoding === 'windows-1252') return new TextDecoder('windows-1252').decode(data);
+  return detected.text;
+}
+
 /** Text und Kodierung einer Datei; `null` für eine Binärdatei. Ein BOM gehört nicht zum Text. */
 export function decodeText(data: Buffer): { text: string; encoding: TextEncoding } | null {
   if (data.length >= 3 && data[0] === 0xef && data[1] === 0xbb && data[2] === 0xbf) {

@@ -125,7 +125,12 @@ type TabContent =
   | { kind: 'image'; dataUrl: string; size: number }
   | { kind: 'binary'; size: number }
   | { kind: 'tooLarge'; size: number }
-  | { kind: 'diff'; diff: DiffSpec };
+  | {
+      kind: 'diff';
+      diff: DiffSpec;
+      /** Der alte Stand, sobald geholt; `binary`, wenn eine Seite keine Textdatei ist. */
+      original: { text: string } | { binary: true } | null;
+    };
 
 /** Eine Vergleichsansicht (Ticket 17). */
 export interface DiffSpec {
@@ -133,8 +138,8 @@ export interface DiffSpec {
   title: string;
   /** Die Datei, um die es geht (für die Sprache und den Vergleich mit dem Arbeitsordner). */
   filePath: string;
-  /** Linke Seite: der alte Stand. */
-  original: string;
+  /** Linke Seite: der Stand von `path` in `commit` (Standard HEAD); `null` für leer (neue Dateien). */
+  base: { path: string; commit?: string } | null;
   /** Rechte Seite: `file` ist das gemeinsame Modell der Datei (bearbeitbar), sonst ein fester Text. */
   modified: { kind: 'file' } | { kind: 'text'; text: string };
   /** Unterscheidet Vergleiche derselben Datei (etwa verschiedene Commits). */
@@ -320,10 +325,14 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   );
 
   /** Gibt das Modell einer Datei frei; zeigt der Editor es gerade, zeigt er danach nichts. */
+  /** Der Editor der gerade gezeigten Vergleichsansicht (Ticket 17). */
+  const diffEditorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
   const disposeModel = useCallback((key: string) => {
     const entry = models.current.get(key);
     if (!entry) return;
     if (editorRef.current?.getModel() === entry.model) editorRef.current.setModel(null);
+    // Auch die Vergleichsansicht gibt es frei, bevor es entsorgt wird (sonst meldet Monaco einen Fehler; Review).
+    if (diffEditorRef.current?.getModel()?.modified === entry.model) diffEditorRef.current.setModel(null);
     if (entry.saveTimer !== null) window.clearTimeout(entry.saveTimer);
     entry.listener.dispose();
     documentSync.didClose(pathOfUri(entry.model.uri));
@@ -907,16 +916,52 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       const diffPath = `${DIFF_PREFIX}${diff.id}`;
       const key = pathKey(diffPath);
       const known = tabsRef.current.find((t) => pathKey(t.path) === key);
+      const content = { kind: 'diff' as const, diff, original: null };
       const next = known
-        ? tabsRef.current.map((t) => (t === known ? { ...t, content: { kind: 'diff' as const, diff } } : t))
-        : [...tabsRef.current, { path: diffPath, content: { kind: 'diff' as const, diff }, pinned: false }];
+        ? tabsRef.current.map((t) => (t === known ? { ...t, content } : t))
+        : [...tabsRef.current, { path: diffPath, content, pinned: false }];
       const fileKey = pathKey(diff.filePath);
-      const needsFile = diff.modified.kind === 'file' && !next.some((t) => pathKey(t.path) === fileKey);
-      setTabs(needsFile ? [...next, { path: diff.filePath, content: null, pinned: false, hidden: true as const }] : next);
-      if (needsFile) void load(diff.filePath);
+      const withFile = diff.modified.kind === 'file';
+      const needsTab = withFile && !next.some((t) => pathKey(t.path) === fileKey);
+      setTabs(needsTab ? [...next, { path: diff.filePath, content: null, pinned: false, hidden: true as const }] : next);
       activate(diffPath, { focus: false });
+      // Die Datei laden, wann immer sie noch kein Modell hat (auch ein wiederhergestellter, noch nicht gelesener Tab;
+      // Review); danach den alten Stand mit ihrer Kodierung holen.
+      const loading = withFile && !models.current.has(fileKey) && !loads.current.has(fileKey) ? load(diff.filePath) : Promise.resolve();
+      void loading.then(() => loadOriginal(diffPath));
     },
     [activate, load, setTabs],
+  );
+
+  /** Holt den alten Stand eines Vergleichs-Tabs (neu nach einem Commit oder Wechsel des Branches). */
+  const loadOriginal = (diffPath: string): Promise<void> => {
+    const tab = tabsRef.current.find((t) => t.path === diffPath);
+    if (tab?.content?.kind !== 'diff') return Promise.resolve();
+    const { diff } = tab.content;
+    const fileContent = tabsRef.current.find((t) => pathKey(t.path) === pathKey(diff.filePath))?.content;
+    const encoding = fileContent?.kind === 'text' ? fileContent.encoding : undefined;
+    const request = diff.base
+      ? api.request('git.fileAtCommit', { path: diff.base.path, ...(diff.base.commit ? { commit: diff.base.commit } : {}), ...(encoding ? { encoding } : {}) })
+      : Promise.resolve({ exists: false, text: '' } as { exists: boolean; text: string; binary?: true });
+    return request.then(
+      (result) => {
+        const current = tabsRef.current.find((t) => t.path === diffPath);
+        if (current?.content?.kind !== 'diff' || current.content.diff !== diff) return;
+        const original = result.binary ? { binary: true as const } : { text: result.text };
+        setTabs(tabsRef.current.map((t) => (t === current ? { ...t, content: { kind: 'diff' as const, diff, original } } : t)));
+      },
+      (err: unknown) => notify({ level: 'error', text: errorText(err) }),
+    );
+  };
+  const loadOriginalRef = useRef(loadOriginal);
+  loadOriginalRef.current = loadOriginal;
+  // Nach einem Commit oder Wechsel des Branches gilt ein neuer alter Stand.
+  useEffect(
+    () =>
+      api.on('git.stateChanged', () => {
+        for (const t of tabsRef.current) if (t.content?.kind === 'diff' && !t.content.diff.base?.commit) void loadOriginalRef.current(t.path);
+      }),
+    [api],
   );
 
   /** Ein angeklickter Änderungsbalken: alter Stand und „Rollback Lines“. */
@@ -1080,7 +1125,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
           const tab = key === undefined ? undefined : tabsRef.current.find((t) => pathKey(t.path) === key);
           if (!tab || tab.content?.kind !== 'text' || tab.content.large || tab.content.readOnly) return null;
           if (isDocumentTab(tab.path) || isJdtPath(tab.path)) return null;
-          return tab.path;
+          return { path: tab.path, encoding: tab.content.encoding };
         },
         (block, position) => {
           const model = editor?.getModel();
@@ -1324,11 +1369,16 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
     // Tabs, die gerade lesen, lesen unter dem neuen Pfad neu (der alte Lesevorgang zählt nicht mehr).
     const interrupted = new Set(affected.map((t) => pathKey(t.path)).filter((key) => loads.current.delete(key)));
     const renamed = tabsRef.current.map((t) => {
+      if (t.content?.kind === 'diff' && isSameOrInside(t.content.diff.filePath, op.from)) {
+        const diff = { ...t.content.diff, filePath: movedPath(t.content.diff.filePath, op.from, op.to) };
+        return { ...t, content: { ...t.content, diff } };
+      }
       if (!isSameOrInside(t.path, op.from)) return t;
       const moved = movedPath(t.path, op.from, op.to);
       return interrupted.has(pathKey(t.path)) ? { ...t, path: moved, content: null } : { ...t, path: moved };
     });
     setTabs(renamed);
+    for (const t of renamed) if (t.hidden && t.content === null) void load(t.path);
     if (activeRef.current !== null && isSameOrInside(activeRef.current, op.from)) {
       const activePath = movedPath(activeRef.current, op.from, op.to);
       setActive(activePath);
@@ -1518,6 +1568,13 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
         : relativeLabel(project.path, tabPath);
   const activeTab = active === null ? undefined : tabs.find((t) => pathKey(t.path) === pathKey(active));
   const showEditor = activeTab?.content?.kind === 'text';
+  /** Eine Seite des Vergleichs ist keine Textdatei (Review von Ticket 17). */
+  const diffUnavailable = (content: Extract<TabContent, { kind: 'diff' }>) => {
+    if (content.original && 'binary' in content.original) return true;
+    if (content.diff.modified.kind !== 'file') return false;
+    const file = tabs.find((t) => pathKey(t.path) === pathKey(content.diff.filePath))?.content;
+    return file != null && file.kind !== 'text' && file.kind !== 'loading';
+  };
   const activeKey = activeTab ? pathKey(activeTab.path) : null;
   const activeView = activeKey !== null && showEditor ? markdownViews.get(activeKey) : undefined;
   // Beim Tabwechsel gilt die oberste Zeile des neuen Editors, nicht die des vorigen (Review von Ticket 23).
@@ -1681,20 +1738,25 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
             )}
           </>
         )}
-        {activeTab?.content?.kind === 'diff' && (
+        {activeTab?.content?.kind === 'diff' && (diffUnavailable(activeTab.content) ? (
+          <div className="editor-notice" role="note">
+            <p className="editor-notice-title">Binary files cannot be compared.</p>
+          </div>
+        ) : (
           <DiffView
             key={activeTab.path}
             title={activeTab.content.diff.title}
-            original={activeTab.content.diff.original}
+            original={activeTab.content.original && 'text' in activeTab.content.original ? activeTab.content.original.text : null}
             language={languageOfPath(activeTab.content.diff.filePath)}
             fontSize={fontSize}
+            onEditor={(e) => (diffEditorRef.current = e)}
             modified={
               activeTab.content.diff.modified.kind === 'text'
                 ? activeTab.content.diff.modified
                 : (models.current.get(pathKey(activeTab.content.diff.filePath))?.model ?? null)
             }
           />
-        )}
+        ))}
         {!hasTabs && empty}
         {activeTab && !showEditor && <TabNotice tab={activeTab} />}
       </div>

@@ -81,7 +81,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 | 14 | [Java-Sprachserver](14-java.md) | AFK | 09, 13 | 3 | erledigt |
 | 15 | [Git-Dienst, Git-Konsole und Branches](15-git-und-branches.md) | AFK | 07, 09 | 4 | erledigt |
 | 16 | [Änderungsansicht und Commit](16-commit.md) | AFK | 06, 15 | 4 | erledigt |
-| 17 | [Vergleichsansicht und Änderungsbalken](17-vergleich-und-balken.md) | AFK | 16 | 4 | offen |
+| 17 | [Vergleichsansicht und Änderungsbalken](17-vergleich-und-balken.md) | AFK | 16 | 4 | erledigt |
 | 18 | [Fetch, Pull, Push und Konflikte](18-fetch-pull-push.md) | AFK | 16 | 4 | offen |
 | 19 | [Git-Log mit Graph](19-git-log.md) | AFK | 17 | 5 | offen |
 | 20 | [Datenbank: Verbindungen und Baum](20-datenbank-verbindungen.md) | AFK | 03 | 6 | offen |

@@ -235,26 +235,18 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
   // Vergleich letzter Commit gegen Arbeitsordner (Ticket 17): neue Dateien gegen leer, gelöschte gegen leer rechts,
   // Umbenennungen alter gegen neuen Pfad.
   const showDiff = useCallback(
-    async (file: GitFileStatus) => {
-      try {
-        const kind = changeKind(file);
-        const before =
-          kind === 'unversioned' || kind === 'added'
-            ? { exists: false, text: '' }
-            : await api.request('git.fileAtCommit', { path: file.origPath ?? file.path });
-        const name = relativeLabel(project.path, file.path);
-        editorRef.current?.openDiff({
-          id: file.path,
-          title: `${name.split(/[\/]/).pop()} (Diff)`,
-          filePath: file.path,
-          original: before.text,
-          modified: kind === 'deleted' ? { kind: 'text', text: '' } : { kind: 'file' },
-        });
-      } catch (err) {
-        notify({ level: 'error', text: errorText(err) });
-      }
+    (file: GitFileStatus) => {
+      const kind = changeKind(file);
+      const name = relativeLabel(project.path, file.path);
+      editorRef.current?.openDiff({
+        id: file.path,
+        title: `${name.split(/[\\/]/).pop()} (Diff)`,
+        filePath: file.path,
+        base: kind === 'unversioned' || kind === 'added' ? null : { path: file.origPath ?? file.path },
+        modified: kind === 'deleted' ? { kind: 'text', text: '' } : { kind: 'file' },
+      });
     },
-    [api, notify, project.path],
+    [project.path],
   );
 
   // ---------- Suchen (Ticket 08) ----------
@@ -641,7 +633,7 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
                 notify={notify}
                 onHide={() => hide(s)}
                 onOpenFile={openFile}
-                onShowDiff={(file) => void showDiff(file)}
+                onShowDiff={showDiff}
                 saveAll={() => editorRef.current?.saveAll() ?? Promise.resolve()}
               />
             ) : id === 'commit' && (gitAvailable === false || (gitState && !gitState.repository)) ? (

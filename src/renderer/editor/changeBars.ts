@@ -3,7 +3,7 @@
 // entprellt nach. Ein Klick auf einen Balken meldet den Block (die Oberfläche zeigt den alten Stand und „Rollback
 // Lines“). Keine Balken für nicht versionierte Dateien (der Kern liefert keine) und für Tabs ab 5 MB.
 
-import type { ChangeBlock, CodiumApi } from '../../shared/types';
+import type { ChangeBlock, CodiumApi, TextEncoding } from '../../shared/types';
 import { monaco } from './monaco';
 
 const DELAY_MS = 250;
@@ -11,6 +11,8 @@ const DELAY_MS = 250;
 export class ChangeBars {
   private decorations: monaco.editor.IEditorDecorationsCollection;
   private blocks: ChangeBlock[] = [];
+  /** Stand des Modells, zu dem `blocks` gehören. */
+  private blocksVersion = -1;
   private timer: number | null = null;
   private generation = 0;
   private readonly disposables: monaco.IDisposable[] = [];
@@ -19,7 +21,7 @@ export class ChangeBars {
     private readonly api: CodiumApi,
     private readonly editor: monaco.editor.ICodeEditor,
     /** Pfad der Datei im Editor, wenn sie Balken bekommt (Datei-Tab mit Text, nicht ab 5 MB); sonst `null`. */
-    private readonly pathOf: (model: monaco.editor.ITextModel) => string | null,
+    private readonly pathOf: (model: monaco.editor.ITextModel) => { path: string; encoding: TextEncoding } | null,
     private readonly onClick: (block: ChangeBlock, position: { x: number; y: number }) => void,
   ) {
     this.decorations = editor.createDecorationsCollection();
@@ -30,6 +32,11 @@ export class ChangeBars {
         if (e.target.type !== monaco.editor.MouseTargetType.GUTTER_LINE_DECORATIONS) return;
         const line = e.target.position?.lineNumber;
         if (line === undefined) return;
+        // Nach einer Eingabe, deren Blöcke noch nicht da sind, stimmen die Zeilen nicht mehr: erst neu holen (Review).
+        if (this.editor.getModel()?.getVersionId() !== this.blocksVersion) {
+          this.refreshNow();
+          return;
+        }
         const block = this.blockAt(line);
         if (!block) return;
         e.event.preventDefault();
@@ -67,17 +74,18 @@ export class ChangeBars {
   private async update(): Promise<void> {
     const model = this.editor.getModel();
     const gen = ++this.generation;
-    const filePath = model ? this.pathOf(model) : null;
-    if (!model || filePath === null) {
+    const file = model ? this.pathOf(model) : null;
+    if (!model || file === null) {
       this.blocks = [];
       this.decorations.clear();
       return;
     }
     const version = model.getVersionId();
-    const blocks = await this.api.request('git.changes', { path: filePath, text: model.getValue() }).catch(() => []);
+    const blocks = await this.api.request('git.changes', { path: file.path, text: model.getValue(), encoding: file.encoding }).catch(() => []);
     // Ein neueres Nachfragen oder ein anderes Modell macht diese Antwort überflüssig.
     if (gen !== this.generation || this.editor.getModel() !== model || model.getVersionId() !== version) return;
     this.blocks = blocks;
+    this.blocksVersion = version;
     this.decorations.set(
       blocks.map((b) => {
         const lines = model.getLineCount();
@@ -130,5 +138,8 @@ export function rollbackBlock(model: monaco.editor.ITextModel, block: ChangeBloc
     range = new monaco.Range(block.line, 1, last, model.getLineMaxColumn(last));
     text = old;
   }
+  // Ein eigener Schritt im Rückgängig-Verlauf, nicht mit dem Tippen davor vermengt (Review).
+  model.pushStackElement();
   model.pushEditOperations([], [{ range, text }], () => null);
+  model.pushStackElement();
 }

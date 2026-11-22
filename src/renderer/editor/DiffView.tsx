@@ -8,14 +8,17 @@ import { EDITOR_FONT_FAMILY, monaco } from './monaco';
 
 interface DiffViewProps {
   title: string;
-  original: string;
+  /** Linke Seite; `null`, solange sie noch geholt wird. */
+  original: string | null;
   language: string;
   /** Rechte Seite: das Modell der Datei, oder ein fester Text; `null`, solange die Datei noch lädt. */
   modified: monaco.editor.ITextModel | { text: string } | null;
   fontSize: number;
+  /** Meldet den Diff-Editor, damit der Code-Bereich ein Modell vor dem Entsorgen freigeben kann. */
+  onEditor: (editor: monaco.editor.IStandaloneDiffEditor | null) => void;
 }
 
-export function DiffView({ title, original, language, modified, fontSize }: DiffViewProps) {
+export function DiffView({ title, original, language, modified, fontSize, onEditor }: DiffViewProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
   const [sideBySide, setSideBySide] = useState(true);
@@ -28,6 +31,8 @@ export function DiffView({ title, original, language, modified, fontSize }: Diff
       lineHeight: 1.4,
       originalEditable: false,
       renderSideBySide: true,
+      // Die Spalten wechselt nur der Knopf, nicht die Fensterbreite (sonst stimmte seine Beschriftung nicht; Review).
+      useInlineViewWhenSpaceIsLimited: false,
       minimap: { enabled: false },
       ignoreTrimWhitespace: false,
       renderOverviewRuler: true,
@@ -35,9 +40,11 @@ export function DiffView({ title, original, language, modified, fontSize }: Diff
       ariaLabel: title,
     });
     editorRef.current = editor;
+    onEditor(editor);
     return () => {
       // Erst die Modelle lösen: Das der Datei gehört dem Code-Bereich und lebt weiter.
       editorRef.current = null;
+      onEditor(null);
       editor.setModel(null);
       editor.dispose();
     };
@@ -56,7 +63,7 @@ export function DiffView({ title, original, language, modified, fontSize }: Diff
   // Modelle: links immer ein eigenes, rechts das der Datei oder ein eigenes für einen festen Text.
   useEffect(() => {
     const editor = editorRef.current;
-    if (!editor || modified === null) return;
+    if (!editor || modified === null || original === null) return;
     const left = monaco.editor.createModel(original, language);
     const ownRight = 'text' in modified ? monaco.editor.createModel(modified.text, language) : null;
     editor.setModel({ original: left, modified: ownRight ?? (modified as monaco.editor.ITextModel) });
@@ -90,7 +97,7 @@ export function DiffView({ title, original, language, modified, fontSize }: Diff
         <span className="diff-title">{title}</span>
       </div>
       <div ref={hostRef} className="diff-host" role="region" aria-label={`Diff ${title}`} />
-      {modified === null && <p className="tool-window-placeholder">Loading…</p>}
+      {(modified === null || original === null) && <p className="tool-window-placeholder">Loading…</p>}
     </div>
   );
 }

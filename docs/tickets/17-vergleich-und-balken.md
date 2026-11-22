@@ -1,6 +1,6 @@
 # 17 – Vergleichsansicht und Änderungsbalken
 
-Status: `ready-for-agent` · Typ: AFK
+Status: `erledigt` (2026-11-22, Abnahme von Hand am Schluss in Ticket 22) · Typ: AFK
 Blockiert durch: 16
 User Stories: 113, 119–125
 Spezifikation: „Git“ (Änderungsblöcke für die Änderungsbalken, Vergleichsansicht), „Editor, Tabs und Speichern“ (Ein Modell pro Datei)
@@ -29,14 +29,14 @@ Spezifikation: „Git“ (Änderungsblöcke für die Änderungsbalken, Vergleich
 
 ## Akzeptanzkriterien
 
-- [ ] Kern-Tests:
+- [x] Kern-Tests:
   - Inhalt einer Datei im letzten Commit, in einem älteren Commit und „nicht vorhanden“.
   - Änderungsblöcke für geänderte, eingefügte und gelöschte Zeilen, am Anfang und am Ende der Datei.
   - Mit Zeilenende-Umwandlung (Repository mit LF, Arbeitsdatei mit CRLF) ist eine unveränderte Datei ohne Blöcke.
   - Eine Windows-1252-Datei mit Umlauten ist unverändert ohne Blöcke.
   - Eine nicht versionierte Datei hat keine Blöcke.
   - Nach einem Commit ändert sich der Vergleichsstand.
-- [ ] Playwright-Tests:
+- [x] Playwright-Tests:
   - Doppelklick in der Änderungsansicht öffnet die Vergleichsansicht mit altem und neuem Stand.
   - Bearbeiten der rechten Seite speichert die Datei; ein zugleich offener Datei-Tab zeigt denselben Text.
   - Nach dem Tippen erscheint ein Änderungsbalken; „Rollback Lines“ stellt den Block wieder her, und der Balken verschwindet.
@@ -45,3 +45,22 @@ Spezifikation: „Git“ (Änderungsblöcke für die Änderungsbalken, Vergleich
 
 - [ ] Die Vergleichsansicht sieht aus wie in IntelliJ; Umschalten auf eine Spalte und die Pfeile funktionieren.
 - [ ] Die Änderungsbalken folgen dem Tippen ohne spürbare Verzögerung.
+
+## Review
+
+Unabhängiges Review durch einen zweiten Agenten am 2026-11-22. Zeilen-Diff (mit 20 000 Zufallsfällen geprüft), Zuordnung der Zeilen beim „Rollback Lines“ am Anfang, in der Mitte und am Ende, Zwischenspeicher des Vergleichsstands (auch bei einem Lesen, das während eines Commits läuft), Schutz gegen Argumente in `git.fileAtCommit` und das Nicht-Speichern der Vergleichs-Tabs in Ordnung. Eingearbeitet:
+
+- **Rechte Seite blieb bei „Loading…“:** War die Datei ein wiederhergestellter, noch nicht gelesener Tab, wurde sie für den Vergleich nie geladen. Jetzt lädt die Vergleichsansicht die Datei, wann immer sie noch kein Modell hat.
+- **Modell entsorgt, während der Vergleich es zeigte:** Beim Schliessen des letzten Vergleichs einer nur unsichtbar offenen Datei, bei „Close All Tabs“ und beim Umbenennen meldete Monaco einen Fehler. Die Vergleichsansicht gibt das Modell jetzt vorher frei; beim Umbenennen folgen Vergleichs-Tabs der Datei. UI-Test dazu.
+- **Hauptprozess blockiert:** Der Zeilen-Diff bewahrte je Runde das ganze Feld auf (bei stark geänderten Dateien rund 200 ms und 130 MB je Anfrage, alle 250 ms beim Tippen). Jetzt nur der nötige Ausschnitt und höchstens 1000 Unterschiede, danach ein einziger Block. Zeittest mit 6000 Zeilen.
+- **Rollback falscher Zeilen:** Ein Klick auf einen Balken direkt nach einer Eingabe nahm die Blöcke des vorigen Stands. Jetzt wird dann erst neu gefragt.
+- **Binärdateien:** Vergleich zeigt „Binary files cannot be compared.“ statt endlos zu laden; ein binärer Stand im letzten Commit ergibt keine Balken.
+- **Kodierung:** Der Stand im Commit wird mit der Kodierung der Arbeitsdatei dekodiert (`encoding` bei `git.fileAtCommit` und `git.changes`), nicht unabhängig erkannt. Kern-Test mit einem Windows-1252-Stand, der zugleich gültiges UTF-8 ist.
+- **Rückgängig:** „Rollback Lines“ ist ein eigener Schritt im Rückgängig-Verlauf.
+- **Alter Stand veraltete:** Die linke Seite eines offenen Vergleichs wird nach einem Commit oder Wechsel des Branches neu geholt.
+- **Knopf „Unified“:** Monaco schaltete in schmalen Fenstern selbst auf eine Spalte; das ist aus, damit der Knopf stimmt.
+
+Bewusst so gelassen:
+
+- Der Zwischenspeicher ist ohne Gross-/Kleinschreibung geschlüsselt, wie alle Pfade in Codium (Windows).
+- Ein fehlender oder zusätzlicher Zeilenumbruch am Dateiende ergibt keinen Balken („ohne Rücksicht auf das Zeilenende“).

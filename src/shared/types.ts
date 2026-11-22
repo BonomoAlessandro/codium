@@ -640,9 +640,14 @@ export interface Commands {
    * Inhalt einer Datei in einem Commit (Standard HEAD), so wie Git ihn auschecken würde (Zeilenende, Filter), mit der
    * Kodierung der Datei dekodiert; `exists: false` und leer, wenn es sie dort nicht gibt (Ticket 17).
    */
-  'git.fileAtCommit': { params: { path: string; commit?: string }; result: { exists: boolean; text: string } };
+  'git.fileAtCommit': {
+    /** `encoding`: die der Datei im Arbeitsordner; ohne Angabe wird sie aus dem Inhalt erkannt. */
+    params: { path: string; commit?: string; encoding?: TextEncoding };
+    /** `binary`: Der Inhalt ist keine Textdatei (`text` ist dann leer). */
+    result: { exists: boolean; text: string; binary?: true };
+  };
   /** Änderungsblöcke eines aktuellen Texts gegenüber dem letzten Commit; leer für nicht versionierte Dateien. */
-  'git.changes': { params: { path: string; text: string }; result: ChangeBlock[] };
+  'git.changes': { params: { path: string; text: string; encoding?: TextEncoding }; result: ChangeBlock[] };
   /** Ansicht des Werkzeugfensters „Commit“ (im Projekt-Zustand). */
   'project.commitView': { params: void; result: { groupByDirectory: boolean } };
   'project.setCommitView': { params: { groupByDirectory: boolean }; result: void };

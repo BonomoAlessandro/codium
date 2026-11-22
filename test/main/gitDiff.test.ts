@@ -32,6 +32,31 @@ describe('Zeilen-Diff', () => {
     expect(changeBlocks(old, 'a\r\nb\r\nc\r\nd\r\ne\r\n')).toEqual([]);
     expect(changeBlocks('', 'x\n')).toEqual([{ kind: 'added', line: 1, count: 1, oldLines: [] }]);
   });
+
+  it('ergibt Blöcke, aus denen sich der alte Text wiederherstellen lässt (Zufallsprüfung)', () => {
+    let seed = 17;
+    const random = (n: number) => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed % n;
+    };
+    for (let round = 0; round < 2000; round++) {
+      const a = Array.from({ length: random(12) }, () => 'abcd'[random(4)]);
+      const b = Array.from({ length: random(12) }, () => 'abcd'[random(4)]);
+      const blocks = changeBlocks(a.map((l) => `${l}\n`).join(''), b.map((l) => `${l}\n`).join(''));
+      const rebuilt = [...b];
+      for (const block of [...blocks].reverse()) rebuilt.splice(block.line - 1, block.count, ...block.oldLines);
+      expect(rebuilt).toEqual(a);
+    }
+  });
+
+  it('bleibt bei einer stark geänderten Datei schnell (Review von Ticket 17)', () => {
+    const old = Array.from({ length: 6000 }, (_, i) => `zeile ${i}`).join('\n');
+    const changed = Array.from({ length: 6000 }, (_, i) => (i % 3 === 0 ? `neu ${i}` : `zeile ${i}`)).join('\n');
+    const start = performance.now();
+    const blocks = changeBlocks(old, changed);
+    expect(performance.now() - start).toBeLessThan(150);
+    expect(blocks.length).toBeGreaterThan(0);
+  });
 });
 
 describe('Vergleichsstand im Git-Dienst', { timeout: 30_000 }, () => {
@@ -101,6 +126,21 @@ describe('Vergleichsstand im Git-Dienst', { timeout: 30_000 }, () => {
     expect(await call(test, windowId, 'git.changes', { path: at('crlf.txt'), text: 'eins\r\nzwei\r\n' })).toEqual([]);
     const ansi = await call(test, windowId, 'files.read', { path: at('ansi.txt') });
     expect(ansi.kind === 'text' && ansi.text).toBe('Grüsse ä\n');
-    expect(await call(test, windowId, 'git.changes', { path: at('ansi.txt'), text: 'Grüsse ä\n' })).toEqual([]);
+    expect(await call(test, windowId, 'git.changes', { path: at('ansi.txt'), text: 'Grüsse ä\n', encoding: 'windows-1252' })).toEqual([]);
+  });
+
+  it('dekodiert mit der Kodierung der Arbeitsdatei; Binärinhalt ergibt keine Blöcke', async () => {
+    const { test, windowId, at } = await setup((r, repo) => {
+      // Gültiges UTF-8 („Ã¤“ in Windows-1252), die Arbeitsdatei ist aber Windows-1252.
+      fs.writeFileSync(path.join(repo, 'w.txt'), Buffer.from([0xc3, 0xa4, 0x0a]));
+      fs.writeFileSync(path.join(repo, 'bild.bin'), Buffer.from([0x00, 0x01, 0x02]));
+      r('add', '.');
+      r('commit', '-m', 'w');
+    });
+    expect((await call(test, windowId, 'git.fileAtCommit', { path: at('w.txt'), encoding: 'windows-1252' })).text).toBe('Ã¤\n');
+    expect(await call(test, windowId, 'git.changes', { path: at('w.txt'), text: 'Ã¤\n', encoding: 'windows-1252' })).toEqual([]);
+    expect(await call(test, windowId, 'git.fileAtCommit', { path: at('bild.bin') })).toEqual({ exists: true, text: '', binary: true });
+    expect(await call(test, windowId, 'git.changes', { path: at('bild.bin'), text: 'x\n' })).toEqual([]);
+    await expect(call(test, windowId, 'git.changes', { path: at('w.txt'), text: '', encoding: 'latin9' as never })).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
   });
 });
