@@ -343,7 +343,7 @@ export interface GitState {
 
 /** Branches des Repositorys. */
 export interface GitBranches {
-  local: Array<{ name: string; upstream?: string; current: boolean }>;
+  local: Array<{ name: string; upstream?: string; current: boolean; ahead?: number; behind?: number }>;
   remote: Array<{ name: string; remote: string }>;
 }
 

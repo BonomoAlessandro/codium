@@ -13,7 +13,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { CodiumError, ErrorCode } from '../../shared/types';
 import { BranchPopup, type BranchActions } from '../git/BranchPopup';
 import { GitToolWindow } from '../git/GitToolWindow';
-import { useGitState } from '../git/gitState';
+import { GIT_NOT_FOUND_TEXT, useGitState } from '../git/gitState';
+import { useGitAvailable } from '../CloneDialog';
 import { EditorArea, type EditorAreaHandle, type EditorStatus } from '../editor/EditorArea';
 import { FindInFilesPopup, type SearchOutcome } from '../search/FindInFilesPopup';
 import { GotoFilePopup, RecentFilesPopup, SymbolPopup } from '../search/FilePopups';
@@ -120,6 +121,8 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
   // ---------- Git (Ticket 15) ----------
 
   const gitState = useGitState(api);
+  // Ohne Git ein Hinweis auf das fehlende Git statt „Not a Git repository“ (Review von Ticket 15).
+  const gitAvailable = useGitAvailable(api);
   const [branchesOpen, setBranchesOpen] = useState(false);
   const ask = useAsk();
   const askText = useAskText();
@@ -143,7 +146,8 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
           const files = ((err.data as { files?: string[] } | undefined)?.files ?? []).map((f) => relativeLabel(project.path, f));
           await ask({
             title: 'Checkout Failed',
-            message: 'Your local changes to these files would be overwritten by checkout. Commit or revert them first.',
+            // Die Meldung von Git im Wortlaut (Spezifikation; Review von Ticket 15), die Dateien als Liste.
+            message: err.message,
             items: files,
             buttons: [{ id: 'ok', label: 'OK', primary: true }],
           });
@@ -559,12 +563,12 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
                 onOpenInTerminal={openInTerminal}
               />
             ) : id === 'git' ? (
-              <GitToolWindow api={api} state={gitState} onHide={() => hide(s)} />
-            ) : id === 'commit' && gitState && !gitState.repository ? (
+              <GitToolWindow api={api} state={gitState} gitAvailable={gitAvailable} onHide={() => hide(s)} />
+            ) : id === 'commit' && (gitAvailable === false || (gitState && !gitState.repository)) ? (
               <>
                 <ToolWindowHeader title={TOOL_WINDOWS[id].title} onHide={() => hide(s)} />
                 <div className="tool-window-body">
-                  <p className="tool-window-placeholder">Not a Git repository</p>
+                  <p className="tool-window-placeholder">{gitAvailable === false ? GIT_NOT_FOUND_TEXT : 'Not a Git repository'}</p>
                 </div>
               </>
             ) : id === 'terminal' ? (

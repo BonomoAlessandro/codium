@@ -32,3 +32,6 @@ export function branchLabel(state: GitState): { name: string; sync: string } {
   const sync = [state.ahead > 0 ? `↑${state.ahead}` : '', state.behind > 0 ? `↓${state.behind}` : ''].filter(Boolean).join(' ');
   return { name, sync };
 }
+
+/** Hinweis, wenn Git fehlt (Ticket 09). */
+export const GIT_NOT_FOUND_TEXT = 'Git was not found. Install Git and restart Codium to use Git functions.';

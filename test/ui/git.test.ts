@@ -46,8 +46,8 @@ describe('Git: Branches und Konsole', () => {
       await page.keyboard.press('Alt+9');
       const consoleLog = page.getByRole('log', { name: 'Git Console' });
       await consoleLog.waitFor();
-      await expect.poll(() => consoleLog.innerText()).toContain('git checkout -b feature-x');
-      expect(await consoleLog.innerText()).toContain('git checkout main');
+      await expect.poll(() => consoleLog.innerText()).toContain('git switch -c feature-x');
+      expect(await consoleLog.innerText()).toContain('git switch --no-guess main');
       expect(await consoleLog.innerText()).not.toContain('git --no-optional-locks status');
       await page.getByRole('checkbox', { name: 'Show background commands' }).check();
       await expect.poll(() => consoleLog.innerText()).toContain('git --no-optional-locks status');

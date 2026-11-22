@@ -189,7 +189,7 @@ describe('Git-Dienst', { timeout: 30_000 }, () => {
     await until(state, (s) => s.branch === 'main', 'main');
     await call(test, windowId, 'git.createBranch', { name: 'konsole', checkout: true });
     const entries = await call(test, windowId, 'git.console');
-    const created = entries.find((e) => e.command === 'git checkout -b konsole')!;
+    const created = entries.find((e) => e.command === 'git switch -c konsole')!;
     expect(created).toMatchObject({ exitCode: 0, background: false });
     expect(entries.some((e) => e.command.startsWith('git --no-optional-locks status') && e.background && e.exitCode === 0)).toBe(true);
     // Die Ereignisse melden Start (ohne Exit-Code) und Ende.
@@ -234,6 +234,62 @@ describe('Git-Dienst', { timeout: 30_000 }, () => {
     fs.writeFileSync(path.join(repo, 'e.txt'), 'e\n');
     run('add', 'e.txt');
     expect((await service.run(['commit', '-m', 'ohne Editor', '--edit'], { write: true })).code).toBe(0);
+  });
+
+  it('verwirft nie lokale Änderungen, wenn ein Branchname ein Pfad ist (Review von Ticket 15)', async () => {
+    const base = tempDir();
+    const { repo, env, run } = createRepoWithRemote(base);
+    fs.mkdirSync(path.join(repo, 'docs'));
+    fs.writeFileSync(path.join(repo, 'docs', 'x.txt'), 'eins\n');
+    run('add', '.');
+    run('commit', '-m', 'docs');
+    const { test, windowId, state } = await open(repo, env, base);
+    await until(state, (s) => s.branch === 'main', 'main');
+    fs.writeFileSync(path.join(repo, 'docs', 'x.txt'), 'lokal geändert\n');
+    fs.writeFileSync(path.join(repo, 'README.md'), 'auch geändert\n');
+    for (const name of ['docs', '.', 'README.md']) {
+      await expect(call(test, windowId, 'git.checkout', { name }), name).rejects.toMatchObject({ code: ErrorCode.gitFailed });
+    }
+    expect(fs.readFileSync(path.join(repo, 'docs', 'x.txt'), 'utf8')).toBe('lokal geändert\n');
+    expect(fs.readFileSync(path.join(repo, 'README.md'), 'utf8')).toBe('auch geändert\n');
+  });
+
+  it('folgt in einem Worktree den gemeinsamen Refs des Haupt-Repositorys (Review von Ticket 15)', async () => {
+    const base = tempDir();
+    const { repo, env, run } = createRepoWithRemote(base);
+    const worktree = path.join(base, 'Arbeit ä');
+    run('worktree', 'add', '-b', 'wtb', worktree);
+    git(worktree, env, 'branch', '--set-upstream-to=main');
+    const { test, state } = await open(worktree, env, base);
+    await until(state, (s) => s.branch === 'wtb', 'Worktree');
+    // Ein Commit auf main im Haupt-Repository: wtb ist danach einen Commit zurück.
+    fs.writeFileSync(path.join(repo, 'neu.txt'), 'n\n');
+    run('add', 'neu.txt');
+    run('commit', '-m', 'im Haupt-Repository');
+    await until(
+      () => test.events.sent.filter((e) => e.name === 'git.stateChanged').map((e) => (e.payload as GitState).behind),
+      (b) => b.includes(1),
+      'zurück nach Commit im Haupt-Repository',
+    );
+  });
+
+  it('zeigt im Repository ohne Commits den ungeborenen Branch; Umbenennungen mit Umlauten und Leerzeichen', async () => {
+    const base = tempDir();
+    const env = shieldedGitEnv(path.join(base, 'gitconfig'));
+    const fresh = path.join(base, 'Neu');
+    git(base, env, 'init', '--initial-branch=main', fresh);
+    const first = await open(fresh, env, base);
+    await until(first.state, (s) => s.repository, 'Repository');
+    expect((await call(first.test, first.windowId, 'git.branches')).local).toEqual([{ name: 'main', current: true }]);
+
+    const { repo, run } = createRepoWithRemote(path.join(base, 'r'));
+    fs.writeFileSync(path.join(repo, 'alt name.txt'), 'x\n');
+    run('add', '.');
+    run('commit', '-m', 'datei');
+    run('mv', 'alt name.txt', 'neuer Näme.txt');
+    const second = await open(repo, env, path.join(base, 's'));
+    const st = await until(second.state, (s) => s.files.length > 0, 'Umbenennung');
+    expect(st.files).toEqual([{ path: path.join(repo, 'neuer Näme.txt'), index: 'R', worktree: '.', origPath: path.join(repo, 'alt name.txt') }]);
   });
 
   it('ist ohne Git aus', async () => {

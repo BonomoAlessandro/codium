@@ -327,7 +327,6 @@ function TextDialog({ options, onAnswer }: { options: AskTextOptions; onAnswer: 
   );
 }
 
-/** Hält Tab und Shift + Tab im Dialog: Am Ende geht es zum Anfang und umgekehrt. */
 /** Häkchen im Eingabedialog. */
 function DialogCheckbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
   const [value, setValue] = useState(checked);
@@ -346,6 +345,7 @@ function DialogCheckbox({ label, checked, onChange }: { label: string; checked: 
   );
 }
 
+/** Hält Tab und Shift + Tab im Dialog: Am Ende geht es zum Anfang und umgekehrt. */
 export function keepFocusInside(e: KeyboardEvent, container: HTMLElement): void {
   const focusable = [...container.querySelectorAll<HTMLElement>(FOCUSABLE)];
   if (focusable.length === 0) return;

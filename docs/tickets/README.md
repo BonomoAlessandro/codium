@@ -79,7 +79,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 | 12 | [Sprach-Dienst mit TypeScript: Definition, Verwendungen, Hover, Fehler](12-sprach-dienst-typescript.md) | AFK | 06, 07, 08 | 3 | erledigt |
 | 13 | [Vervollständigung, semantische Färbung, Symbolsuche, Zurück und Vor](13-vervollstaendigung-und-navigation.md) | AFK | 06, 12 | 3 | erledigt |
 | 14 | [Java-Sprachserver](14-java.md) | AFK | 09, 13 | 3 | erledigt |
-| 15 | [Git-Dienst, Git-Konsole und Branches](15-git-und-branches.md) | AFK | 07, 09 | 4 | offen |
+| 15 | [Git-Dienst, Git-Konsole und Branches](15-git-und-branches.md) | AFK | 07, 09 | 4 | erledigt |
 | 16 | [Änderungsansicht und Commit](16-commit.md) | AFK | 06, 15 | 4 | offen |
 | 17 | [Vergleichsansicht und Änderungsbalken](17-vergleich-und-balken.md) | AFK | 16 | 4 | offen |
 | 18 | [Fetch, Pull, Push und Konflikte](18-fetch-pull-push.md) | AFK | 16 | 4 | offen |

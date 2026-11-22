@@ -5,17 +5,20 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CodiumApi, GitConsoleEntry, GitState } from '../../shared/types';
 import { ToolWindowHeader } from '../project/ToolWindowHeader';
+import { GIT_NOT_FOUND_TEXT } from './gitState';
 
 interface GitToolWindowProps {
   api: CodiumApi;
   state: GitState | null;
+  /** `false`: Git fehlt (Hinweis statt „Not a Git repository“). */
+  gitAvailable?: boolean | null;
   onHide: () => void;
 }
 
 /** So viele Einträge hält auch die Oberfläche (wie der Kern). */
 const LIMIT = 1000;
 
-export function GitToolWindow({ api, state, onHide }: GitToolWindowProps) {
+export function GitToolWindow({ api, state, gitAvailable, onHide }: GitToolWindowProps) {
   const [tab, setTab] = useState<'log' | 'console'>('console');
   const entries = useConsole(api);
   const [background, setBackground] = useState(false);
@@ -49,7 +52,9 @@ export function GitToolWindow({ api, state, onHide }: GitToolWindowProps) {
         </div>
       </ToolWindowHeader>
       <div className="tool-window-body git-body">
-        {state && !state.repository ? (
+        {gitAvailable === false ? (
+          <p className="tool-window-placeholder">{GIT_NOT_FOUND_TEXT}</p>
+        ) : state && !state.repository ? (
           <p className="tool-window-placeholder">Not a Git repository</p>
         ) : tab === 'log' ? (
           <p className="tool-window-placeholder">The Git log will appear here.</p>

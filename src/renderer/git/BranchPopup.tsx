@@ -29,7 +29,7 @@ interface BranchPopupProps {
 type Row =
   | { kind: 'action'; label: string; run: () => void }
   | { kind: 'header'; label: string }
-  | { kind: 'local'; name: string; current: boolean; upstream?: string }
+  | { kind: 'local'; name: string; current: boolean; upstream?: string; ahead?: number; behind?: number }
   | { kind: 'remote'; name: string };
 
 export function BranchPopup({ api, state, actions, onClose }: BranchPopupProps) {
@@ -162,6 +162,9 @@ export function BranchPopup({ api, state, actions, onClose }: BranchPopupProps) 
             >
               <span className="quick-popup-name">{row.kind === 'action' ? row.label : row.name}</span>
               {row.kind === 'local' && row.current && <span className="quick-popup-detail">current</span>}
+              {row.kind === 'local' && (row.ahead || row.behind) ? (
+                <span className="quick-popup-detail">{[row.ahead ? `↑${row.ahead}` : '', row.behind ? `↓${row.behind}` : ''].filter(Boolean).join(' ')}</span>
+              ) : null}
               {row.kind === 'local' && row.upstream && !row.current && <span className="quick-popup-detail">{row.upstream}</span>}
             </div>
           ),

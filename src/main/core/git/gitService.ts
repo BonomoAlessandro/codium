@@ -16,8 +16,11 @@ import { CommandError } from '../router';
 
 /** So viele Einträge hält die Git-Konsole pro Projektfenster. */
 export const CONSOLE_LIMIT = 1000;
-/** So lange bündelt der Dienst Ereignisse, bevor er den Zustand neu liest. */
+/** So lange bündelt der Dienst Ereignisse, bevor er den Zustand neu liest, höchstens aber so lange. */
 const REFRESH_DELAY_MS = 300;
+const REFRESH_MAX_DELAY_MS = 2000;
+/** So viel Ausgabe hält ein Eintrag der Git-Konsole höchstens. */
+const OUTPUT_LIMIT = 16 * 1024;
 
 export interface GitServiceOptions {
   /** Pfad zum installierten Git; `null` ohne Git (dann sind alle Git-Funktionen aus). */
@@ -48,7 +51,10 @@ export class GitService {
   private refreshTimer: NodeJS.Timeout | null = null;
   private refreshing: Promise<GitState> | null = null;
   private refreshAgain = false;
-  private watcher: fs.FSWatcher | null = null;
+  private readonly watchers = new Map<string, fs.FSWatcher>();
+  private lastRepositoryError: string | null = null;
+  /** Bis zur ersten Abfrage ist der Zustand unbekannt; `git.state` wartet dann auf sie (Review von Ticket 15). */
+  private firstRead: Promise<GitState> | null = null;
   private disposed = false;
   /** Laufende Aufrufe; der Abbau wartet auf sie (sie halten den Projektordner als Arbeitsordner). */
   private readonly running = new Set<Promise<unknown>>();
@@ -61,11 +67,12 @@ export class GitService {
     project.subscribe('git.dataChanged', () => this.scheduleRefresh());
     project.subscribe('files.changed', () => this.scheduleRefresh());
     project.subscribe('files.operation', () => this.scheduleRefresh());
-    if (options.git) void this.refresh();
+    if (options.git) this.firstRead = this.refresh();
   }
 
-  /** Der letzte bekannte Zustand. */
-  current(): GitState {
+  /** Der Zustand; vor der ersten Abfrage wartet er auf sie (sonst zeigte die Oberfläche kurz „kein Repository“). */
+  async current(): Promise<GitState> {
+    if (this.firstRead) await this.firstRead.catch(() => {});
     return this.state;
   }
 
@@ -97,33 +104,50 @@ export class GitService {
     return this.refreshing;
   }
 
+  private firstPending: number | null = null;
+
   private scheduleRefresh(): void {
     if (!this.options.git || this.disposed) return;
+    const now = Date.now();
+    this.firstPending ??= now;
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
+    // Bei andauernden Ereignissen (etwa ein langer Fetch) spätestens nach REFRESH_MAX_DELAY_MS.
+    const delay = Math.max(0, Math.min(REFRESH_DELAY_MS, this.firstPending + REFRESH_MAX_DELAY_MS - now));
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = null;
+      this.firstPending = null;
       void this.refresh();
-    }, REFRESH_DELAY_MS);
+    }, delay);
   }
 
   private async readState(): Promise<GitState> {
     if (!this.options.git) return this.publish(NO_REPOSITORY);
-    const top = await this.run(['rev-parse', '--show-toplevel', '--absolute-git-dir'], { background: true });
+    const top = await this.run(['rev-parse', '--show-toplevel', '--absolute-git-dir', '--git-common-dir'], { background: true });
     if (top.code !== 0) {
       this.root = null;
       this.gitDir = null;
-      this.watchGitDir(null);
+      this.watchGitDir([]);
+      // Ein kaputtes Repository oder eines, dem Git nicht traut („dubious ownership“), ist nicht dasselbe wie keines:
+      // die Meldung von Git zeigen, einmal je Meldung (Review von Ticket 15).
+      const message = gitMessage(top.stderr);
+      if (message && !/not a git repository/i.test(message) && message !== this.lastRepositoryError) {
+        this.lastRepositoryError = message;
+        this.project.notify({ level: 'error', text: message });
+      }
       return this.publish(NO_REPOSITORY);
     }
-    const [root, gitDir] = top.stdout.split(/\r?\n/).map((l) => path.normalize(l.trim()));
-    this.root = root;
-    this.gitDir = gitDir;
-    this.watchGitDir(gitDir);
+    this.lastRepositoryError = null;
+    const [root, gitDir, commonRaw] = top.stdout.split(/\r?\n/).map((l) => l.trim());
+    const common = path.resolve(this.project.path, commonRaw);
+    this.root = path.normalize(root);
+    this.gitDir = path.normalize(gitDir);
+    // Worktrees: HEAD und Index im eigenen Git-Verzeichnis, Refs im gemeinsamen des Haupt-Repositorys.
+    this.watchGitDir([...new Set([this.gitDir, path.normalize(common)])]);
     const status = await this.run(['--no-optional-locks', 'status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all', '--', '.'], {
       background: true,
     });
-    if (status.code !== 0) return this.publish({ ...NO_REPOSITORY, repository: true, root });
-    return this.publish({ ...parseStatus(status.stdout, root), ...(this.operation() ? { operation: this.operation()! } : {}) });
+    if (status.code !== 0) return this.publish({ ...NO_REPOSITORY, repository: true, root: this.root });
+    return this.publish({ ...parseStatus(status.stdout, this.root), ...(this.operation() ? { operation: this.operation()! } : {}) });
   }
 
   private operation(): GitState['operation'] | undefined {
@@ -148,24 +172,27 @@ export class GitService {
    * meldet die Dateiüberwachung des Projekts keine „Git-Daten geändert“: Dann beobachtet der Dienst HEAD, Index und Refs
    * dort selbst (Hinweis aus dem Review von Ticket 04).
    */
-  private watchGitDir(gitDir: string | null): void {
-    const inside = gitDir !== null && isInside(gitDir, this.project.path);
-    const wanted = gitDir !== null && !inside ? gitDir : null;
-    if (this.watcher && (wanted === null || (this.watcher as fs.FSWatcher & { codiumDir?: string }).codiumDir !== wanted)) {
-      this.watcher.close();
-      this.watcher = null;
+  private watchGitDir(dirs: string[]): void {
+    // Ein Git-Verzeichnis im Projekt meldet die Dateiüberwachung des Projekts selbst.
+    const wanted = dirs.filter((d) => !isInside(d, this.project.path));
+    for (const [dir, watcher] of this.watchers) {
+      if (wanted.includes(dir)) continue;
+      watcher.close();
+      this.watchers.delete(dir);
     }
-    if (!wanted || this.watcher || this.disposed) return;
-    try {
-      const watcher = fs.watch(wanted, { recursive: true }, (_event, file) => {
-        const name = String(file ?? '').replace(/\\/g, '/');
-        if (name === '' || /^(HEAD|index|packed-refs|MERGE_HEAD|ORIG_HEAD|refs\/|rebase-)/.test(name)) this.scheduleRefresh();
-      });
-      watcher.on('error', () => {});
-      (watcher as fs.FSWatcher & { codiumDir?: string }).codiumDir = wanted;
-      this.watcher = watcher;
-    } catch (err) {
-      this.options.log(`Git-Verzeichnis ${wanted} lässt sich nicht beobachten: ${(err as Error).message}`);
+    if (this.disposed) return;
+    for (const dir of wanted) {
+      if (this.watchers.has(dir)) continue;
+      try {
+        const watcher = fs.watch(dir, { recursive: true }, (_event, file) => {
+          const name = String(file ?? '').replace(/\\/g, '/');
+          if (name === '' || /^(HEAD|index|packed-refs|MERGE_HEAD|ORIG_HEAD|refs\/|rebase-|worktrees\/[^/]+\/(HEAD|index))/.test(name)) this.scheduleRefresh();
+        });
+        watcher.on('error', () => {});
+        this.watchers.set(dir, watcher);
+      } catch (err) {
+        this.options.log(`Git-Verzeichnis ${dir} lässt sich nicht beobachten: ${(err as Error).message}`);
+      }
     }
   }
 
@@ -173,7 +200,7 @@ export class GitService {
 
   async branches(): Promise<GitBranches> {
     await this.requireRepository();
-    const result = await this.run(['for-each-ref', '--format=%(refname)%00%(upstream:short)%00%(HEAD)%00%(symref)', 'refs/heads', 'refs/remotes'], {
+    const result = await this.run(['for-each-ref', '--format=%(refname)%00%(upstream:short)%00%(HEAD)%00%(symref)%00%(upstream:track,nobracket)', 'refs/heads', 'refs/remotes'], {
       background: true,
     });
     if (result.code !== 0) throw this.failure(result);
@@ -181,14 +208,24 @@ export class GitService {
     const remote: GitBranches['remote'] = [];
     for (const line of result.stdout.split(/\r?\n/)) {
       if (line === '') continue;
-      const [ref, upstream, head, symref] = line.split('\0');
+      const [ref, upstream, head, symref, track] = line.split('\0');
       if (ref.startsWith('refs/heads/')) {
-        local.push({ name: ref.slice('refs/heads/'.length), ...(upstream ? { upstream } : {}), current: head === '*' });
+        const ahead = Number(/ahead (\d+)/.exec(track ?? '')?.[1] ?? 0);
+        const behind = Number(/behind (\d+)/.exec(track ?? '')?.[1] ?? 0);
+        local.push({
+          name: ref.slice('refs/heads/'.length),
+          ...(upstream ? { upstream } : {}),
+          current: head === '*',
+          ...(ahead ? { ahead } : {}),
+          ...(behind ? { behind } : {}),
+        });
       } else if (ref.startsWith('refs/remotes/') && !symref) {
         const name = ref.slice('refs/remotes/'.length);
         remote.push({ name, remote: name.split('/')[0] });
       }
     }
+    // Ein Repository ohne Commits: Der aktuelle Branch ist noch ungeboren und steht nicht in den Refs.
+    if (this.state.branch && !local.some((b) => b.current)) local.unshift({ name: this.state.branch, current: true });
     return { local, remote };
   }
 
@@ -197,14 +234,16 @@ export class GitService {
     const name = branchName(p?.name);
     const from = p?.from === undefined ? undefined : branchName(p.from);
     await this.requireRepository();
-    const args = p.checkout === true ? ['checkout', '-b', name, ...(from ? [from] : [])] : ['branch', name, ...(from ? [from] : [])];
+    // `switch` fasst nie Pfade an (anders als `checkout`, bei dem ein Name wie „docs“ oder „.“ lokale Änderungen
+    // verwerfen kann; Review von Ticket 15).
+    const args = p.checkout === true ? ['switch', '-c', name, ...(from ? [from] : [])] : ['branch', name, ...(from ? [from] : [])];
     await this.write(args);
   }
 
   async checkout(params: CommandParams<'git.checkout'>): Promise<void> {
     const name = branchName((params as Partial<CommandParams<'git.checkout'>>)?.name);
     await this.requireRepository();
-    await this.write(['checkout', name]);
+    await this.write(['switch', '--no-guess', name]);
   }
 
   async checkoutRemote(params: CommandParams<'git.checkoutRemote'>): Promise<{ local: string }> {
@@ -214,8 +253,13 @@ export class GitService {
     if (slash <= 0) throw new CommandError('A remote branch (remote/name) is expected.', ErrorCode.invalidParams);
     const local = name.slice(slash + 1);
     // Gibt es den lokalen Branch schon, wird er ausgecheckt; sonst einer angelegt, der dem Remote-Branch folgt.
-    const exists = (await this.run(['show-ref', '--verify', '--quiet', `refs/heads/${local}`], { background: true })).code === 0;
-    await this.write(exists ? ['checkout', local] : ['checkout', '--track', '-b', local, name]);
+    // Prüfung und Wechsel zusammen in der Schreibreihe: Zwei gleichzeitige Aufrufe sehen sonst beide „nicht da“.
+    await this.serial(async () => {
+      const exists = (await this.run(['show-ref', '--verify', '--quiet', `refs/heads/${local}`], { background: true })).code === 0;
+      const result = await this.run(exists ? ['switch', '--no-guess', local] : ['switch', '--track', '-c', local, name]);
+      await this.refresh();
+      if (result.code !== 0) throw this.failure(result);
+    });
     return { local };
   }
 
@@ -234,7 +278,20 @@ export class GitService {
     if (this.state.branch === name) {
       throw new CommandError(`The current branch “${name}” cannot be deleted. Check out another branch first.`, ErrorCode.gitFailed);
     }
-    await this.write(['branch', p.force === true ? '-D' : '-d', name]);
+    // „Nicht gemergt“ selbst prüfen (Git meldet es übersetzt, je nach Sprache): gemergt heisst, der Branch ist in HEAD
+    // oder in seinem Upstream enthalten, wie bei `git branch -d`.
+    if (p.force !== true && !(await this.isMerged(name))) {
+      throw new CommandError(`The branch '${name}' is not fully merged.`, ErrorCode.gitNotMerged);
+    }
+    await this.write(['branch', '-D', name]);
+  }
+
+  private async isMerged(name: string): Promise<boolean> {
+    const upstream = (await this.run(['rev-parse', '--abbrev-ref', `${name}@{upstream}`], { background: true })).stdout.trim();
+    for (const base of ['HEAD', ...(upstream ? [upstream] : [])]) {
+      if ((await this.run(['merge-base', '--is-ancestor', `refs/heads/${name}`, base], { background: true })).code === 0) return true;
+    }
+    return false;
   }
 
   // ---------- Aufrufe ----------
@@ -245,6 +302,13 @@ export class GitService {
     await this.refresh();
     if (result.code !== 0) throw this.failure(result);
     return result;
+  }
+
+  /** Mehrere Schritte als eine schreibende Aktion in der Reihe. */
+  private serial<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.writeChain.then(work, work);
+    this.writeChain = next.catch(() => {});
+    return next;
   }
 
   /** Ruft Git im Projektordner auf und schreibt den Aufruf in die Konsole. Für Tests öffentlich. */
@@ -271,7 +335,10 @@ export class GitService {
       } catch (err) {
         result = { code: null, stdout: '', stderr: (err as Error).message };
       }
-      entry.output = `${result.stdout}${result.stderr}`.trimEnd();
+      // Gekürzt und lesbar: `-z`-Ausgaben trennen mit NUL; sehr grosse Ausgaben (status in grossen Repositorys)
+      // füllten sonst den Speicher (Review von Ticket 15).
+      const output = `${result.stdout}${result.stderr}`.replace(/\0/g, '\n').trimEnd();
+      entry.output = output.length > OUTPUT_LIMIT ? `${output.slice(0, OUTPUT_LIMIT)}\n… (${output.length - OUTPUT_LIMIT} more characters)` : output;
       entry.exitCode = result.code;
       if (!this.disposed) this.project.emit('git.console', { ...entry });
       return result;
@@ -292,15 +359,12 @@ export class GitService {
   private failure(result: GitRun): CommandError {
     const message = gitMessage(result.stderr) || gitMessage(result.stdout) || `git failed with exit code ${result.code}.`;
     if (/not fully merged/i.test(result.stderr)) return new CommandError(message, ErrorCode.gitNotMerged);
-    const blocked = /following (?:untracked working tree )?files would be (?:overwritten|removed) by checkout:\s*\n([\s\S]*?)\n(?:Please|Aborting)/i.exec(result.stderr);
-    if (blocked) {
-      const files = blocked[1]
-        .split(/\r?\n/)
-        .map((l) => l.trim())
-        .filter(Boolean)
-        .map((f) => path.join(this.root ?? this.project.path, f));
-      return new CommandError(message, ErrorCode.gitCheckoutBlocked, { files });
-    }
+    // Ein verweigerter Wechsel: Git listet die Dateien mit einem Tab eingerückt (in jeder Sprache gleich).
+    const files = result.stderr
+      .split(/\r?\n/)
+      .filter((l) => l.startsWith('\t'))
+      .map((l) => path.join(this.root ?? this.project.path, l.trim()));
+    if (files.length > 0 && /^error:/m.test(result.stderr)) return new CommandError(message, ErrorCode.gitCheckoutBlocked, { files });
     return new CommandError(message, ErrorCode.gitFailed);
   }
 
@@ -313,8 +377,8 @@ export class GitService {
   private async dispose(): Promise<void> {
     this.disposed = true;
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
-    this.watcher?.close();
-    this.watcher = null;
+    for (const watcher of this.watchers.values()) watcher.close();
+    this.watchers.clear();
     await Promise.allSettled([...this.running]);
   }
 }
