@@ -1,6 +1,6 @@
 # 21 – Datenbank: Tabelleninhalt und Bearbeiten
 
-Status: `ready-for-agent` · Typ: AFK
+Status: `erledigt` (2026-11-22, Abnahme von Hand am Schluss in Ticket 22) · Typ: AFK
 Blockiert durch: 05, 20
 User Stories: 160–171
 Spezifikation: „Datenbank“ (Tabelleninhalt, Bearbeiten, NULL, Lange Werte, Binäre Spalten), „Präzisierungen beim Schreiben“ Punkt 12
@@ -32,7 +32,7 @@ Spezifikation: „Datenbank“ (Tabelleninhalt, Bearbeiten, NULL, Lange Werte, B
 
 ## Akzeptanzkriterien
 
-- [ ] Langsamer Testlauf gegen embedded-postgres:
+- [x] Langsamer Testlauf gegen embedded-postgres:
   - Seiten mit Standardsortierung nach Primärschlüssel, Sortierung, Filter, ungültiger Filter.
   - Update, Insert (mit Standardwert, mit Identitätsspalte, mit ausdrücklichem NULL) und Delete in einer Transaktion.
   - Ein Fehler (etwa verletzter Fremdschlüssel) rollt alles zurück, der Änderungssatz bleibt.
@@ -40,7 +40,7 @@ Spezifikation: „Datenbank“ (Tabelleninhalt, Bearbeiten, NULL, Lange Werte, B
   - Schreibschutz für eine Tabelle ohne Primärschlüssel und für eine View.
   - Verlustfreie Werte für numeric mit vielen Stellen, bigint über 2^53, timestamptz, json und jsonb, auch als ursprüngliche Werte im Vergleich.
   - bytea erscheint als Länge.
-- [ ] Playwright-Tests:
+- [x] Playwright-Tests:
   - Tabelle öffnen, mehrere Zellen in mehreren Zeilen ändern, eine Zeile hinzufügen, eine löschen, „Submit“ → nach dem Neuladen ist alles da.
   - Eine Änderung mit „Revert“ verwerfen.
   - Mit offener Änderung die Seite wechseln → Rückfrage.
@@ -49,3 +49,18 @@ Spezifikation: „Datenbank“ (Tabelleninhalt, Bearbeiten, NULL, Lange Werte, B
 ## Abnahme von Hand
 
 - [ ] Eine grosse Tabelle (über 100'000 Zeilen) öffnet schnell, Blättern und Sortieren sind flüssig.
+
+## Review
+
+Unabhängiges Review durch einen zweiten Agenten am 2026-11-22. Bezeichner in Anführungszeichen, Sortierspalte aus der Spaltenliste, Werte immer als Parameter, Transaktion mit Rollback bei jedem Fehler (auch „keine Zeile getroffen“) und Freigabe des Clients, Reihenfolge Updates–Deletes–Inserts, Änderungen an gelöschten Zeilen und am Primärschlüssel, `DEFAULT VALUES`, ausdrückliches NULL, verlustfreie Werte, Schutz vor veralteten Antworten beim Blättern und die Rückfrage beim Schliessen in Ordnung. Eingearbeitet:
+
+- **Ctrl + Enter während der Eingabe verlor sie** (oder speichert die anderen und verwarf sie danach still). Der Änderungssatz liegt jetzt zusätzlich in einem sofort aktuellen Ref. UI-Test dazu.
+- **Falsche Zeile geändert:** Während eine Seite lud, liess sich die alte bearbeiten; die Änderung hing dann an der Zeile gleicher Nummer der neuen Seite. Jetzt ist Bearbeiten während des Ladens gesperrt.
+- **Aus NULL wurde leerer Text** schon durch Doppelklick und Verlassen (bzw. „Open Editor“ und OK). Übernommen wird jetzt nur, was getippt wurde; Escape bricht sicher ab. UI-Test dazu.
+- **Mehrzeilige Werte:** Das einzeilige Feld hätte die Zeilenumbrüche verloren; solche Werte öffnen jetzt das grosse Feld.
+- **char(n):** Jedes Update scheiterte (der geladene Wert hat Füllzeichen, `::text` nicht). Diese Spalten vergleichen jetzt im eigenen Typ. Langsamer Test dazu.
+- **Tabs verwechselt:** „Users“ und „users“ (und „a.b“ + „c“ gegen „a“ + „b.c“) ergaben denselben Tab. Jetzt eindeutige Schlüssel.
+- **Binärer Primärschlüssel:** wurde über die Länge getroffen; solche Tabellen sind jetzt schreibgeschützt. **Domänen** über bytea und json zählen wie ihr Basistyp. Test dazu.
+- **json sortieren** schlug fehl (kein Ordnungsoperator); jetzt nach dem Text. **Filter mit „;“** gibt eine klare Meldung statt eines Absturzes der Anfrage. Ein **fehlerhafter Filter** lässt sich mit Enter erneut versuchen. **Ctrl + Enter im grossen Feld** löst kein „Submit“ der Tabelle mehr aus.
+
+Bewusst so gelassen (in der Liste offener Punkte): Sehr grosse Werte (etwa Megabyte-JSON) kommen pro Seite vollständig in die Oberfläche, und die Zeilen werden beim Tippen ohne Memoisierung neu gezeichnet; das Schliessen des ganzen Fensters fragt nicht nach offenen Änderungssätzen (nur das Schliessen des Tabs).

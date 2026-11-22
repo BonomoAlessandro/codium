@@ -121,6 +121,8 @@ const DIFF_PREFIX = `${DOCUMENT_PREFIX}diff\\`;
 const isDiffTab = (tabPath: string) => tabPath.startsWith(DIFF_PREFIX);
 /** Tabelleninhalte (Ticket 21) sind ebenfalls Dokument-Tabs. */
 const TABLE_PREFIX = `${DOCUMENT_PREFIX}table\\`;
+/** Ein Name als Folge von Hex-Codepunkten: eindeutig, auch wenn Tab-Schlüssel klein geschrieben verglichen werden. */
+const caseSafe = (name: string) => [...name].map((c) => c.codePointAt(0)!.toString(16).padStart(4, '0')).join('');
 export const isDocumentTab = (tabPath: string) => tabPath.startsWith(DOCUMENT_PREFIX);
 
 /** Was ein Tab zeigt; `null`, solange die Datei noch nicht gelesen wurde. */
@@ -1005,7 +1007,9 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   /** Tabelleninhalt als Tab; derselbe Tab, wenn er schon offen ist. */
   const openTable = useCallback(
     (table: TableSpec) => {
-      const tablePath = `${TABLE_PREFIX}${table.connectionId}\\${table.schema}.${table.table}`;
+      // Eindeutig und unabhängig von Gross-/Kleinschreibung der Tab-Schlüssel: „Users“ und „users“ sind in PostgreSQL
+      // verschiedene Tabellen, „a.b“ + „c“ und „a“ + „b.c“ auch (Review von Ticket 21).
+      const tablePath = `${TABLE_PREFIX}${table.connectionId}\\${caseSafe(table.schema)}\\${caseSafe(table.table)}`;
       if (!tabsRef.current.some((t) => pathKey(t.path) === pathKey(tablePath))) {
         setTabs([...tabsRef.current, { path: tablePath, content: { kind: 'table', table }, pinned: false }]);
       }

@@ -53,9 +53,21 @@ export function TableView({ api, notify, spec, onDirtyChange }: TableViewProps) 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [changes, setChanges] = useState<Changes>(NO_CHANGES);
+  const [changes, setChangesState] = useState<Changes>(NO_CHANGES);
+  /** Der Änderungssatz sofort (nicht erst nach dem nächsten Zeichnen): „Submit“ direkt nach einer Eingabe (Review). */
+  const changesRef = useRef<Changes>(NO_CHANGES);
+  const setChanges = (next: Changes | ((c: Changes) => Changes)) => {
+    const value = typeof next === 'function' ? next(changesRef.current) : next;
+    changesRef.current = value;
+    setChangesState(value);
+  };
   const [selected, setSelected] = useState<{ row: number; col: number } | null>(null);
-  const [editing, setEditing] = useState<{ row: number; col: number; value: string } | null>(null);
+  /** `touched`: Der Nutzer hat getippt; nur dann wird übernommen (sonst würde aus NULL ein leerer Text; Review). */
+  const [editing, setEditing] = useState<{ row: number; col: number; value: string; touched: boolean } | null>(null);
+  /** Escape bricht ab; das Verlassen des Felds danach übernimmt nichts. */
+  const editAborted = useRef(false);
+  /** Erneutes Laden mit demselben Filter (etwa nach einem Fehler). */
+  const [reloadTick, setReloadTick] = useState(0);
   const [menu, setMenu] = useState<{ x: number; y: number; row: number; col: number } | null>(null);
   const [bigEditor, setBigEditor] = useState<{ row: number; col: number } | null>(null);
   const ask = useAsk();
@@ -98,7 +110,7 @@ export function TableView({ api, notify, spec, onDirtyChange }: TableViewProps) 
 
   useEffect(() => {
     void load({ offset, sort, filter });
-  }, [load, offset, sort, filter]);
+  }, [load, offset, sort, filter, reloadTick]);
 
   /** Mit offenen Änderungen erst fragen (Seite, Sortierung, Filter). */
   const confirmDiscard = async (): Promise<boolean> => {
@@ -139,7 +151,8 @@ export function TableView({ api, notify, spec, onDirtyChange }: TableViewProps) 
   };
   const isChanged = (row: number, col: number) => (row >= loaded.length ? changes.added[row - loaded.length].has(col) : changes.edits.get(row)?.has(col) === true);
   const isDeleted = (row: number) => (row >= loaded.length ? changes.addedDeleted.has(row - loaded.length) : changes.deleted.has(row));
-  const canEdit = (col: number) => !readOnly && !saving && columns[col] !== undefined && !columns[col].binary;
+  // Nicht während des Ladens: Die Änderungen hängen an der Zeile der Seite; eine neue Seite trüge sonst fremde Zeilen.
+  const canEdit = (col: number) => !readOnly && !saving && !loading && columns[col] !== undefined && !columns[col].binary;
 
   const setCell = (row: number, col: number, value: DbValue) => {
     setChanges((c) => {
@@ -164,14 +177,14 @@ export function TableView({ api, notify, spec, onDirtyChange }: TableViewProps) 
   };
 
   const addRow = () => {
-    if (readOnly || saving) return;
+    if (readOnly || saving || loading) return;
     setChanges((c) => ({ ...c, added: [...c.added, new Map()] }));
     setSelected({ row: rowCount, col: 0 });
     window.setTimeout(() => gridRef.current?.scrollTo({ top: gridRef.current.scrollHeight }), 0);
   };
 
   const toggleDelete = (row: number) => {
-    if (readOnly || saving) return;
+    if (readOnly || saving || loading) return;
     setChanges((c) => {
       if (row >= loaded.length) {
         const set = new Set(c.addedDeleted);
@@ -187,7 +200,7 @@ export function TableView({ api, notify, spec, onDirtyChange }: TableViewProps) 
     });
   };
 
-  const changeSet = (): DbChangeSet => {
+  const changeSet = (changes: Changes): DbChangeSet => {
     const name = (col: number) => columns[col].name;
     const keyOf = (row: number) => Object.fromEntries((info?.primaryKey ?? []).map((k) => [k, loaded[row][columns.findIndex((c) => c.name === k)]]));
     const updates: DbChangeSet['updates'] = [];
@@ -207,11 +220,12 @@ export function TableView({ api, notify, spec, onDirtyChange }: TableViewProps) 
   };
 
   const submit = async () => {
-    if (!dirty || readOnly || saving) return;
+    const current = changesRef.current;
+    if (!isDirty(current) || readOnly || saving) return;
     setEditing(null);
     setSaving(true);
     try {
-      await api.request('db.submitChanges', { ...params, changes: changeSet() });
+      await api.request('db.submitChanges', { ...params, changes: changeSet(current) });
       setChanges(NO_CHANGES);
       notify({ level: 'success', text: `Saved changes to ${spec.schema}.${spec.table}.` });
       await load({ offset, sort, filter });
@@ -230,7 +244,7 @@ export function TableView({ api, notify, spec, onDirtyChange }: TableViewProps) 
 
   const commitEdit = () => {
     if (!editing) return;
-    setCell(editing.row, editing.col, editing.value);
+    if (editing.touched) setCell(editing.row, editing.col, editing.value);
     setEditing(null);
     gridRef.current?.focus();
   };
@@ -238,7 +252,13 @@ export function TableView({ api, notify, spec, onDirtyChange }: TableViewProps) 
   const startEdit = (row: number, col: number) => {
     if (!canEdit(col) || isDeleted(row)) return;
     const value = valueAt(row, col);
-    setEditing({ row, col, value: value ?? '' });
+    // Mehrzeilige Werte im grossen Feld: Ein einzeiliges Feld verlöre die Zeilenumbrüche (Review).
+    if (value !== null && /[\r\n]/.test(value)) {
+      setBigEditor({ row, col });
+      return;
+    }
+    editAborted.current = false;
+    setEditing({ row, col, value: value ?? '', touched: false });
   };
 
   const cycleSort = (column: string) =>
@@ -290,6 +310,8 @@ export function TableView({ api, notify, spec, onDirtyChange }: TableViewProps) 
             void go(() => {
               setOffset(0);
               setFilter(filterInput);
+              // Derselbe Filter noch einmal (etwa nach einem Fehler): trotzdem neu laden.
+              setReloadTick((t) => t + 1);
             });
           }}
         >
@@ -365,8 +387,11 @@ export function TableView({ api, notify, spec, onDirtyChange }: TableViewProps) 
                           autoFocus
                           spellCheck={false}
                           value={editing.value}
-                          onChange={(e) => setEditing({ ...editing, value: e.target.value })}
-                          onBlur={commitEdit}
+                          onChange={(e) => setEditing({ ...editing, value: e.target.value, touched: true })}
+                          onBlur={() => {
+                            if (editAborted.current) editAborted.current = false;
+                            else commitEdit();
+                          }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.ctrlKey) {
                               e.preventDefault();
@@ -374,6 +399,7 @@ export function TableView({ api, notify, spec, onDirtyChange }: TableViewProps) 
                             } else if (e.key === 'Escape') {
                               e.preventDefault();
                               e.stopPropagation();
+                              editAborted.current = true;
                               setEditing(null);
                               gridRef.current?.focus();
                             }
@@ -452,7 +478,15 @@ function ValueEditor({ title, value, json, readOnly, onApply, onClose }: { title
 
   return createPortal(
     <div className="dialog-overlay">
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title} className="dialog value-editor">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="dialog value-editor"
+        // Der Dialog liegt im React-Baum der Tabelle: Ctrl + Enter darf hier nicht „Submit“ auslösen (Review).
+        onKeyDown={(e) => e.stopPropagation()}
+      >
         <div className="dialog-title">{title}</div>
         <div ref={hostRef} className="value-editor-host" />
         <div className="dialog-buttons">
@@ -461,7 +495,9 @@ function ValueEditor({ title, value, json, readOnly, onApply, onClose }: { title
               type="button"
               className="button-primary"
               onClick={() => {
-                onApply(editorRef.current?.getValue() ?? '');
+                const text = editorRef.current?.getValue() ?? '';
+                // Unverändert (auch ein NULL, das als leeres Feld erscheint): nichts übernehmen.
+                if (text !== (value ?? '')) onApply(text);
                 onClose();
               }}
             >

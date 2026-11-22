@@ -190,11 +190,16 @@ export class DatabaseService {
   }
 
   private async describe(connection: StoredDbConnection, schema: string, table: string): Promise<DbTableInfo> {
+    return (await this.describeFull(connection, schema, table)).info;
+  }
+
+  /** Aufbau samt Basistyp je Spalte (bei Domänen der Typ darunter; Review von Ticket 21). */
+  private async describeFull(connection: StoredDbConnection, schema: string, table: string): Promise<{ info: DbTableInfo; bases: Map<string, string> }> {
     const rows = await this.query<{ name: string; type: string; base: string; nullable: string; pk_position: string | null; relkind: string }>(
       connection,
       `SELECT a.attname AS name,
               pg_catalog.format_type(a.atttypid, a.atttypmod) AS type,
-              t.typname AS base,
+              bt.typname AS base,
               (NOT a.attnotnull)::text AS nullable,
               (SELECT array_position(i.indkey::int2[], a.attnum) FROM pg_catalog.pg_index i
                 WHERE i.indrelid = c.oid AND i.indisprimary)::text AS pk_position,
@@ -203,6 +208,7 @@ export class DatabaseService {
          JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
          JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
          JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
+         JOIN pg_catalog.pg_type bt ON bt.oid = CASE WHEN t.typtype = 'd' THEN t.typbasetype ELSE t.oid END
         WHERE n.nspname = $1 AND c.relname = $2 AND a.attnum > 0 AND NOT a.attisdropped
         ORDER BY a.attnum`,
       [schema, table],
@@ -221,13 +227,16 @@ export class DatabaseService {
       binary: r.base === 'bytea',
       json: r.base === 'json' || r.base === 'jsonb',
     }));
+    const binaryKey = columns.some((c) => c.primaryKey && c.binary);
     const readOnlyReason =
       kind === 'view'
         ? 'Views are read-only.'
         : primaryKey.length === 0
           ? 'This table has no primary key, so rows cannot be identified safely. It is read-only.'
-          : undefined;
-    return { kind, columns, primaryKey, ...(readOnlyReason ? { readOnlyReason } : {}) };
+          : binaryKey
+            ? 'The primary key contains a binary column, so rows cannot be identified safely. It is read-only.'
+            : undefined;
+    return { info: { kind, columns, primaryKey, ...(readOnlyReason ? { readOnlyReason } : {}) }, bases: new Map(rows.map((r) => [r.name, r.base])) };
   }
 
   /** Eine Seite zu 500 Zeilen; Werte als Text, bytea als Länge. */
@@ -241,6 +250,9 @@ export class DatabaseService {
     if (p.filter !== undefined && typeof p.filter !== 'string') throw new CommandError('The filter must be a text.', ErrorCode.invalidParams);
     const info = await this.describe(connection, schema, table);
     const names = new Set(info.columns.map((c) => c.name));
+    const jsonColumns = new Set(info.columns.filter((c) => c.json && c.type !== 'jsonb').map((c) => c.name));
+    // json hat keinen Ordnungsoperator: nach seinem Text sortieren (Review).
+    const sortKey = (name: string) => (jsonColumns.has(name) ? `${quoteIdent(name)}::text` : quoteIdent(name));
     let order: string[];
     if (p.sort !== undefined) {
       const sort = p.sort as Partial<DbSort> | null;
@@ -248,7 +260,7 @@ export class DatabaseService {
         throw new CommandError('Not a valid sort column.', ErrorCode.invalidParams);
       }
       // Gleiche Werte in der gewählten Spalte: der Primärschlüssel hält die Seiten stabil.
-      order = [`${quoteIdent(sort.column)} ${sort.direction === 'asc' ? 'ASC' : 'DESC'}`, ...info.primaryKey.filter((k) => k !== sort.column).map(quoteIdent)];
+      order = [`${sortKey(sort.column)} ${sort.direction === 'asc' ? 'ASC' : 'DESC'}`, ...info.primaryKey.filter((k) => k !== sort.column).map(quoteIdent)];
     } else {
       order = info.primaryKey.map(quoteIdent);
     }
@@ -263,6 +275,8 @@ export class DatabaseService {
     const pool = await this.poolFor(connection);
     try {
       const result = await pool.query<DbValue[]>({ text: sql, rowMode: 'array' });
+      // Ein Filter mit „;“ ergibt mehrere Anweisungen und mehrere Ergebnisse (Review).
+      if (Array.isArray(result) || !Array.isArray(result.rows)) throw new CommandError('The filter must be a single condition (no “;”).', ErrorCode.dbFailed);
       const rows = result.rows.slice(0, TABLE_PAGE);
       return { rows, hasMore: result.rows.length > TABLE_PAGE };
     } catch (err) {
@@ -281,7 +295,7 @@ export class DatabaseService {
     const schema = identifier(p.schema, 'schema');
     const table = identifier(p.table, 'table');
     const changes = changeSet(p.changes);
-    const info = await this.describe(connection, schema, table);
+    const { info, bases } = await this.describeFull(connection, schema, table);
     if (info.readOnlyReason) throw new CommandError(info.readOnlyReason, ErrorCode.dbFailed);
     const columns = new Map(info.columns.map((c) => [c.name, c]));
     const checkColumns = (record: Record<string, DbValue>, what: string) => {
@@ -324,7 +338,12 @@ export class DatabaseService {
           const where = [
             ...key.map(([name, value]) => `${quoteIdent(name)} = ${param(value)}`),
             // Fremde Änderung: die ursprünglichen Werte der geänderten Spalten, als Text und NULL-sicher verglichen.
-            ...Object.keys(update.original).map((name) => `${quoteIdent(name)}::text IS NOT DISTINCT FROM ${param(update.original[name])}`),
+            // char(n) verliert mit ::text die Füllzeichen, die der geladene Wert hat: dort im eigenen Typ vergleichen.
+            ...Object.keys(update.original).map((name) =>
+              bases.get(name) === 'bpchar'
+                ? `${quoteIdent(name)} IS NOT DISTINCT FROM CAST(${param(update.original[name])} AS ${columns.get(name)!.type})`
+                : `${quoteIdent(name)}::text IS NOT DISTINCT FROM ${param(update.original[name])}`,
+            ),
           ];
           const result = await client.query(`UPDATE ${target} SET ${assignments.join(', ')} WHERE ${where.join(' AND ')}`, values);
           if (result.rowCount !== 1) {

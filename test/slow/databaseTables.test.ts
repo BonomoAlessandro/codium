@@ -186,6 +186,31 @@ describe('Datenbank: Tabelleninhalt und Bearbeiten', () => {
     await expect(submit('items', { deletes: [{ key: { id: '20' } }] })).rejects.toMatchObject({ code: 'DB_FAILED', message: expect.stringMatching(/already deleted/) });
   });
 
+  it('char(n), Domänen, binärer Primärschlüssel, json-Sortierung und Filter mit „;“ (Review)', async () => {
+    await server.sql(`
+      CREATE DOMAIN shop.blob AS bytea;
+      CREATE TABLE shop.codes (id int PRIMARY KEY, code char(5), payload shop.blob, doc json);
+      INSERT INTO shop.codes VALUES (1, 'ab', '\\x0102'::bytea, '{"z": 1}'), (2, 'cd', NULL, '{"a": 1}');
+      CREATE TABLE shop.blobkeys (k bytea PRIMARY KEY, v text);
+    `);
+    // char(n): Der geladene Wert hat Füllzeichen; ein Update trifft die Zeile trotzdem.
+    const page = await rows('codes');
+    expect(page.rows[0][1]).toBe('ab   ');
+    await submit('codes', { updates: [{ key: { id: '1' }, original: { code: 'ab   ' }, values: { code: 'xy' } }] });
+    expect(await one("SELECT code FROM shop.codes WHERE id = 1")).toEqual({ code: 'xy   ' });
+    // Eine Domäne über bytea zählt als binär: Länge statt Inhalt, schreibgeschützt.
+    const info = await call(windowId, 'db.tableInfo', { id, schema: 'shop', table: 'codes' });
+    expect(info.columns.find((c) => c.name === 'payload')).toMatchObject({ binary: true });
+    expect(page.rows[0][2]).toBe('2');
+    await expect(submit('codes', { updates: [{ key: { id: '1' }, original: {}, values: { payload: 'x' } }] })).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
+    // json hat keinen Ordnungsoperator: sortiert nach Text.
+    expect((await rows('codes', { sort: { column: 'doc', direction: 'asc' } })).rows.map((r) => r[0])).toEqual(['2', '1']);
+    // Binärer Primärschlüssel: schreibgeschützt.
+    expect((await call(windowId, 'db.tableInfo', { id, schema: 'shop', table: 'blobkeys' })).readOnlyReason).toMatch(/binary/);
+    // Mehrere Anweisungen im Filter: eine klare Meldung, keine Ausnahme.
+    await expect(rows('codes', { filter: 'true); SELECT (1' })).rejects.toMatchObject({ code: 'DB_FAILED' });
+  });
+
   it('macht Tabellen ohne Primärschlüssel und Views schreibgeschützt', async () => {
     const log = await call(windowId, 'db.tableInfo', { id, schema: 'shop', table: 'log' });
     expect(log.readOnlyReason).toMatch(/no primary key/);

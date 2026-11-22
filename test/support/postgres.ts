@@ -57,16 +57,36 @@ export async function startPostgres(): Promise<TestPostgres> {
     fs.rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     throw err;
   }
+  /** Alle Prozesse, die je zu diesem Server gehörten (auch Kindprozesse, deren Hauptprozess schon fort ist). */
+  const known = new Set<string>();
+  const remember = () => {
+    for (const pid of postgresProcessIds(dataDir, port)) known.add(pid);
+  };
+  const alive = () => {
+    remember();
+    const running = new Set(postgresRows().map((r) => r.pid));
+    return [...known].filter((pid) => running.has(pid));
+  };
   return {
     port,
     dataDir,
-    processes: () => postgresProcessesFor(dataDir, port),
+    processes: () => alive().length,
     sql: (text, values) => admin.query(text, values),
     stop: async () => {
+      // Vorher merken: PostgreSQL 18 hat Hilfsprozesse (etwa „io_worker“), die ohne ihren Hauptprozess weiterlaufen
+      // können und dann weder Datenordner noch Port nennen.
+      remember();
       await admin.end().catch(() => {});
       await server.stop().catch(() => {});
-      // Erst wenn die Prozesse fort sind, ist der Datenordner frei.
-      for (let i = 0; i < 50 && postgresProcessesFor(dataDir, port) > 0; i++) await new Promise((resolve) => setTimeout(resolve, 200));
+      // Erst wenn die Prozesse fort sind, ist der Datenordner frei; was nach 10 s noch läuft, wird beendet.
+      for (let i = 0; i < 50 && alive().length > 0; i++) await new Promise((resolve) => setTimeout(resolve, 200));
+      for (const pid of alive()) {
+        try {
+          execFileSync('taskkill.exe', ['/PID', pid, '/T', '/F'], { stdio: 'ignore' });
+        } catch {
+          // Inzwischen von selbst beendet.
+        }
+      }
       try {
         fs.rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
       } catch {
@@ -81,20 +101,39 @@ export async function startPostgres(): Promise<TestPostgres> {
  * Kindprozesse (die tragen beides nicht).
  */
 export function postgresProcessesFor(dataDir: string, port?: number): number {
+  return postgresProcessIds(dataDir, port).length;
+}
+
+/** Alle laufenden postgres.exe mit Elternprozess und Befehlszeile. */
+function postgresRows(): Array<{ pid: string; parent: string; command: string }> {
   if (process.platform !== 'win32') throw new Error('Die Prüfung auf PostgreSQL-Prozesse gibt es nur unter Windows.');
   const out = execFileSync(
     'powershell.exe',
     ['-NoProfile', '-Command', "Get-CimInstance Win32_Process -Filter \"Name='postgres.exe'\" | ForEach-Object { \"$($_.ProcessId)`t$($_.ParentProcessId)`t$($_.CommandLine)\" }"],
     { encoding: 'utf8' },
   );
-  const needle = dataDir.toLowerCase().replace(/\\/g, '/');
-  const rows = out
+  return out
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => {
       const [pid, parent, ...rest] = line.split('\t');
       return { pid, parent, command: rest.join('\t').toLowerCase().replace(/\\/g, '/') };
     });
-  const mains = new Set(rows.filter((r) => r.command.includes(needle) || (port !== undefined && new RegExp(`(^|\\s)-p\\s+"?${port}"?(\\s|$)`).test(r.command))).map((r) => r.pid));
-  return rows.filter((r) => mains.has(r.pid) || mains.has(r.parent)).length;
+}
+
+/** Prozess-IDs dieses Servers: der Hauptprozess (Datenordner oder Port) und alle seine Nachkommen. */
+function postgresProcessIds(dataDir: string, port?: number): string[] {
+  const rows = postgresRows();
+  const needle = dataDir.toLowerCase().replace(/\\/g, '/');
+  const ids = new Set(rows.filter((r) => r.command.includes(needle) || (port !== undefined && new RegExp(`(^|\\s)-p\\s+"?${port}"?(\\s|$)`).test(r.command))).map((r) => r.pid));
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const r of rows) {
+      if (ids.has(r.parent) && !ids.has(r.pid)) {
+        ids.add(r.pid);
+        grew = true;
+      }
+    }
+  }
+  return [...ids];
 }

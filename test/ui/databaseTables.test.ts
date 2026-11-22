@@ -107,6 +107,30 @@ describe('Tabelleninhalt', () => {
     }
   });
 
+  it('Ctrl + Enter während der Eingabe speichert sie mit; ein NULL bleibt NULL, wenn nichts getippt wird (Review)', async () => {
+    const { codium, page } = await openItems();
+    try {
+      // Doppelklick in eine NULL-Zelle und wieder hinaus: keine Änderung.
+      await cell(page, 'note', 4).dblclick();
+      await cell(page, 'note', 4).locator('input').waitFor();
+      await cell(page, 'name', 9).click();
+      expect(await cell(page, 'note', 4).innerText()).toBe('null');
+      expect(await cell(page, 'note', 4).getAttribute('class')).not.toContain('changed');
+      expect(await page.getByRole('button', { name: 'Submit' }).isDisabled()).toBe(true);
+
+      // Die einzige Änderung, noch im Feld: Ctrl + Enter speichert sie.
+      await cell(page, 'name', 2).dblclick();
+      await cell(page, 'name', 2).locator('input').fill('Direkt gespeichert');
+      await page.keyboard.press('Control+Enter');
+      await expect
+        .poll(async () => (await server.sql('SELECT name FROM store.items WHERE id = 2')).rows[0].name, { timeout: 15_000 })
+        .toBe('Direkt gespeichert');
+      expect((await server.sql('SELECT note FROM store.items WHERE id = 4')).rows[0].note).toBeNull();
+    } finally {
+      await codium.close();
+    }
+  });
+
   it('verwirft eine Änderung mit „Revert“; mit offener Änderung fragt der Seitenwechsel nach', async () => {
     const { codium, page } = await openItems();
     try {
