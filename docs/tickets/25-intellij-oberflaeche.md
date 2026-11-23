@@ -38,9 +38,30 @@ Typ HITL, weil das Aussehen Geschmackssache ist: Der Agent legt zuerst eine Skiz
   - Eigene SVG-Symbole in `src/renderer/icons.tsx`, im Stil der bestehenden (16 px, Linien in der Symbolfarbe, eine Akzentfarbe nur wo sie etwas bedeutet). Sie dürfen sich in der Form an IntelliJ anlehnen, aber keine Dateien von JetBrains übernehmen. Wird doch eine frei lizenzierte Sammlung genutzt, steht ihre Lizenz im Repository.
   - Die zugänglichen Namen bleiben: „Commit…“, „Push…“, „Pull“, „Fetch“ und „New Branch…“ sind für Screenreader und Tests weiter unter diesem Namen zu finden.
 
+## Entscheidung (Nutzer, 2026-11-23)
+
+Skizze: [docs/entwuerfe/25-oberflaeche/index.html](../entwuerfe/25-oberflaeche/index.html) (bleibt als Beleg liegen).
+
+Rückmeldung des Nutzers, wörtlich: „wir wollen mit option B weiterfahren“
+
+Zu den übrigen Fragen der Skizze hat der Nutzer nichts anderes gesagt; die Punkte 2 bis 10 folgen deshalb den Empfehlungen, die ihm vorgelegt wurden.
+
+1. Variante b: Werkzeugfenster und Editor als Inseln.
+2. Inseln einheitlich in der Editorfarbe `#1e1f22`; der Rahmen (Kopfzeile, Leisten, Statusleiste) bleibt `#2b2d30`. `theme.ts` bleibt unverändert.
+3. Inseln mit 10 px Radius und 6 px Abstand.
+4. Der aktive Datei-Tab ist eine runde Fläche (statt des blauen Unterstrichs).
+5. Knöpfe und Eingabefelder 6 px, Auswahlbalken 4 px mit 6 px Abstand zum Rand.
+6. Branch-Dropdown mit eigener Titelzeile „Git Branches“ und Fetch-Knopf über dem Suchfeld.
+7. Gelbes Etikett für den aktuellen Branch (Farbe wie HEAD im Git-Log); die Liste bleibt alphabetisch.
+8. „Commit…“ mit Häkchen wie in IntelliJ, „Rename…“ ohne Symbol.
+9. Im Projektmenü Symbole für „Open Folder…“, „Clone Repository…“ und „Settings…“, dazu die Farbkürzel der zuletzt geöffneten Projekte.
+10. Voraus und zurück auch in der Kopfzeile als farbige Pfeile.
+
+Radien laut Skizze: `--radius-xs` 3 px, `--radius-s` 4 px, `--radius-m` 6 px, `--radius-l` 8 px, `--radius-xl` 10 px, `--radius-island` 10 px; dazu `--island-gap` 6 px und `--list-inset` 6 px.
+
 ## Akzeptanzkriterien
 
-- [ ] Die Vorschauseite liegt vor, und der Nutzer hat den Vorschlag freigegeben, mit Wahl der Variante für die Flächen (im Abschnitt „Entscheidung“ des Tickets festgehalten, mit der Rückmeldung).
+- [x] Die Vorschauseite liegt vor, und der Nutzer hat den Vorschlag freigegeben, mit Wahl der Variante für die Flächen (im Abschnitt „Entscheidung“ des Tickets festgehalten, mit der Rückmeldung).
 - [ ] Ein Einheitstest liest `app.css` und prüft, dass alle Radien über die Variablen aus `tokens.css` laufen (ausser `50%` und `0`).
 - [ ] Ein Playwright-Test (im Testmodus) prüft, dass das Branch-Dropdown direkt unter dem Branch-Knopf öffnet: Oberkante knapp unter dessen Unterkante, links bündig.
 - [ ] Ein Playwright-Test prüft, dass die Aktionszeilen „Pull“, „Commit…“, „Push…“ und „New Branch…“ ein Symbol tragen, die Kürzel anzeigen und ausführbar sind, und dass der Knopf „Fetch“ in der Titelzeile fetcht.
