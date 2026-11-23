@@ -1,6 +1,6 @@
 # 26 – Zweimal Shift: Dateien suchen
 
-Status: `ready-for-agent` · Typ: AFK
+Status: `erledigt` (2026-11-23) · Typ: AFK
 Blockiert durch: –
 User Stories: keine eigene; ergänzt „Suchen und Navigieren“ (Datei nach Namen suchen, Ticket 08)
 Spezifikation: „Suchen und Navigieren“, Tastenbelegung (`src/renderer/keymap.ts`)
@@ -38,7 +38,22 @@ Dieses Ticket kam nach Codium 1 dazu, auf Wunsch des Nutzers. In IntelliJ öffne
 - **Tests:** 12 Einheitstests in `test/renderer/doubleShift.test.ts`; `test/renderer/keymap.test.ts` kennt das neue Kürzel (keine doppelten Kürzel, kein Befehl mit zwei Kürzeln ausser diesem, kein Tastendruck trifft es). Drei Playwright-Tests in `test/ui/doubleShift.test.ts` (dazu: bei offenen Einstellungen passiert nichts, eine offene Dateisuche bleibt samt Eingabe, der Hinweis im leeren Code-Bereich); sie schicken die Tasten ohne Warten dazwischen, damit die Abstände auch unter Last im Zeitfenster bleiben, und der Grossbuchstaben-Test enthält eine Gegenprobe (gleiche Abstände, Shift allein öffnet). Gegenprobe am Code: Ohne den Abbruch durch andere Tasten wird der Grossbuchstaben-Test rot.
 - **Testläufe:** `npm run typecheck` und `npm test` (392 Tests) grün, `npm run test:ui` 82 Tests. Unter der Last paralleler Testläufe waren im vollen Lauf einzelne Tests rot, die mit dieser Änderung nichts zu tun haben: „öffnet eine JDK-Klasse …“ (Java) und „bricht einen hängenden Klon … ab“ sind auch auf dem Stand von `main` rot, die übrigen (Commit „Rollback…“, Markdown mit Mermaid, Suche mit Ctrl + Shift + N, Aufräumen der Temp-Ordner mit EPERM) liefen beim erneuten Lauf grün.
 - **Spezifikation und README** nennen zweimal Shift bei der Dateisuche, bei den Tasten im Terminal und unter „Ausserhalb des Umfangs“ (Search Everywhere bleibt draussen).
-- **Dabei gefunden:** Nach Escape in „Go to File“ (auch über Ctrl + Shift + N) liegt der Fokus nicht wieder im Editor, sondern auf der Seite; das war schon vorher so und gehört nicht zu diesem Ticket.
+- **Dabei gefunden:** Nach Escape in „Go to File“ (auch über Ctrl + Shift + N) liegt der Fokus nicht wieder im Editor, sondern auf der Seite; das war schon vorher so. Im Review behoben (siehe dort).
+
+## Review
+
+Unabhängiges Review durch einen zweiten Agenten am 2026-11-23. Erkennung, Listener, die Tabelle `SEARCH_POPUPS` und der Aufbau des Grossbuchstaben-Tests (Tasten ohne Warten dazwischen, Gegenprobe) in Ordnung. Das Zeitfenster von 400 ms, der Hinweis im leeren Code-Bereich sowie Spezifikation und README auf dem Branch bleiben. Eingearbeitet:
+
+- **Wettlauf im Terminal-Test** (unter Last zweimal rot): cmd schreibt Ausgabe und neue Eingabeaufforderung in getrennten Stücken; der Test wartet jetzt auf beide.
+- **Wartezeiten von 1 s** in den neuen Oberflächentests: Wo die App arbeiten muss (Dateiliste, Öffnen, Fokus), wartet der Test bis 10 s.
+- **Fokus nach Escape** (bestand schon vor dem Ticket, eigener Commit): Der Rahmen der Suchfenster (`QuickPopup`) merkte sich den Fokus erst im Effekt, als das `autoFocus` des Suchfelds schon gelaufen war, und gab ihn beim Schliessen an das eigene, entfernte Suchfeld zurück. Jetzt wird er beim ersten Rendern festgehalten; löst ein Suchfenster ein anderes ab, gilt, was sich das erste gemerkt hat. Getestet in `search.test.ts` (Ctrl + Shift + N, Wechsel von Ctrl + E zu Ctrl + Shift + N) und im Grossbuchstaben-Test (zweimal Shift, Escape, das nächste Zeichen landet im Editor). Gegenprobe: Ohne die Übergabe beim Wechsel wird der neue Test rot.
+- **`scope` und `global` beim Eintrag „Double Shift“** wertete niemand aus: Die Kommentare sagen jetzt, dass sie nur der Anzeige dienen und für zweimal Shift nur Befehle vorgesehen sind, die ein Suchfenster öffnen.
+- **IME:** Eine laufende Eingabe über einen IME (`isComposing`, `key === 'Process'`) bricht die Zählung ab; Einheitstest.
+- **Mausrad:** Shift + Mausrad bricht ab wie eine Maustaste; Einheitstest.
+- **Dabei gefunden, Enter gleich nach den ersten Treffern** (bestand schon vorher, eigener Commit): Die Dateilisten (Go to File, Recent Files, Symbole) setzten die Auswahl erst in einem Effekt nach dem Zeichnen zurück; ein Enter in diesem Moment nahm noch die Auswahl der leeren Liste und öffnete nichts. Das erklärt vermutlich die unter Last roten Abfragen nach Enter in `search.test.ts` und im Terminal-Test; seither lief der volle Oberflächenlauf grün. Die Auswahl wird jetzt beim Zeichnen bestimmt. Einen sicher reproduzierenden Test gibt es dafür nicht (es hängt am Zeitpunkt).
+- Zwei weitere Hinweise ohne Handlungsbedarf. Den Abschnitt „Nach Codium 1“ in `docs/abnahme.md` führt der Merge mit den Tickets 24 und 25 zusammen.
+
+Testläufe nach dem Review: `npm run typecheck` grün, `npm test` 394 Tests (davon 14 für die Erkennung), `npm run test:ui` 83 von 83 grün. Im vollen schnellen Lauf war unter der Last paralleler Läufe wiederholt „lässt einen gelöschten Projektordner los …“ (`test/main/fileService.test.ts`, EPERM beim Löschen des überwachten Ordners) rot; der Test berührt nichts aus diesem Ticket und läuft für sich grün (36 von 36).
 
 ## Hinweise
 
