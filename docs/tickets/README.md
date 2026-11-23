@@ -90,6 +90,7 @@ Stand 2026-11-22: Tickets 01 bis 21 und 23 erledigt, Ticket 22 wartet auf die Ab
 | 21 | [Datenbank: Tabelleninhalt und Bearbeiten](21-datenbank-tabellen.md) | AFK | 05, 20 | 6 | erledigt |
 | 22 | [README und Abnahme auf einem frischen Rechner](22-abschluss.md) | HITL | alle | – | offen |
 | 23 | [Markdown-Vorschau](23-markdown-vorschau.md) | AFK | 05 | 1 | erledigt |
+| 24 | [Logo und App-Symbol](24-logo.md) | HITL | – | – | offen |
 
 ```mermaid
 flowchart LR
@@ -129,9 +130,10 @@ flowchart LR
   T21 --> T22
   T05 --> T23[23 Markdown-Vorschau]
   T23 --> T22
+  T24[24 Logo] --> T22
 ```
 
-**Reihenfolge:** nach Etappen, also 01 bis 10 und 23 (gleich nach 05, weil Markdown-Dateien im Alltag schon jetzt wichtig sind), dann 11, dann 12 bis 14, dann 15 bis 18, dann 19, dann 20 und 21, zuletzt 22.
+**Reihenfolge:** nach Etappen, also 01 bis 10 und 23 (gleich nach 05, weil Markdown-Dateien im Alltag schon jetzt wichtig sind), dann 11, dann 12 bis 14, dann 15 bis 18, dann 19, dann 20 und 21, zuletzt 22. Ticket 24 (Logo) kam nach Codium 1 dazu und sollte vor der Abnahme in 22 erledigt sein, damit der geprüfte Installer das Logo trägt.
 
 **Parallel möglich**, wenn es schneller gehen soll:
 - 06, 07, 08, 09 und 23 nach 05
