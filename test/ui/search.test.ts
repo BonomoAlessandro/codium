@@ -31,6 +31,22 @@ function editorFocused(page: Page): Promise<boolean> {
   return page.evaluate(() => document.activeElement?.closest('.editor-host') != null);
 }
 
+/** Der Text, den Monaco zeigt, nach der Lage der Zeilen und ohne geschützte Leerzeichen. */
+function editorText(page: Page): Promise<string> {
+  return page
+    .locator('.editor-host .view-lines .view-line')
+    .evaluateAll((lines) =>
+      lines
+        .map((line) => ({ top: Number.parseFloat((line as HTMLElement).style.top), text: (line as HTMLElement).innerText }))
+        .sort((a, b) => a.top - b.top)
+        .map((line) => line.text.replaceAll(' ', ' '))
+        .join('\n'),
+    );
+}
+
+/** Für Abfragen, bei denen die App arbeiten muss; unter Last reicht 1 s nicht. */
+const APP = { timeout: 10_000 };
+
 function stripeButton(page: Page, name: string): Locator {
   return page.getByRole('navigation', { name: 'Left Tool Windows' }).getByRole('button', { name, exact: true });
 }
@@ -187,6 +203,40 @@ describe('Suchen', () => {
       await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
       await page.keyboard.press('Escape');
       await expect.poll(() => popup.count()).toBe(0);
+    });
+  });
+
+  it('gibt nach Escape den Fokus an den Editor zurück, auch nach einem Wechsel von Ctrl + E zu Ctrl + Shift + N (Review von Ticket 26)', async () => {
+    const { dataRoot } = setup({ 'a.txt': 'a\n' });
+    const { codium, page } = await launchAlpha(dataRoot);
+    await withApp(codium, async () => {
+      await item(page, 'a.txt').dblclick();
+      await expect.poll(() => activeTab(page), APP).toBe('a.txt');
+      await page.locator('.editor-host .view-lines').click();
+      await expect.poll(() => editorFocused(page), APP).toBe(true);
+      await page.keyboard.press('Control+End');
+
+      const gotoFile = page.getByRole('dialog', { name: 'Go to File' });
+      await page.keyboard.press('Control+Shift+N');
+      await gotoFile.waitFor();
+      await page.keyboard.press('Escape');
+      await expect.poll(() => gotoFile.count(), APP).toBe(0);
+      await expect.poll(() => editorFocused(page), APP).toBe(true);
+      await page.keyboard.type('x');
+      await expect.poll(() => editorText(page), APP).toBe('a\nx');
+
+      // Ctrl + Shift + N löst Ctrl + E ab; Escape führt trotzdem zurück in den Editor, nicht ins erste Suchfeld.
+      const recent = page.getByRole('dialog', { name: 'Recent Files' });
+      await page.keyboard.press('Control+e');
+      await recent.waitFor();
+      await page.keyboard.press('Control+Shift+N');
+      await gotoFile.waitFor();
+      expect(await recent.count()).toBe(0);
+      await page.keyboard.press('Escape');
+      await expect.poll(() => gotoFile.count(), APP).toBe(0);
+      await expect.poll(() => editorFocused(page), APP).toBe(true);
+      await page.keyboard.type('y');
+      await expect.poll(() => editorText(page), APP).toBe('a\nxy');
     });
   });
 });

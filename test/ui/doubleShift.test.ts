@@ -177,12 +177,15 @@ describe('Zweimal Shift', () => {
       await expect.poll(() => editorText(page), APP).toBe('hello\nABC');
       expect(await focusInside(page, '.editor-host')).toBe(true);
 
-      // Gegenprobe mit denselben Abständen: zweimal Shift allein öffnet die Suche.
+      // Gegenprobe mit denselben Abständen: zweimal Shift allein öffnet die Suche. Escape gibt den Fokus an den Editor
+      // zurück (Review von Ticket 26), dort landet das nächste Zeichen.
       await doubleShift(page);
       await gotoFile(page).waitFor();
       await page.keyboard.press('Escape');
       await expect.poll(() => gotoFile(page).count(), APP).toBe(0);
-      expect(await editorText(page)).toBe('hello\nABC');
+      await expect.poll(() => focusInside(page, '.editor-host'), APP).toBe(true);
+      await page.keyboard.type('d');
+      await expect.poll(() => editorText(page), APP).toBe('hello\nABCd');
     } finally {
       await codium.close();
     }
