@@ -866,11 +866,13 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
           onClose={(reason) => {
             setBranchAnchor(null);
             if (reason === 'escape') branchAnchor.focus({ preventScroll: true });
-            // Nach einem Klick daneben behält ein angeklicktes Element (etwa der Editor) den Fokus; sonst der Knopf.
+            // Nach einem Klick daneben behält ein angeklicktes Element (etwa der Editor) den Fokus; sonst der Knopf. Geprüft
+            // beim Loslassen, also nach dem Fokuswechsel des Klicks (ein Timer liefe in verborgenen Fenstern gedrosselt).
             if (reason === 'outside') {
-              setTimeout(() => {
+              const restore = () => {
                 if (document.activeElement === null || document.activeElement === document.body) branchAnchor.focus({ preventScroll: true });
-              }, 0);
+              };
+              window.addEventListener('pointerup', restore, { once: true, capture: true });
             }
           }}
         />

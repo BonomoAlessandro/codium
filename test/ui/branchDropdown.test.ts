@@ -168,7 +168,7 @@ describe('Branch-Dropdown', () => {
       await page.locator('.statusbar').click();
       await expect.poll(() => popup.count()).toBe(0);
       expect(await submenu.count()).toBe(0);
-      expect(await focusedLabel(page)).toBe('Branch main');
+      await expect.poll(() => focusedLabel(page)).toBe('Branch main');
 
       // Ein zweiter Klick auf den Knopf schliesst es ebenfalls.
       await openDropdown(page, 'feature');
