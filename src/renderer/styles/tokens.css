@@ -14,6 +14,24 @@
   --tool-window-header-height: 32px;
   --editor-tabs-height: 38px;
 
+  /* Rundungen (Ticket 25). Alle Radien in app.css nutzen diese Werte; feste Werte nur für Kreise (50%) und bewusst
+     eckige Stellen (0). */
+  /* Winziges: Häkchen, Etiketten im Git-Log, Inline-Code, Markierungen, Fortschrittsbalken */
+  --radius-xs: 3px;
+  /* Klein: Auswahl- und Hoverbalken in Listen und Menüs, Symbolknöpfe, Schliessknopf im Tab, Projektkürzel */
+  --radius-s: 4px;
+  /* Mittel: Knöpfe, Eingabefelder, Datei-Tabs, Kopfzeilen- und Leistenknöpfe */
+  --radius-m: 6px;
+  /* Gross: Menüs, Branch-Dropdown, Suchfenster, Meldungen */
+  --radius-l: 8px;
+  /* Dialoge */
+  --radius-xl: 10px;
+  /* Werkzeugfenster und Editor als Inseln, mit Abstand dazwischen */
+  --radius-island: 10px;
+  --island-gap: 6px;
+  /* Abstand der Auswahlbalken zum Rand von Listen und Bäumen */
+  --list-inset: 6px;
+
   /* Flächen */
   --bg: #1e1f22;
   --bg-panel: #2b2d30;
@@ -52,4 +70,9 @@
   --info: #548af7;
   --success: #5fb865;
   --error: #f75464;
+
+  /* Git: eingehend (zurück, Pull), ausgehend (voraus, Push), aktueller Branch (wie HEAD im Git-Log) */
+  --git-incoming: #548af7;
+  --git-outgoing: #5fb865;
+  --git-head: #d6b33d;
 }

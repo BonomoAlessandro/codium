@@ -250,7 +250,7 @@ export function DatabaseToolWindow({ api, notify, onHide, onOpenTable }: Databas
                 aria-selected={selected === node.key}
                 aria-busy={loading.has(node.key) || undefined}
                 className={`database-node database-${node.kind}${selected === node.key ? ' selected' : ''}`}
-                style={{ paddingLeft: 6 + depth * 16 }}
+                style={{ paddingLeft: `calc(${6 + depth * 16}px - var(--list-inset))` }}
                 onMouseDown={(e) => {
                   if (e.button === 0 || e.button === 2) setSelected(node.key);
                 }}

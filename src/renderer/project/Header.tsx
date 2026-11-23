@@ -5,7 +5,8 @@
 import { useRef, useState } from 'react';
 import type { CodiumApi, GitState, ProjectInfo } from '../../shared/types';
 import { branchLabel } from '../git/gitState';
-import { BranchIcon, ChevronDownIcon } from '../icons';
+import { BranchSync } from '../git/BranchPopup';
+import { BranchIcon, ChevronDownIcon, GitIcon, ProjectIcon, SettingsIcon } from '../icons';
 import { CLONE_WITHOUT_GIT, useCloneDialog, useGitAvailable } from '../CloneDialog';
 import { shortcutLabel } from '../keymap';
 import { Menu, type MenuEntry } from '../popup/Menu';
@@ -21,11 +22,13 @@ interface HeaderProps {
   api: CodiumApi;
   /** Zustand des Repositorys; ohne Repository kein Branch-Menü (Ticket 15). */
   git: GitState | null;
-  /** Öffnet das Branch-Menü. */
-  onBranches: () => void;
+  /** Ob das Branch-Dropdown offen ist. */
+  branchesOpen: boolean;
+  /** Ein Klick auf den Branch-Knopf: öffnet das Dropdown unter dem Knopf bzw. schliesst es (Ticket 25). */
+  onBranches: (button: HTMLElement) => void;
 }
 
-export function Header({ project, actions, onExit, onSettings, api, git: gitState, onBranches }: HeaderProps) {
+export function Header({ project, actions, onExit, onSettings, api, git: gitState, branchesOpen, onBranches }: HeaderProps) {
   const git = useGitAvailable(api);
   const clone = useCloneDialog(api);
   const [menu, setMenu] = useState<{ viaKeyboard: boolean } | null>(null);
@@ -34,20 +37,33 @@ export function Header({ project, actions, onExit, onSettings, api, git: gitStat
   // Das Projekt dieses Fensters steht nicht in der Liste; es ist ja schon offen.
   const others = actions.recent.filter((p) => !sameProjectPath(p.path, project.path));
   const entries: MenuEntry[] = [
-    { kind: 'item', label: 'Open Folder…', run: () => void actions.openFolder() },
+    { kind: 'item', label: 'Open Folder…', icon: <ProjectIcon size={16} />, run: () => void actions.openFolder() },
     {
       kind: 'item',
       label: 'Clone Repository…',
+      icon: <GitIcon size={16} />,
       disabled: git !== true,
       ...(git === false ? { detail: CLONE_WITHOUT_GIT } : {}),
       run: clone.open,
     },
     ...(others.length > 0 ? [{ kind: 'separator' } as const] : []),
+    // Zuletzt geöffnete Projekte mit ihrem Farbkürzel, wie in der Kopfzeile (Ticket 25).
     ...others.map(
-      (p): MenuEntry => ({ kind: 'item', label: p.name, detail: p.path, muted: !p.exists, run: () => void actions.openRecent(p) }),
+      (p): MenuEntry => ({
+        kind: 'item',
+        label: p.name,
+        detail: p.path,
+        muted: !p.exists,
+        icon: (
+          <span className="project-badge" style={{ backgroundColor: projectBadgeColor(p.path) }}>
+            {projectInitials(p.name)}
+          </span>
+        ),
+        run: () => void actions.openRecent(p),
+      }),
     ),
     { kind: 'separator' },
-    { kind: 'item', label: 'Settings…', shortcut: shortcutLabel('settings.open'), run: onSettings },
+    { kind: 'item', label: 'Settings…', icon: <SettingsIcon />, shortcut: shortcutLabel('settings.open'), run: onSettings },
     { kind: 'separator' },
     { kind: 'item', label: 'Exit', run: onExit },
   ];
@@ -86,13 +102,14 @@ export function Header({ project, actions, onExit, onSettings, api, git: gitStat
               type="button"
               className="header-widget branch-widget"
               aria-haspopup="dialog"
+              aria-expanded={branchesOpen}
               aria-label={`Branch ${branchLabel(gitState).name}`}
               title={gitState.upstream ? `${branchLabel(gitState).name} → ${gitState.upstream}` : branchLabel(gitState).name}
-              onClick={onBranches}
+              onClick={(e) => onBranches(e.currentTarget)}
             >
               <BranchIcon />
               <span className="header-widget-label">{branchLabel(gitState).name}</span>
-              {branchLabel(gitState).sync && <span className="branch-sync">{branchLabel(gitState).sync}</span>}
+              <BranchSync ahead={gitState.ahead} behind={gitState.behind} />
               <ChevronDownIcon />
             </button>
           )}
@@ -103,6 +120,7 @@ export function Header({ project, actions, onExit, onSettings, api, git: gitStat
           label="Project"
           entries={entries}
           anchor={buttonRef.current}
+          iconWidth={20}
           highlightFirst={menu.viaKeyboard}
           onClose={() => {
             setMenu(null);

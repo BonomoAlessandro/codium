@@ -32,7 +32,19 @@ import {
   type ProjectInfo,
 } from '../../shared/types';
 import { errorText } from '../errors';
-import { ChevronRightIcon, CollapseAllIcon, FileIcon, FolderIcon, LinkIcon, LocateIcon } from '../icons';
+import {
+  ChevronRightIcon,
+  CollapseAllIcon,
+  CopyIcon,
+  DeleteIcon,
+  FileIcon,
+  FolderIcon,
+  LinkIcon,
+  LocateIcon,
+  PasteIcon,
+  PlusIcon,
+  TerminalIcon,
+} from '../icons';
 import type { Notify } from '../Notices';
 import { useAsk, useAskText } from '../popup/Dialogs';
 import { Menu, type MenuEntry } from '../popup/Menu';
@@ -776,27 +788,29 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile, openedFi
       {
         kind: 'submenu',
         label: 'New',
+        icon: <PlusIcon />,
         entries: [
-          { kind: 'item', label: 'File', run: () => void createEntry(false) },
-          { kind: 'item', label: 'Directory', run: () => void createEntry(true) },
+          { kind: 'item', label: 'File', icon: <FileIcon />, run: () => void createEntry(false) },
+          { kind: 'item', label: 'Directory', icon: <FolderIcon />, run: () => void createEntry(true) },
         ],
       },
       { kind: 'separator' },
-      { kind: 'item', label: 'Copy', shortcut: SHORTCUTS.copy, disabled: !canCopy, run: copySelected },
+      { kind: 'item', label: 'Copy', icon: <CopyIcon />, shortcut: SHORTCUTS.copy, disabled: !canCopy, run: copySelected },
       { kind: 'item', label: 'Copy Path', shortcut: SHORTCUTS.copyPath, disabled: selectedRows.length === 0, run: copyPath },
-      { kind: 'item', label: 'Paste', shortcut: SHORTCUTS.paste, disabled: !hasClipboard, run: () => void paste() },
+      { kind: 'item', label: 'Paste', icon: <PasteIcon />, shortcut: SHORTCUTS.paste, disabled: !hasClipboard, run: () => void paste() },
       { kind: 'separator' },
       { kind: 'item', label: 'Rename…', shortcut: SHORTCUTS.rename, disabled: !single || single.isRoot, run: () => void rename() },
       {
         kind: 'item',
         label: 'Delete…',
+        icon: <DeleteIcon />,
         shortcut: SHORTCUTS.delete,
         disabled: selectedRows.length === 0 || hasRoot,
         run: () => void deleteSelected(),
       },
       { kind: 'separator' },
       { kind: 'item', label: 'Open in Explorer', disabled: !leadRow, run: showInExplorer },
-      { kind: 'item', label: 'Open in Terminal', disabled: !leadRow, run: () => leadRow && onOpenInTerminal(leadRow.path) },
+      { kind: 'item', label: 'Open in Terminal', icon: <TerminalIcon size={16} />, disabled: !leadRow, run: () => leadRow && onOpenInTerminal(leadRow.path) },
     ];
   };
 
@@ -862,7 +876,7 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile, openedFi
                 className={['file-tree-row', selection.has(row.key) && 'selected', index === leadIndex && 'lead', row.blockedLink && 'blocked', gitOf(row.path) && `git-${gitOf(row.path)}`]
                   .filter(Boolean)
                   .join(' ')}
-                style={{ top: index * TREE_ROW_HEIGHT, paddingLeft: 6 + row.depth * 18 }}
+                style={{ top: index * TREE_ROW_HEIGHT, paddingLeft: `calc(${6 + row.depth * 18}px - var(--list-inset))` }}
                 title={row.isRoot ? row.path : row.blockedLink ? BLOCKED_LINK_HINTS[row.blockedLink] : undefined}
                 onMouseDown={(e) => onRowMouseDown(e, row, index)}
                 onDoubleClick={(e) => {

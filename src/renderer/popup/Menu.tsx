@@ -1,9 +1,9 @@
 // Aufklappmenü unter einem Element (etwa das Projektmenü in der Kopfzeile) oder an einer Stelle (Rechtsklick-Menü),
 // nach dem Vorbild THub und IntelliJ. Bedienung mit der Maus oder mit Pfeiltasten, Enter und Escape; Untermenüs
 // öffnen mit Pfeil rechts, Enter oder beim Überfahren und schliessen mit Pfeil links oder Escape. Inaktive Einträge
-// sind sichtbar, aber nicht wählbar.
+// sind sichtbar, aber nicht wählbar. Einträge können ein Symbol in einer eigenen, bündigen Spalte tragen (Ticket 25).
 
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronRightIcon } from '../icons';
 import { menuKey } from './menuKeys';
@@ -22,9 +22,11 @@ export type MenuEntry =
       shortcut?: string;
       /** Sichtbar, aber nicht wählbar. */
       disabled?: boolean;
+      /** Symbol in der eigenen, bündigen Spalte links (Ticket 25). */
+      icon?: ReactNode;
       run(): void;
     }
-  | { kind: 'submenu'; label: string; disabled?: boolean; entries: MenuEntry[] };
+  | { kind: 'submenu'; label: string; disabled?: boolean; icon?: ReactNode; entries: MenuEntry[] };
 
 type Selectable = Exclude<MenuEntry, { kind: 'separator' }>;
 
@@ -56,6 +58,13 @@ interface MenuProps {
   anchor: MenuAnchor;
   /** Den ersten Eintrag gleich hervorheben, etwa wenn das Menü per Tastatur geöffnet wurde. */
   highlightFirst?: boolean;
+  /**
+   * Lage an einem Element: darunter (Standard) oder rechts daneben wie ein Untermenü, etwa im Branch-Dropdown. Rechts
+   * daneben schliesst Pfeil links das Menü.
+   */
+  placement?: 'below' | 'beside';
+  /** Breite der Symbolspalte in Pixeln, etwa 20 für die Farbkürzel der Projekte; sonst 16. */
+  iconWidth?: number;
   /** Das Menü schliesst sich (Escape, Klick daneben, Fenster verliert den Fokus, Eintrag gewählt). */
   onClose(): void;
 }
@@ -69,7 +78,7 @@ function isSelectable(entry: MenuEntry): entry is Selectable {
  * Das Menü hält den Fokus, solange es offen ist; danach gibt `onClose` ihn zurück. Ein gewählter Eintrag läuft erst,
  * nachdem sich das Menü geschlossen hat.
  */
-export function Menu({ label, entries, anchor, highlightFirst = false, onClose }: MenuProps) {
+export function Menu({ label, entries, anchor, highlightFirst = false, placement = 'below', iconWidth, onClose }: MenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -101,6 +110,11 @@ export function Menu({ label, entries, anchor, highlightFirst = false, onClose }
     if (!el) return;
     const point = anchor instanceof HTMLElement ? null : anchor;
     const r = anchor instanceof HTMLElement ? anchor.getBoundingClientRect() : null;
+    if (r && placement === 'beside') {
+      placeBeside(el, r);
+      el.focus({ preventScroll: true });
+      return;
+    }
     const left = point ? point.x : (r?.left ?? 0);
     let top = point ? point.y : (r?.bottom ?? 0) + GAP;
     // Unten zu wenig Platz: über der Stelle aufgehen, wie unter Windows üblich.
@@ -108,7 +122,7 @@ export function Menu({ label, entries, anchor, highlightFirst = false, onClose }
     el.style.left = `${clamp(left, MARGIN, window.innerWidth - el.offsetWidth - MARGIN)}px`;
     el.style.top = `${clamp(top, MARGIN, window.innerHeight - el.offsetHeight - MARGIN)}px`;
     el.focus({ preventScroll: true });
-  }, [anchor]);
+  }, [anchor, placement]);
 
   // Klick daneben, Fokusverlust und Grössenänderung schliessen das Menü.
   useEffect(() => {
@@ -133,6 +147,8 @@ export function Menu({ label, entries, anchor, highlightFirst = false, onClose }
       label={label}
       entries={entries}
       highlightFirst={highlightFirst}
+      iconWidth={iconWidth}
+      onCloseSelf={placement === 'beside' ? close : undefined}
       isClosed={() => closed.current}
       onChoose={choose}
       onCloseAll={close}
@@ -157,13 +173,27 @@ interface MenuPanelProps {
   /** Ein Untermenü: Lage neben seinem Eintrag und Schliessen nur dieses Untermenüs. */
   besides?: DOMRect;
   onCloseSelf?: () => void;
+  /** Breite der Symbolspalte, falls Einträge Symbole haben. */
+  iconWidth?: number;
   isClosed: () => boolean;
   onChoose: (item: Extract<MenuEntry, { kind: 'item' }>) => void;
   onCloseAll: () => void;
 }
 
 /** Eine Ebene des Menüs. Tasten bedient immer die innerste offene Ebene. */
-function MenuPanel({ label, entries, highlightFirst, panelRef, onBlur, besides, onCloseSelf, isClosed, onChoose, onCloseAll }: MenuPanelProps) {
+function MenuPanel({
+  label,
+  entries,
+  highlightFirst,
+  panelRef,
+  onBlur,
+  besides,
+  onCloseSelf,
+  iconWidth,
+  isClosed,
+  onChoose,
+  onCloseAll,
+}: MenuPanelProps) {
   const ownRef = useRef<HTMLDivElement>(null);
   const ref = panelRef ?? ownRef;
   const id = useId();
@@ -191,11 +221,7 @@ function MenuPanel({ label, entries, highlightFirst, panelRef, onBlur, besides, 
   // Ein Untermenü neben seinem Eintrag, im Fenster gehalten (sonst links davon).
   useLayoutEffect(() => {
     const el = ref.current;
-    if (!el || !besides) return;
-    let left = besides.right - 2;
-    if (left + el.offsetWidth > window.innerWidth - MARGIN) left = besides.left - el.offsetWidth + 2;
-    el.style.left = `${clamp(left, MARGIN, window.innerWidth - el.offsetWidth - MARGIN)}px`;
-    el.style.top = `${clamp(besides.top - 7, MARGIN, window.innerHeight - el.offsetHeight - MARGIN)}px`;
+    if (el && besides) placeBeside(el, besides);
   }, [besides, ref]);
 
   // Tasten in der Capture-Phase. Ist ein Untermenü offen, bedient es die Tasten selbst.
@@ -226,11 +252,15 @@ function MenuPanel({ label, entries, highlightFirst, panelRef, onBlur, besides, 
 
   const itemId = (index: number) => `${id}-${index}`;
   let index = -1;
+  // Die Symbolspalte gibt es nur, wenn ein Eintrag ein Symbol hat; dann ist sie für alle gleich breit.
+  const hasIcons = entries.some((entry) => entry.kind !== 'separator' && entry.icon !== undefined);
+  const style = hasIcons ? ({ '--menu-icon-width': `${iconWidth ?? 16}px` } as CSSProperties) : undefined;
 
   return (
     <div
       ref={ref}
-      className="menu"
+      className={hasIcons ? 'menu with-icons' : 'menu'}
+      style={style}
       role="menu"
       aria-label={label}
       tabIndex={-1}
@@ -278,16 +308,23 @@ function MenuPanel({ label, entries, highlightFirst, panelRef, onBlur, besides, 
               if (own >= 0) activate(own, false);
             }}
           >
-            <span className="menu-item-row">
-              <span className="menu-item-label">{entry.label}</span>
-              {shortcut && (
-                <span className="menu-item-shortcut" aria-hidden="true">
-                  {shortcut}
-                </span>
-              )}
-              {isSub && <ChevronRightIcon />}
+            {hasIcons && (
+              <span className="menu-item-icon" aria-hidden="true">
+                {entry.icon}
+              </span>
+            )}
+            <span className="menu-item-content">
+              <span className="menu-item-row">
+                <span className="menu-item-label">{entry.label}</span>
+                {shortcut && (
+                  <span className="menu-item-shortcut" aria-hidden="true">
+                    {shortcut}
+                  </span>
+                )}
+                {isSub && <ChevronRightIcon />}
+              </span>
+              {entry.kind === 'item' && entry.detail && <span className="menu-item-detail">{entry.detail}</span>}
             </span>
-            {entry.kind === 'item' && entry.detail && <span className="menu-item-detail">{entry.detail}</span>}
           </button>
         );
       })}
@@ -298,6 +335,7 @@ function MenuPanel({ label, entries, highlightFirst, panelRef, onBlur, besides, 
           entries={(selectable[openSub.index] as Extract<MenuEntry, { kind: 'submenu' }>).entries}
           highlightFirst={openSub.viaKeyboard}
           besides={openSub.rect}
+          iconWidth={iconWidth}
           onCloseSelf={() => setOpenSub(null)}
           isClosed={isClosed}
           onChoose={onChoose}
@@ -306,6 +344,14 @@ function MenuPanel({ label, entries, highlightFirst, panelRef, onBlur, besides, 
       )}
     </div>
   );
+}
+
+/** Rechts neben einem Eintrag, die erste Zeile auf seiner Höhe; reicht der Platz nicht, links davon. */
+function placeBeside(el: HTMLElement, besides: DOMRect): void {
+  let left = besides.right - 2;
+  if (left + el.offsetWidth > window.innerWidth - MARGIN) left = besides.left - el.offsetWidth + 2;
+  el.style.left = `${clamp(left, MARGIN, window.innerWidth - el.offsetWidth - MARGIN)}px`;
+  el.style.top = `${clamp(besides.top - 7, MARGIN, window.innerHeight - el.offsetHeight - MARGIN)}px`;
 }
 
 function clamp(value: number, min: number, max: number): number {

@@ -147,7 +147,8 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
   gitStateRef.current = gitState;
   // Ohne Git ein Hinweis auf das fehlende Git statt „Not a Git repository“ (Review von Ticket 15).
   const gitAvailable = useGitAvailable(api);
-  const [branchesOpen, setBranchesOpen] = useState(false);
+  /** Der Branch-Knopf, unter dem das Branch-Dropdown offen ist (Ticket 25); `null`, wenn es zu ist. */
+  const [branchAnchor, setBranchAnchor] = useState<HTMLElement | null>(null);
   const ask = useAsk();
   const askText = useAskText();
   /** Zeigt das Werkzeugfenster „Commit“ mit dem Fokus in der Nachricht. */
@@ -846,13 +847,33 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
         onSettings={() => setSettingsOpen(true)}
         api={api}
         git={gitState}
-        onBranches={() => {
+        branchesOpen={branchAnchor !== null}
+        onBranches={(button) => {
+          if (branchAnchor) {
+            setBranchAnchor(null);
+            return;
+          }
           closeOpenMenus();
-          setBranchesOpen(true);
+          setBranchAnchor(button);
         }}
       />
-      {branchesOpen && gitState?.repository && (
-        <BranchPopup api={api} state={gitState} actions={branchActions} onClose={() => setBranchesOpen(false)} />
+      {branchAnchor && gitState?.repository && (
+        <BranchPopup
+          api={api}
+          state={gitState}
+          actions={branchActions}
+          anchor={branchAnchor}
+          onClose={(reason) => {
+            setBranchAnchor(null);
+            if (reason === 'escape') branchAnchor.focus({ preventScroll: true });
+            // Nach einem Klick daneben behält ein angeklicktes Element (etwa der Editor) den Fokus; sonst der Knopf.
+            if (reason === 'outside') {
+              setTimeout(() => {
+                if (document.activeElement === null || document.activeElement === document.body) branchAnchor.focus({ preventScroll: true });
+              }, 0);
+            }
+          }}
+        />
       )}
       <div className="workbench">
         <Stripe side="left" groups={[STRIPES.left.top, STRIPES.left.bottom]} layout={shown} available={available} onToggle={toggle} />

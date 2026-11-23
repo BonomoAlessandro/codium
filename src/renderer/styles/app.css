@@ -25,7 +25,7 @@ button {
   color: inherit;
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-m);
   padding: 4px 14px;
   cursor: pointer;
 }
@@ -62,7 +62,7 @@ button:focus-visible,
   height: 24px;
   padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-s);
   background: none;
   color: var(--icon);
 }
@@ -82,6 +82,61 @@ kbd {
   font-family: inherit;
 }
 
+/* Häkchen wie in IntelliJ: eigenes Kästchen mit kleiner Rundung, angehakt in der Akzentfarbe (Ticket 25). */
+input[type='checkbox'] {
+  appearance: none;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border: 1px solid var(--text-faint);
+  border-radius: var(--radius-xs);
+  background: var(--bg) center / 10px 10px no-repeat;
+}
+
+input[type='checkbox']:checked,
+input[type='checkbox']:indeterminate {
+  border-color: var(--accent);
+  background-color: var(--accent);
+}
+
+input[type='checkbox']:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10' fill='none' stroke='%23fff' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 5.2l2 2 4-4.4'/%3E%3C/svg%3E");
+}
+
+input[type='checkbox']:indeterminate {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10' fill='none' stroke='%23fff' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M2.5 5h5'/%3E%3C/svg%3E");
+}
+
+input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+input[type='checkbox']:disabled {
+  opacity: 0.5;
+}
+
+/* Akzentfarben in Symbolen (icons.tsx), nur wo sie etwas bedeuten. */
+.icon .icon-incoming {
+  stroke: var(--git-incoming);
+}
+
+.icon .icon-outgoing {
+  stroke: var(--git-outgoing);
+}
+
+.icon .icon-success {
+  stroke: var(--success);
+}
+
+.icon .icon-head {
+  fill: var(--git-head);
+  stroke: var(--git-head);
+}
+
 /* ---------- Kopfzeile ---------- */
 /*
  * Das Fenster hat keinen Windows-Rahmen; die Kopfzeile ist seine Zieh-Fläche (Verschieben, Doppelklick maximiert).
@@ -95,8 +150,10 @@ kbd {
   -webkit-app-region: drag;
 }
 
-/* Die Trennlinie unter der Kopfzeile gehört zur Fläche darunter, damit sie auch unter den Fensterknöpfen durchgeht. */
-.workbench,
+/*
+ * Die Trennlinie unter der Kopfzeile gehört zur Fläche darunter, damit sie auch unter den Fensterknöpfen durchgeht.
+ * Im Projektfenster trennt stattdessen der Abstand zu den Inseln (Ticket 25).
+ */
 .welcome {
   border-top: 1px solid var(--separator);
 }
@@ -122,7 +179,7 @@ kbd {
   height: 30px;
   padding: 0 8px 0 6px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   background: none;
   color: var(--text);
   font-weight: 600;
@@ -153,7 +210,7 @@ kbd {
   place-items: center;
   width: 20px;
   height: 20px;
-  border-radius: 4px;
+  border-radius: var(--radius-s);
   color: #ffffff;
   font-size: 10px;
   font-weight: 700;
@@ -174,9 +231,15 @@ kbd {
   height: 100%;
 }
 
+/*
+ * Werkzeugfenster und Editor als Inseln (Ticket 25, Variante b): abgerundete Flächen in der Editorfarbe mit schmalem
+ * Abstand auf dem Rahmen aus Kopfzeile, Leisten und Statusleiste. Der Abstand zum Editor gehört zur Breite bzw. Höhe
+ * der Seite eines Werkzeugfensters; darin liegt der Griff zum Ziehen.
+ */
 .workbench {
   display: flex;
   min-height: 0;
+  background: var(--bg-panel);
 }
 
 .stripe {
@@ -189,14 +252,6 @@ kbd {
   width: var(--stripe-width);
   padding: 6px 0;
   background: var(--bg-panel);
-}
-
-.stripe-left {
-  border-right: 1px solid var(--separator);
-}
-
-.stripe-right {
-  border-left: 1px solid var(--separator);
 }
 
 .stripe-group {
@@ -213,7 +268,7 @@ kbd {
   height: 30px;
   padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   background: none;
   color: var(--icon);
 }
@@ -237,6 +292,8 @@ kbd {
   flex: 1;
   flex-direction: column;
   min-width: 0;
+  /* Rand ausserhalb der gemessenen Fläche, damit die Grössen der Werkzeugfenster gleich bleiben. */
+  margin: 2px 0 var(--island-gap);
 }
 
 .tool-area-row {
@@ -257,28 +314,31 @@ kbd {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  background: var(--bg-panel);
 }
 
+/* Die Insel selbst; nichts ragt über ihre runden Ecken hinaus. */
 .tool-window {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+  border-radius: var(--radius-island);
   outline: none;
 }
 
 .tool-window-left {
-  border-right: 1px solid var(--separator);
+  padding-right: var(--island-gap);
 }
 
 .tool-window-right {
-  border-left: 1px solid var(--separator);
+  padding-left: var(--island-gap);
 }
 
 .tool-window-bottom {
-  border-top: 1px solid var(--separator);
+  padding-top: var(--island-gap);
 }
 
 .tool-window-header {
@@ -350,8 +410,9 @@ kbd {
 
 .file-tree-row {
   position: absolute;
-  left: 0;
-  right: 0;
+  /* Auswahl und Hover als runder Balken mit Abstand zum Rand (Ticket 25); den Einzug rechnet ProjectView.tsx. */
+  left: var(--list-inset);
+  right: var(--list-inset);
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -359,6 +420,7 @@ kbd {
   height: 24px;
   padding-right: 8px;
   white-space: nowrap;
+  border-radius: var(--radius-s);
   cursor: default;
 }
 
@@ -436,7 +498,7 @@ kbd {
   text-overflow: ellipsis;
 }
 
-/* Griff an der Trennlinie: unsichtbar, einige Pixel breit, über der Kante zum Code-Bereich. */
+/* Griff zum Ziehen: unsichtbar, im Abstand zwischen Werkzeugfenster und Editor, je 1 px über dessen Ränder. */
 .splitter {
   position: absolute;
   z-index: 5;
@@ -446,23 +508,23 @@ kbd {
 .splitter-right {
   top: 0;
   bottom: 0;
-  width: 7px;
+  width: calc(var(--island-gap) + 2px);
   cursor: col-resize;
 }
 
 .splitter-left {
-  right: -4px;
+  right: -1px;
 }
 
 .splitter-right {
-  left: -4px;
+  left: -1px;
 }
 
 .splitter-bottom {
-  top: -4px;
+  top: -1px;
   left: 0;
   right: 0;
-  height: 7px;
+  height: calc(var(--island-gap) + 2px);
   cursor: row-resize;
 }
 
@@ -484,6 +546,7 @@ kbd {
   min-width: 0;
   overflow: hidden;
   background: var(--bg);
+  border-radius: var(--radius-island);
   outline: none;
 }
 
@@ -502,7 +565,6 @@ kbd {
   align-items: stretch;
   height: var(--editor-tabs-height);
   background: var(--bg);
-  border-bottom: 1px solid var(--border-subtle);
 }
 
 /* Beliebig viele Tabs: Die Leiste scrollt waagrecht (auch mit dem Mausrad), ohne sichtbare Bildlaufleiste. */
@@ -510,6 +572,7 @@ kbd {
   display: flex;
   flex: 1;
   min-width: 0;
+  padding: 0 4px;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -543,7 +606,19 @@ kbd {
   cursor: default;
 }
 
-.editor-tab:hover {
+/* Hover und aktiver Tab als runde Fläche (Ticket 25); die Inhalte liegen darüber. */
+.editor-tab::before {
+  content: '';
+  position: absolute;
+  inset: 5px 1px;
+  border-radius: var(--radius-m);
+}
+
+.editor-tab > * {
+  position: relative;
+}
+
+.editor-tab:hover::before {
   background: var(--bg-tab-hover);
 }
 
@@ -551,15 +626,8 @@ kbd {
   color: var(--text);
 }
 
-/* Der aktive Tab ist unten blau unterstrichen, wie im neuen IntelliJ. */
-.editor-tab.active::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 2px;
-  background: var(--accent);
+.editor-tab.active::before {
+  background: var(--bg-selected);
 }
 
 .editor-tab-icon {
@@ -596,7 +664,7 @@ kbd {
   color: var(--text-muted);
   background: transparent;
   border: none;
-  border-radius: 3px;
+  border-radius: var(--radius-s);
   visibility: hidden;
 }
 
@@ -744,7 +812,6 @@ kbd {
   min-width: 0;
   padding: 0 10px;
   background: var(--bg-panel);
-  border-top: 1px solid var(--separator);
   color: var(--text-muted);
   font-size: 12px;
 }
@@ -767,7 +834,7 @@ kbd {
   width: 120px;
   height: 4px;
   overflow: hidden;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   background: var(--bg-selected);
 }
 
@@ -813,10 +880,15 @@ kbd {
   padding: 6px;
   background: var(--bg-popup);
   border: 1px solid var(--border-popup);
-  border-radius: 8px;
+  border-radius: var(--radius-l);
   box-shadow: var(--shadow);
   outline: none;
   -webkit-app-region: no-drag;
+}
+
+/* Das Menü selbst trägt keinen Fokusrahmen, auch nicht per Tastatur geöffnet; die Hervorhebung zeigt den Eintrag. */
+.menu:focus-visible {
+  outline: none;
 }
 
 .menu-separator {
@@ -827,15 +899,45 @@ kbd {
 
 .menu-item {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   min-height: 28px;
   padding: 4px 10px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-s);
   background: none;
   text-align: left;
+}
+
+/* Symbolspalte (Ticket 25): gleich breit für alle Einträge, leer, wo ein Eintrag kein Symbol hat. */
+.menu.with-icons .menu-item {
+  padding-left: 8px;
+}
+
+.menu-item-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--menu-icon-width, 16px);
+  color: var(--icon);
+}
+
+.menu-item-icon .icon-folder {
+  color: var(--folder);
+}
+
+.menu-item.disabled .menu-item-icon,
+.menu-item.muted .menu-item-icon {
+  opacity: 0.45;
+}
+
+.menu-item-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
 }
 
 .menu-item:hover {
@@ -905,7 +1007,7 @@ kbd {
   margin-top: 14vh;
   background: var(--bg-popup);
   border: 1px solid var(--border-popup);
-  border-radius: 10px;
+  border-radius: var(--radius-xl);
   box-shadow: var(--shadow);
 }
 
@@ -935,7 +1037,7 @@ kbd {
   list-style: none;
   background: var(--bg);
   border: 1px solid var(--border-popup);
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   font-size: 12px;
   overflow-wrap: anywhere;
   user-select: text;
@@ -956,7 +1058,7 @@ kbd {
   margin-top: 4px;
   padding: 5px 8px;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-m);
   background: var(--bg);
   color: var(--text);
   font: inherit;
@@ -966,10 +1068,12 @@ kbd {
 
 .dialog-input:focus {
   border-color: var(--focus);
+  box-shadow: 0 0 0 1px var(--focus);
 }
 
 .dialog-input.invalid {
   border-color: var(--error);
+  box-shadow: 0 0 0 1px var(--error);
 }
 
 .dialog-error {
@@ -993,6 +1097,15 @@ kbd {
   justify-content: flex-end;
   gap: 8px;
   padding: 14px 18px 16px;
+}
+
+/* Knöpfe im Dialog mindestens so breit wie in IntelliJ, Fokus als Ring aussen. */
+.dialog-buttons button {
+  min-width: 72px;
+}
+
+.dialog-buttons button:focus-visible {
+  outline-offset: 1px;
 }
 
 /* ---------- Meldungen ---------- */
@@ -1019,7 +1132,7 @@ kbd {
   padding: 10px 8px 10px 12px;
   background: var(--bg-popup);
   border: 1px solid var(--border-popup);
-  border-radius: 8px;
+  border-radius: var(--radius-l);
   box-shadow: var(--shadow);
 }
 
@@ -1082,6 +1195,7 @@ kbd {
 /* Schmale Leiste unten, nur solange eine Arbeit des Kerns läuft (etwa Klonen). */
 .welcome-statusbar {
   height: var(--statusbar-height);
+  border-top: 1px solid var(--separator);
 }
 
 .welcome-title {
@@ -1146,7 +1260,7 @@ kbd {
 .recent-item {
   display: flex;
   align-items: center;
-  border-radius: 6px;
+  border-radius: var(--radius-s);
 }
 
 .recent-item:hover {
@@ -1223,7 +1337,7 @@ kbd {
   color: var(--text);
   background: var(--bg-popup);
   border: 1px solid var(--border-popup);
-  border-radius: 8px;
+  border-radius: var(--radius-l);
   box-shadow: var(--shadow);
   overflow: hidden;
 }
@@ -1260,7 +1374,7 @@ kbd {
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-m);
   outline: none;
 }
 
@@ -1273,6 +1387,7 @@ kbd {
 .quick-popup-input:focus,
 .find-popup-mask:focus {
   border-color: var(--focus);
+  box-shadow: 0 0 0 1px var(--focus);
 }
 
 .find-popup-mask {
@@ -1310,6 +1425,7 @@ kbd {
   flex: 1;
   min-height: 0;
   max-height: 420px;
+  padding: 4px 0;
   overflow-y: auto;
   border-top: 1px solid var(--border-popup);
 }
@@ -1325,13 +1441,16 @@ kbd {
   color: var(--text-muted);
 }
 
+/* Auswahl als runder Balken mit Abstand zum Rand; der Text steht wie vorher 12 px vom Rand (Ticket 25). */
 .quick-popup-item,
 .find-popup-item {
   display: flex;
   align-items: center;
   gap: 8px;
   height: 26px;
-  padding: 0 12px;
+  margin: 0 var(--list-inset);
+  padding: 0 calc(12px - var(--list-inset));
+  border-radius: var(--radius-s);
   white-space: nowrap;
   cursor: default;
 }
@@ -1374,7 +1493,7 @@ kbd {
 
 .find-popup-line mark {
   background: rgba(53, 116, 240, 0.35);
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 
 .find-popup-preview {
@@ -1385,7 +1504,7 @@ kbd {
 
 .find-preview-match {
   background: rgba(53, 116, 240, 0.45);
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 
 .find-popup-footer {
@@ -1415,7 +1534,7 @@ kbd {
   gap: 4px;
   padding: 2px 4px 2px 8px;
   color: var(--text-muted);
-  border-radius: 4px;
+  border-radius: var(--radius-s);
   cursor: default;
 }
 
@@ -1453,12 +1572,14 @@ kbd {
   align-items: center;
   gap: 8px;
   height: 24px;
-  padding: 0 12px;
+  margin: 0 var(--list-inset);
+  padding: 0 calc(12px - var(--list-inset));
+  border-radius: var(--radius-s);
   white-space: nowrap;
 }
 
 .find-match-row {
-  padding-left: 36px;
+  padding-left: calc(36px - var(--list-inset));
 }
 
 .find-match-position {
@@ -1493,7 +1614,7 @@ kbd {
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-m);
 }
 
 .settings-input[type='number'] {
@@ -1502,6 +1623,7 @@ kbd {
 
 .settings-input:focus {
   border-color: var(--focus);
+  box-shadow: 0 0 0 1px var(--focus);
   outline: none;
 }
 
@@ -1550,7 +1672,7 @@ kbd {
   padding: 2px;
   background: var(--bg-panel);
   border: 1px solid var(--border-popup);
-  border-radius: 6px;
+  border-radius: var(--radius-m);
 }
 
 .markdown-views button {
@@ -1558,7 +1680,7 @@ kbd {
   color: var(--text-muted);
   background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-s);
 }
 
 .markdown-views button.active {
@@ -1616,14 +1738,14 @@ kbd {
   font-family: var(--font-mono);
   font-size: 0.92em;
   background: var(--bg-panel);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 
 .markdown-preview pre.md-code {
   padding: 10px 12px;
   overflow: auto;
   background: var(--bg-panel);
-  border-radius: 6px;
+  border-radius: var(--radius-m);
 }
 
 .markdown-preview pre.md-code code {
@@ -1668,7 +1790,7 @@ kbd {
   margin: 0 6px 0 -18px;
   vertical-align: -1px;
   border: 1px solid var(--text-muted);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 
 .md-task.checked {
@@ -1697,7 +1819,7 @@ kbd {
   color: var(--error);
   white-space: pre-wrap;
   background: var(--bg-panel);
-  border-radius: 6px;
+  border-radius: var(--radius-m);
 }
 
 /* ---------- Terminal (Ticket 11) ---------- */
@@ -1719,7 +1841,7 @@ kbd {
   font: inherit;
   background: var(--bg);
   border: 1px solid var(--accent);
-  border-radius: 3px;
+  border-radius: var(--radius-s);
   outline: none;
 }
 
@@ -1745,22 +1867,194 @@ kbd {
 
 /* ---------- Git (Ticket 15) ---------- */
 
+/* Voraus (grün) und zurück (blau) als kleine Pfeile mit Zahl, in der Kopfzeile und im Branch-Dropdown (Ticket 25). */
+.branch-sync {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .branch-widget .branch-sync {
   margin-left: 2px;
+}
+
+.branch-sync-outgoing,
+.branch-sync-incoming {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.branch-sync-outgoing {
+  color: var(--git-outgoing);
+}
+
+.branch-sync-incoming {
+  color: var(--git-incoming);
+}
+
+/* ---------- Branch-Dropdown (Ticket 25) ---------- */
+
+.branch-dropdown {
+  position: fixed;
+  box-sizing: border-box;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  max-width: calc(100vw - 12px);
+  padding: 6px;
+  color: var(--text);
+  background: var(--bg-popup);
+  border: 1px solid var(--border-popup);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow);
+  outline: none;
+  -webkit-app-region: no-drag;
+}
+
+.branch-dropdown-title {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding-left: 8px;
+  font-weight: 600;
+}
+
+.branch-dropdown-search {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  margin: 4px 0 6px;
+  padding: 0 8px;
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+}
+
+.branch-dropdown-search:focus-within {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 1px var(--focus);
+}
+
+.branch-dropdown-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  color: var(--text);
+  font: inherit;
+  background: none;
+  border: none;
+  outline: none;
+}
+
+.branch-dropdown-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.branch-dropdown-separator {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--border-popup);
+}
+
+.branch-dropdown-group {
+  padding: 7px 8px 3px;
   color: var(--text-muted);
   font-size: 12px;
 }
 
-.branch-popup-header {
-  padding: 6px 12px 2px;
+.branch-dropdown-empty {
+  margin: 8px;
   color: var(--text-muted);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
-.branch-popup .quick-popup-item.current .quick-popup-name {
+.branch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--radius-s);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.branch-row.selected {
+  background: var(--bg-selection);
+}
+
+/* Das Untermenü dieser Zeile hat den Fokus: grau statt blau. */
+.branch-row.open {
+  background: var(--bg-selected);
+}
+
+.branch-row-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  color: var(--icon);
+}
+
+.branch-row-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.branch-row.current .branch-row-name {
   font-weight: 600;
+}
+
+.branch-row-name mark {
+  color: inherit;
+  background: none;
+  font-weight: 700;
+}
+
+.branch-row-detail {
+  flex: 0 10 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+}
+
+.branch-row-end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  padding-left: 8px;
+}
+
+.branch-row-shortcut {
+  color: var(--text-muted);
+}
+
+.branch-row-more {
+  display: grid;
+  place-items: center;
+  color: var(--icon);
+  visibility: hidden;
+}
+
+.branch-row.selected .branch-row-more,
+.branch-row.open .branch-row-more {
+  visibility: visible;
 }
 
 .dialog-checkbox {
@@ -1868,6 +2162,9 @@ kbd {
   align-items: center;
   gap: 6px;
   height: 22px;
+  padding-right: 6px;
+  /* Die Liste hat schon 6 px Abstand zum Rand; die Auswahl ist ein runder Balken (Ticket 25). */
+  border-radius: var(--radius-s);
   white-space: nowrap;
 }
 
@@ -1913,8 +2210,14 @@ kbd {
   font: inherit;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-m);
   resize: vertical;
+}
+
+.commit-message:focus {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 1px var(--focus);
+  outline: none;
 }
 
 .commit-actions {
@@ -2006,7 +2309,7 @@ kbd {
   overflow: auto;
   background: var(--bg-popup);
   border: 1px solid var(--border-popup);
-  border-radius: 6px;
+  border-radius: var(--radius-l);
   box-shadow: var(--shadow);
 }
 
@@ -2077,6 +2380,28 @@ kbd {
   max-width: 240px;
 }
 
+/* Filterfelder ohne eigene Klasse (Git-Log, Tabellenansicht) wie die übrigen Eingabefelder (Ticket 25). */
+.git-log-filters input,
+.git-log-filters select,
+.table-filter input {
+  box-sizing: border-box;
+  height: 26px;
+  padding: 2px 6px;
+  color: var(--text);
+  font: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  outline: none;
+}
+
+.git-log-filters input:focus,
+.git-log-filters select:focus,
+.table-filter input:focus {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 1px var(--focus);
+}
+
 .git-log-list {
   position: relative;
   flex: 1;
@@ -2085,20 +2410,22 @@ kbd {
   outline: none;
 }
 
+/* Jede Zeile zeichnet ihr Stück des Graphen selbst; der Abstand zum Rand verschiebt alle gleich (Ticket 25). */
 .git-log-row {
   position: absolute;
-  right: 0;
-  left: 0;
+  right: var(--list-inset);
+  left: var(--list-inset);
   display: flex;
   align-items: center;
   gap: 8px;
   padding-right: 8px;
+  border-radius: var(--radius-s);
   white-space: nowrap;
   cursor: default;
 }
 
 .git-log-row.selected {
-  background: var(--selection, rgba(75, 140, 232, 0.25));
+  background: var(--bg-selection);
 }
 
 .git-log-graph {
@@ -2115,7 +2442,7 @@ kbd {
 .git-log-ref {
   margin-right: 6px;
   padding: 0 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   font-size: 11px;
   border: 1px solid currentColor;
 }
@@ -2220,14 +2547,17 @@ kbd {
   align-items: center;
   gap: 4px;
   height: 22px;
+  /* Runder Balken mit Abstand zum Rand; den Einzug rechnet DatabaseToolWindow.tsx (Ticket 25). */
+  margin: 0 var(--list-inset);
   padding-right: 8px;
+  border-radius: var(--radius-s);
   white-space: nowrap;
   cursor: default;
   outline: none;
 }
 
 .database-node.selected {
-  background: var(--selection, rgba(75, 140, 232, 0.25));
+  background: var(--bg-selection);
 }
 
 .database-arrow {

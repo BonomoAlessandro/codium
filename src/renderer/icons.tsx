@@ -24,8 +24,8 @@ function Icon({ size = 16, children }: { size?: number; children: ReactNode }) {
   );
 }
 
-export const ProjectIcon = () => (
-  <Icon size={18}>
+export const ProjectIcon = ({ size = 18 }: { size?: number } = {}) => (
+  <Icon size={size}>
     <path d="M1.5 3.5a1 1 0 0 1 1-1h3.6l1.6 1.6h5.8a1 1 0 0 1 1 1v7.4a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" />
   </Icon>
 );
@@ -37,15 +37,15 @@ export const CommitIcon = () => (
   </Icon>
 );
 
-export const TerminalIcon = () => (
-  <Icon size={18}>
+export const TerminalIcon = ({ size = 18 }: { size?: number } = {}) => (
+  <Icon size={size}>
     <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
     <path d="M4.5 6l2 2-2 2M8.5 10.5h3" />
   </Icon>
 );
 
-export const GitIcon = () => (
-  <Icon size={18}>
+export const GitIcon = ({ size = 18 }: { size?: number } = {}) => (
+  <Icon size={size}>
     <circle cx="4.5" cy="3.5" r="1.6" />
     <circle cx="4.5" cy="12.5" r="1.6" />
     <circle cx="11.5" cy="5.5" r="1.6" />
@@ -53,8 +53,8 @@ export const GitIcon = () => (
   </Icon>
 );
 
-export const FindIcon = () => (
-  <Icon size={18}>
+export const FindIcon = ({ size = 18 }: { size?: number } = {}) => (
+  <Icon size={size}>
     <circle cx="7" cy="7" r="4.5" />
     <path d="M10.4 10.4l4 4" />
   </Icon>
@@ -167,6 +167,102 @@ export const ErrorIcon = () => (
   <Icon>
     <circle cx="8" cy="8" r="6.5" />
     <path d="M8 4.6v4.2M8 11.2v.1" />
+  </Icon>
+);
+
+// ---------- Git und Menüs (Ticket 25) ----------
+// Akzentfarben über Klassen (app.css, Farben aus tokens.css): blau für Eingehendes (Pull, zurück), grün für
+// Ausgehendes (Push, voraus) und Commit, gelb für den aktuellen Branch wie HEAD im Git-Log.
+
+/** „Fetch“ in der Titelzeile des Branch-Dropdowns: Pfeil aus der Wolke. */
+export const FetchIcon = () => (
+  <Icon>
+    <path d="M4.6 10.5H4a2.5 2.5 0 0 1-.3-4.98 4.2 4.2 0 0 1 8.1-.9A2.9 2.9 0 0 1 12 10.5h-.6" />
+    <path d="M8 7.5v7M5.9 12.4 8 14.5l2.1-2.1" />
+  </Icon>
+);
+
+/** „Pull“: Pfeil nach unten auf eine Linie, in der Farbe für Eingehendes. */
+export const PullIcon = () => (
+  <Icon>
+    <path className="icon-incoming" d="M8 2.5v8M4.8 7.3 8 10.5l3.2-3.2" />
+    <path d="M3 13.5h10" />
+  </Icon>
+);
+
+/** „Push…“: Pfeil nach oben an eine Linie, in der Farbe für Ausgehendes. */
+export const PushIcon = () => (
+  <Icon>
+    <path className="icon-outgoing" d="M8 13.5v-8M4.8 8.7 8 5.5l3.2 3.2" />
+    <path d="M3 2.5h10" />
+  </Icon>
+);
+
+/** „Commit…“: Häkchen wie in IntelliJ. */
+export const CommitActionIcon = () => (
+  <Icon>
+    <path className="icon-success" d="M3 8.6l3.3 3.2L13 4.8" />
+  </Icon>
+);
+
+/** Der aktuelle Branch: gefülltes Etikett in der Farbe von HEAD im Git-Log. */
+export const BranchCurrentIcon = () => (
+  <Icon>
+    <path
+      className="icon-head"
+      fillRule="evenodd"
+      d="M3.5 3.5h6.8l3.7 4.5-3.7 4.5H3.5a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1zM7.3 8a1.3 1.3 0 1 1-2.6 0 1.3 1.3 0 1 1 2.6 0z"
+    />
+  </Icon>
+);
+
+/** Zurück: Commits, die der Branch hinter seinem Remote liegt. */
+export const IncomingIcon = () => (
+  <Icon size={12}>
+    <path className="icon-incoming" d="M8 2.5v11M3.8 9.3 8 13.5l4.2-4.2" />
+  </Icon>
+);
+
+/** Voraus: Commits, die noch nicht gepusht sind. */
+export const OutgoingIcon = () => (
+  <Icon size={12}>
+    <path className="icon-outgoing" d="M8 13.5v-11M3.8 6.7 8 2.5l4.2 4.2" />
+  </Icon>
+);
+
+/** „Checkout“: Pfeil zum Commit. */
+export const CheckoutIcon = () => (
+  <Icon>
+    <path d="M1.5 8h7M5.8 5.3 8.5 8l-2.7 2.7" />
+    <circle cx="12" cy="8" r="2.3" />
+  </Icon>
+);
+
+export const DeleteIcon = () => (
+  <Icon>
+    <path d="M2.5 4.5h11M6 4.5V3a.8.8 0 0 1 .8-.8h2.4a.8.8 0 0 1 .8.8v1.5M4 4.5l.6 8.6a1 1 0 0 0 1 .9h4.8a1 1 0 0 0 1-.9l.6-8.6M6.6 7v4.5M9.4 7v4.5" />
+  </Icon>
+);
+
+export const CopyIcon = () => (
+  <Icon>
+    <rect x="5.5" y="5.5" width="8" height="8.5" rx="1.2" />
+    <path d="M3.5 10.5H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h6.5a1 1 0 0 1 1 1v.5" />
+  </Icon>
+);
+
+export const PasteIcon = () => (
+  <Icon>
+    <path d="M5.5 3H4a1 1 0 0 0-1 1v9.5a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1h-1.5" />
+    <rect x="5.5" y="1.8" width="5" height="2.4" rx="0.8" />
+  </Icon>
+);
+
+/** „Settings…“: Zahnrad mit sechs Zähnen. */
+export const SettingsIcon = () => (
+  <Icon>
+    <path d="M6.37 3.27L6.72 1.42A6.7 6.7 0 0 1 9.28 1.42L9.63 3.27A5 5 0 0 1 11.28 4.23L13.06 3.6A6.7 6.7 0 0 1 14.33 5.82L12.91 7.05A5 5 0 0 1 12.91 8.95L14.33 10.18A6.7 6.7 0 0 1 13.06 12.4L11.28 11.77A5 5 0 0 1 9.63 12.73L9.28 14.58A6.7 6.7 0 0 1 6.72 14.58L6.37 12.73A5 5 0 0 1 4.72 11.77L2.94 12.4A6.7 6.7 0 0 1 1.67 10.18L3.09 8.95A5 5 0 0 1 3.09 7.05L1.67 5.82A6.7 6.7 0 0 1 2.94 3.6L4.72 4.23A5 5 0 0 1 6.37 3.27Z" />
+    <circle cx="8" cy="8" r="2" />
   </Icon>
 );
 
