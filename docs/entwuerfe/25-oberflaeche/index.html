@@ -1,0 +1,895 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codium Oberfläche Skizze</title>
+<style>
+/* ===================== Seite ===================== */
+:root {
+  color-scheme: dark;
+  --page-bg: #141517;
+  --page-card: #1a1b1e;
+  --page-line: #2c2e33;
+  --page-text: #dfe1e5;
+  --page-muted: #9a9ea6;
+  --page-accent: #548af7;
+  /* Akzentfarben der Symbole, auch ausserhalb der Bilder */
+  --git-incoming: #548af7;
+  --git-outgoing: #5fb865;
+  --git-head: #d6b33d;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--page-bg);
+  color: var(--page-text);
+  font: 15px/1.55 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+}
+.page { max-width: 1320px; margin: 0 auto; padding: 32px 20px 80px; }
+h1 { font-size: 28px; line-height: 1.2; margin: 0 0 6px; font-weight: 650; letter-spacing: -0.01em; }
+h2 { font-size: 21px; margin: 56px 0 6px; font-weight: 650; scroll-margin-top: 16px; }
+h3 { font-size: 15px; margin: 26px 0 8px; font-weight: 650; }
+p { margin: 0 0 10px; max-width: 78ch; }
+.lead { color: var(--page-muted); max-width: 86ch; }
+.muted { color: var(--page-muted); }
+code, kbd { font-family: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace; font-size: 0.86em; }
+code { background: #232428; padding: 1px 5px; border-radius: 4px; }
+a { color: var(--page-accent); }
+nav.toc { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 20px 0 8px; }
+nav.toc a { color: var(--page-text); text-decoration: none; padding: 4px 10px; border: 1px solid var(--page-line); border-radius: 999px; font-size: 13px; }
+nav.toc a:hover { background: #222327; }
+ul.facts { margin: 8px 0 0; padding-left: 20px; max-width: 90ch; }
+ul.facts li { margin: 3px 0; }
+
+.cmp { display: grid; gap: 22px 24px; margin-top: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 470px), 1fr)); align-items: start; }
+.cmp.stack { grid-template-columns: minmax(0, 1fr); }
+.cmp.three { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+figure { margin: 0; min-width: 0; }
+figcaption { margin-top: 8px; color: var(--page-muted); font-size: 13.5px; max-width: 90ch; }
+.tag { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 12.5px; font-weight: 650; letter-spacing: 0.02em; }
+.tag::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #868a91; }
+.tag.today::before { background: #868a91; }
+.tag.prop::before { background: #5fb865; }
+.tag.alt::before { background: #d6b33d; }
+.shot { display: block; max-width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--page-line); }
+
+table.t { border-collapse: collapse; margin-top: 10px; font-size: 14px; width: 100%; max-width: 980px; }
+table.t th, table.t td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--page-line); vertical-align: top; }
+table.t th { color: var(--page-muted); font-weight: 600; font-size: 12.5px; letter-spacing: 0.02em; }
+table.t td:first-child { white-space: nowrap; }
+details { margin-top: 14px; max-width: 980px; }
+summary { cursor: pointer; color: var(--page-muted); }
+
+.radii { display: flex; flex-wrap: wrap; gap: 18px; margin: 16px 0 4px; }
+.radius-box { display: grid; gap: 6px; justify-items: center; font-size: 12.5px; color: var(--page-muted); }
+.radius-box span.b { width: 84px; height: 52px; background: #2b2d30; border: 1px solid #4e5157; }
+.radius-box strong { color: var(--page-text); font-weight: 600; }
+
+.questions { counter-reset: q; list-style: none; padding: 0; margin: 12px 0 0; max-width: 95ch; }
+.questions li { counter-increment: q; position: relative; padding: 10px 0 10px 40px; border-bottom: 1px solid var(--page-line); }
+.questions li::before { content: counter(q); position: absolute; left: 0; top: 10px; width: 26px; height: 26px; border-radius: 50%; background: #232428; display: grid; place-items: center; font-size: 13px; font-weight: 650; }
+.questions li strong { display: block; }
+.questions .rec { color: #8fd694; }
+.callout { border: 1px solid var(--page-line); background: var(--page-card); border-radius: 10px; padding: 14px 18px; margin-top: 14px; max-width: 95ch; }
+.callout p:last-child { margin-bottom: 0; }
+
+/* Ansichten mit fester Grösse, die sich der Breite anpassen (nie grösser als 100 %). */
+.fit { width: 100%; overflow: hidden; }
+.fit-inner { position: relative; transform-origin: 0 0; }
+
+/* ===================== Bilder: Design-Variablen wie tokens.css, plus Vorschlag ===================== */
+.mock {
+  --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
+  --bg: #1e1f22;
+  --bg-panel: #2b2d30;
+  --bg-popup: #2b2d30;
+  --bg-hover: #393b40;
+  --bg-selected: #43454a;
+  --bg-selection: #2e436e;
+  --separator: #1e1f22;
+  --border: #4e5157;
+  --border-popup: #43454a;
+  --border-subtle: #393b40;
+  --scrim: rgba(0, 0, 0, 0.45);
+  --shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  --text: #dfe1e5;
+  --text-muted: #868a91;
+  --text-faint: #6f737a;
+  --text-tab: #ced0d6;
+  --icon: #ced0d6;
+  --link: #548af7;
+  --folder: #a5a8ae;
+  --accent: #3574f0;
+  --accent-hover: #4682fa;
+  --accent-text: #ffffff;
+  --focus: #3574f0;
+  --success: #5fb865;
+  --error: #f75464;
+  /* Vorschlag */
+  --radius-xs: 3px;
+  --radius-s: 4px;
+  --radius-m: 6px;
+  --radius-l: 8px;
+  --radius-xl: 10px;
+  --radius-island: 10px;
+  --island-gap: 6px;
+  --list-inset: 6px;
+  --git-incoming: #548af7;
+  --git-outgoing: #5fb865;
+  --git-head: #d6b33d;
+  font: 13px/1.35 var(--font-ui);
+  color: var(--text);
+  user-select: none;
+}
+.mock svg.icon { display: block; flex: none; }
+.icon-incoming { stroke: var(--git-incoming); }
+.icon-outgoing { stroke: var(--git-outgoing); }
+.icon-head { fill: var(--git-head); stroke: var(--git-head); }
+
+/* Szene: Ausschnitt eines Fensters mit Menüs darüber */
+.scene { position: relative; overflow: hidden; border-radius: 8px; border: 1px solid var(--page-line); background: #1e1f22; }
+
+/* ---------- Projektfenster ---------- */
+.win { position: absolute; left: 0; top: 0; width: 1295px; height: 808px; display: grid; grid-template-rows: 40px minmax(0, 1fr) 24px; background: var(--bg); overflow: hidden; }
+.m-header { display: flex; align-items: center; gap: 2px; padding: 0 8px; background: var(--bg-panel); }
+.m-hw { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px 0 6px; border-radius: var(--radius-m); font-weight: 600; white-space: nowrap; }
+.m-hw .icon { color: var(--icon); }
+.m-hw.open { background: var(--bg-selected); }
+.m-badge { display: grid; place-items: center; width: 20px; height: 20px; flex: none; border-radius: var(--radius-s); color: #fff; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; }
+.m-sync { display: flex; align-items: center; gap: 1px; margin-left: 2px; font-size: 12px; font-weight: 500; }
+.m-sync .out { color: var(--git-outgoing); }
+.m-sync .in { color: var(--git-incoming); margin-left: 4px; }
+.m-body { display: flex; min-height: 0; border-top: 1px solid var(--separator); }
+.m-stripe { display: flex; flex: none; flex-direction: column; justify-content: space-between; align-items: center; width: 40px; padding: 6px 0; background: var(--bg-panel); }
+.m-stripe-left { border-right: 1px solid var(--separator); }
+.m-stripe-right { border-left: 1px solid var(--separator); }
+.m-sg { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.m-sb { display: grid; place-items: center; width: 30px; height: 30px; border-radius: var(--radius-m); color: var(--icon); }
+.m-sb.active { background: var(--bg-selected); color: #fff; }
+.m-area { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.m-row { display: flex; flex: 1; min-height: 0; }
+.m-tw { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-panel); }
+.m-tw-left { flex: none; width: 280px; border-right: 1px solid var(--separator); }
+.m-tw-bottom { flex: none; height: 196px; border-top: 1px solid var(--separator); }
+.m-twh { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 8px; height: 32px; padding: 0 6px 0 12px; }
+.m-twt { font-weight: 600; }
+.m-twa { display: flex; align-items: center; gap: 2px; }
+.m-ib { display: grid; place-items: center; width: 24px; height: 24px; border-radius: var(--radius-s); color: var(--icon); }
+.m-ib.hover { background: var(--bg-hover); }
+.m-tree { flex: 1; overflow: hidden; }
+.m-tr { display: flex; align-items: center; gap: 4px; height: 24px; margin: 0 var(--list-inset); padding-left: calc(8px + var(--lvl, 0) * 18px - var(--list-inset)); padding-right: 8px; border-radius: var(--radius-s); white-space: nowrap; }
+.m-tr.sel { background: var(--bg-selection); }
+.m-tr.sel-inactive { background: var(--bg-selected); }
+.m-tr.hov { background: var(--bg-hover); }
+.m-arrow { display: grid; flex: none; place-items: center; width: 16px; height: 16px; color: var(--icon); }
+.m-arrow.open .icon { transform: rotate(90deg); }
+.m-arrow.none { visibility: hidden; }
+.m-ti { display: grid; flex: none; place-items: center; color: var(--icon); }
+.m-ti.folder { color: var(--folder); }
+.m-tn.root { font-weight: 600; }
+.m-td { min-width: 0; margin-left: 4px; overflow: hidden; color: var(--text-muted); text-overflow: ellipsis; }
+
+.m-code { display: flex; flex: 1; flex-direction: column; min-width: 0; background: var(--bg); }
+.m-tabs { display: flex; flex: none; align-items: stretch; height: 38px; padding: 0 4px; border-bottom: 1px solid var(--border-subtle); }
+.m-tab { position: relative; display: flex; align-items: center; gap: 6px; padding: 0 6px 0 10px; color: var(--text-tab); white-space: nowrap; }
+.m-tab > * { position: relative; }
+.m-tab .icon { color: var(--text-muted); }
+.m-tab.active { color: var(--text); }
+.m-tab::before { content: ''; position: absolute; inset: 5px 1px; border-radius: var(--radius-m); }
+.m-tab.hover::before { background: var(--bg-panel); }
+.m-tabx { display: grid; place-items: center; width: 18px; height: 18px; border-radius: var(--radius-s); color: var(--text-muted); visibility: hidden; }
+.m-tab.active .m-tabx, .m-tab.hover .m-tabx { visibility: visible; }
+.m-tabdot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); }
+/* Tabs: Unterstrich (Variante a) oder runde Fläche (Variante b) */
+.tabs-underline .m-tab.active::after { content: ''; position: absolute; right: 0; bottom: 0; left: 0; height: 2px; background: var(--accent); }
+.tabs-pill .m-tab.active::before { background: var(--bg-selected); }
+.m-editor { display: flex; flex: 1; min-height: 0; padding-top: 6px; overflow: hidden; font: 13px/18px var(--font-mono); }
+.m-gutter { flex: none; width: 58px; padding-right: 22px; color: #4b5059; text-align: right; white-space: pre; }
+.m-gutter b { color: #a1a3ab; font-weight: 400; }
+.m-lines { color: #bcbec4; white-space: pre; }
+.c-k { color: #cf8e6d; } .c-s { color: #6aab73; } .c-f { color: #56a8f5; } .c-p { color: #c77dbb; }
+.m-ttab { display: flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border-radius: var(--radius-s); background: var(--bg-selected); }
+.m-term { flex: 1; min-height: 0; padding: 4px 10px; overflow: hidden; color: #bcbec4; background: var(--bg); font: 12.5px/17px var(--font-mono); white-space: pre; }
+.m-status { display: flex; align-items: center; gap: 12px; padding: 0 10px; background: var(--bg-panel); border-top: 1px solid var(--separator); color: var(--text-muted); font-size: 12px; }
+.m-status .sp { flex: 1; }
+
+/* Variante b: Werkzeugfenster und Editor als Inseln */
+.var-b .m-body { border-top: 0; background: var(--bg-panel); }
+.var-b .m-stripe { border: 0; }
+.var-b .m-area, .var-b .m-row { gap: var(--island-gap); }
+.var-b .m-area { padding: 2px 0 var(--island-gap); }
+.var-b .m-tw, .var-b .m-code { overflow: hidden; border: 0; border-radius: var(--radius-island); background: var(--bg); }
+.var-b .m-tabs { border-bottom-color: transparent; }
+.var-b .m-term { background: transparent; }
+.var-b .m-status { border-top: 0; }
+/* Variante b, andere Farbaufteilung: dunkler Rahmen, Werkzeugfenster wie heute */
+.var-b2 { --frame: #161719; }
+.var-b2 .m-header, .var-b2 .m-stripe, .var-b2 .m-status, .var-b2 .m-body { background: var(--frame); }
+.var-b2 .m-tw { background: var(--bg-panel); }
+.var-b2 .m-code { background: var(--bg); }
+
+/* ---------- Menüs, Dropdown, Dialog ---------- */
+.m-popup { position: absolute; z-index: 5; padding: 6px; background: var(--bg-popup); border: 1px solid var(--border-popup); border-radius: var(--radius-l); box-shadow: var(--shadow); }
+.m-mi { display: flex; align-items: center; gap: 8px; min-height: 26px; padding: 0 10px 0 8px; border-radius: var(--radius-s); white-space: nowrap; }
+.m-mi > .ic { display: grid; flex: none; place-items: center; width: 16px; color: var(--icon); }
+.m-mi .l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.m-mi .k { margin-left: 24px; color: var(--text-muted); }
+.m-mi .d { margin-left: 6px; color: var(--text-muted); }
+.m-mi .more { color: var(--icon); }
+.m-mi.hl { background: var(--bg-selection); }
+.m-mi.par { background: var(--bg-selected); }
+.m-mi.dis { color: var(--text-faint); }
+.m-mi.dis > .ic { opacity: 0.45; }
+.m-menu .m-mi { min-height: 28px; }
+.m-mi.two { min-height: 40px; padding-top: 3px; padding-bottom: 3px; }
+.m-mi.two .l small { display: block; color: var(--text-muted); font-size: 12px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; }
+.m-menu.badges .m-mi > .ic { width: 20px; }
+.m-sep { height: 1px; margin: 5px 4px; background: var(--border-popup); }
+.m-gh { padding: 7px 8px 3px; color: var(--text-muted); font-size: 12px; }
+.m-mi.br .l b { font-weight: 600; }
+.m-mi mark { color: inherit; background: none; font-weight: 700; }
+.sync { display: flex; align-items: center; gap: 1px; font-size: 12px; }
+.sync .out { color: var(--git-outgoing); }
+.sync .in { color: var(--git-incoming); margin-left: 5px; }
+
+.dd { width: 380px; }
+.dd-title { display: flex; align-items: center; justify-content: space-between; height: 28px; padding-left: 8px; font-weight: 600; }
+.dd-search { display: flex; align-items: center; gap: 6px; height: 30px; margin: 4px 0 6px; padding: 0 8px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-m); color: var(--text-muted); }
+.dd-search .icon { color: var(--text-muted); }
+.dd-search.focus { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); color: var(--text); }
+.caret { display: inline-block; width: 1px; height: 15px; margin-left: 1px; background: var(--text); vertical-align: -3px; }
+.m-scrim { position: absolute; inset: 0; z-index: 4; background: var(--scrim); }
+.m-dialog { position: absolute; z-index: 6; width: 460px; background: var(--bg-popup); border: 1px solid var(--border-popup); border-radius: var(--radius-xl); box-shadow: var(--shadow); }
+.m-dialog-title { padding: 14px 18px 6px; font-weight: 600; }
+.m-dialog-body { display: flex; flex-direction: column; padding: 0 18px; }
+.m-dialog-buttons { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 18px 16px; }
+
+/* ---------- Bedienelemente: heute und Vorschlag ---------- */
+.gallery { display: grid; gap: 14px; padding: 18px; background: var(--bg-popup); border: 1px solid var(--page-line); border-radius: 10px; }
+.gallery .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+.gallery .lbl { width: 100%; color: var(--text-muted); font-size: 12px; }
+.btn { font: inherit; color: var(--text); background: var(--bg-panel); border: 1px solid var(--border); cursor: default; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.btn.hover { background: var(--bg-hover); }
+.btn.primary.hover { background: var(--accent-hover); }
+.btn:disabled { opacity: 0.5; }
+.inp { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); padding: 5px 8px; width: 200px; }
+.inp.focus { border-color: var(--focus); }
+.inp.invalid { border-color: var(--error); }
+.err { color: var(--error); font-size: 12px; }
+.today .btn { border-radius: 4px; padding: 4px 14px; }
+.today .btn.focus { outline: 2px solid var(--focus); outline-offset: -2px; }
+.today .btn.primary.focus { outline-offset: 1px; }
+.today .inp { border-radius: 4px; }
+.today .iconbtn { border-radius: 4px; }
+.prop .btn { border-radius: var(--radius-m); padding: 4px 16px; min-width: 72px; }
+.prop .btn.focus { outline: 2px solid var(--focus); outline-offset: 1px; }
+.prop .inp { border-radius: var(--radius-m); }
+.prop .inp.focus { box-shadow: 0 0 0 1px var(--focus); }
+.prop .inp.invalid { box-shadow: 0 0 0 1px var(--error); }
+.iconbtn { display: inline-grid; place-items: center; width: 24px; height: 24px; color: var(--icon); }
+.iconbtn.hover { background: var(--bg-hover); }
+.iconbtn.on { background: var(--bg-selected); }
+.prop .iconbtn { border-radius: var(--radius-s); }
+.search { display: inline-flex; align-items: center; gap: 6px; width: 240px; padding: 0 8px; height: 30px; background: var(--bg); border: 1px solid var(--border); color: var(--text-muted); }
+.today .search { border-radius: 4px; height: 31px; }
+.prop .search { border-radius: var(--radius-m); }
+.chk { display: inline-flex; align-items: center; gap: 6px; }
+.chk input { margin: 0; }
+.box { display: grid; place-items: center; width: 14px; height: 14px; border-radius: var(--radius-xs); border: 1px solid #6f737a; }
+.box.on { background: var(--accent); border-color: var(--accent); }
+.box svg { display: block; }
+.seg { display: inline-flex; gap: 2px; padding: 2px; background: var(--bg-panel); border: 1px solid var(--border-popup); border-radius: var(--radius-m); }
+.seg span { padding: 2px 10px; border-radius: var(--radius-s); color: var(--text-muted); }
+.seg span.on { background: var(--bg-selected); color: var(--text); }
+
+/* ---------- Symbole ---------- */
+.icons { display: grid; gap: 12px; margin-top: 14px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.icon-card { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto 1fr; gap: 4px 14px; align-items: start; padding: 12px 14px; background: var(--page-card); border: 1px solid var(--page-line); border-radius: 10px; }
+.icon-sizes { display: flex; align-items: flex-end; align-self: center; gap: 10px; grid-row: span 3; padding: 10px 12px; background: #2b2d30; border-radius: 8px; color: #ced0d6; }
+.icon-sizes .z1 svg { display: block; }
+.icon-sizes .z15 svg { display: block; zoom: 1.5; }
+.icon-sizes .z3 svg { display: block; zoom: 3; }
+.icon-card h4 { margin: 0; font-size: 14px; }
+.icon-card code { font-size: 11.5px; justify-self: start; }
+.icon-card p { margin: 0; font-size: 12.5px; color: var(--page-muted); }
+.icon-card.old { opacity: 0.9; }
+.pixel-grid { background-image: linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px); background-size: 3px 3px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Codium: Oberfläche näher an IntelliJ</h1>
+<p class="lead">Skizze zu <strong>Ticket 25</strong>, erste Runde, zur Freigabe. Links bzw. oben steht jeweils der <strong>heutige Stand</strong> als Bildschirmfoto der echten App (Testmodus, verborgenes Fenster, 150 %), daneben bzw. darunter der <strong>Vorschlag</strong>, nachgebaut mit HTML und CSS in den Farben aus <code>tokens.css</code>. Für die grossen Flächen gibt es zwei Varianten: <strong>a</strong> nur Bedienelemente rund, <strong>b</strong> zusätzlich Werkzeugfenster und Editor als abgerundete Inseln.</p>
+
+<nav class="toc">
+  <a href="#kurz">Kurz gesagt</a>
+  <a href="#radien">Radien</a>
+  <a href="#gesamt">Gesamtansicht a und b</a>
+  <a href="#branch">Branch-Dropdown</a>
+  <a href="#projektmenue">Projektmenü</a>
+  <a href="#kontextmenue">Kontextmenü</a>
+  <a href="#dialog">Dialog</a>
+  <a href="#bedienelemente">Knöpfe und Eingabefelder</a>
+  <a href="#tabs">Datei-Tabs</a>
+  <a href="#werkzeugfenster">Werkzeugfenster</a>
+  <a href="#symbole">Symbole</a>
+  <a href="#fragen">Fragen zur Freigabe</a>
+</nav>
+
+<h2 id="kurz">Kurz gesagt</h2>
+<ul class="facts">
+  <li><strong>Einheitliche Radien</strong> als fünf benannte Werte in <code>tokens.css</code> (dazu einer für die Inseln). Heute stehen 0, 2, 3, 4, 6, 8 und 10 px von Hand nebeneinander.</li>
+  <li><strong>Auswahl und Hover</strong> in Bäumen und Listen als abgerundeter Balken mit 6 px Abstand zum Rand, wie es die Menüs heute schon haben.</li>
+  <li><strong>Knöpfe und Eingabefelder</strong> etwas runder (6 statt 4 px), Fokus als Ring aussen.</li>
+  <li><strong>Branch-Menü als echtes Dropdown</strong> unter dem Branch-Knopf, mit Fetch-Knopf in der Titelzeile, Aktionen mit Symbol und Kürzel, Branch-Symbolen und farbigen Pfeilen für voraus und zurück. Das Untermenü öffnet rechts daneben statt unter der Zeile.</li>
+  <li><strong>Menüs mit Symbolspalte</strong>; im Projektmenü tragen die zuletzt geöffneten Projekte ihr Farbkürzel.</li>
+  <li><strong>12 neue Symbole</strong>, selbst gezeichnet im Stil von <code>icons.tsx</code>, bereit zum Übernehmen in <a href="symbole/icons-neu.tsx"><code>symbole/icons-neu.tsx</code></a>.</li>
+  <li>Unverändert bleiben Farben, Schrift, Höhen, Abstände der Kopfzeile, Leisten und Statusleiste. In Variante b ändert sich zusätzlich die Farbe der Werkzeugfenster (siehe Frage 2).</li>
+</ul>
+
+<!-- ===================================================== RADIEN -->
+<h2 id="radien">Radien</h2>
+<p>Vorgeschlagene Variablen für <code>src/renderer/styles/tokens.css</code>. Alle Radien in <code>app.css</code> laufen danach über sie; feste Werte bleiben nur für Kreise (<code>50%</code>) und bewusst eckige Stellen (<code>0</code>).</p>
+<div class="radii mock">
+  <div class="radius-box"><span class="b" style="border-radius:3px"></span><strong>xs · 3 px</strong></div>
+  <div class="radius-box"><span class="b" style="border-radius:4px"></span><strong>s · 4 px</strong></div>
+  <div class="radius-box"><span class="b" style="border-radius:6px"></span><strong>m · 6 px</strong></div>
+  <div class="radius-box"><span class="b" style="border-radius:8px"></span><strong>l · 8 px</strong></div>
+  <div class="radius-box"><span class="b" style="border-radius:10px"></span><strong>xl · 10 px</strong></div>
+  <div class="radius-box"><span class="b" style="border-radius:10px;background:#1e1f22;outline:6px solid #2b2d30"></span><strong>island · 10 px</strong></div>
+</div>
+<table class="t">
+  <thead><tr><th>Name</th><th>Wert</th><th>Wo verwendet</th></tr></thead>
+  <tbody>
+    <tr><td><code>--radius-xs</code></td><td>3 px</td><td>Winziges: Häkchen, Etiketten im Git-Log, Inline-Code und Code-Blöcke der Markdown-Vorschau, Treffer-Markierungen, Fortschrittsbalken.</td></tr>
+    <tr><td><code>--radius-s</code> (klein)</td><td>4 px</td><td>Auswahl- und Hoverbalken in Bäumen, Listen, Menüs und Suchfenstern; Symbolknöpfe (24 px); Schliessknopf im Tab; Projektkürzel; Tabs in Werkzeugfenstern (Find, Terminal).</td></tr>
+    <tr><td><code>--radius-m</code> (mittel)</td><td>6 px</td><td>Knöpfe, Eingabe- und Suchfelder, Commit-Nachricht, Datei-Tabs (Hover und aktive Fläche), Kopfzeilen- und Leistenknöpfe, Umschalter der Markdown-Vorschau, Listenfeld im Dialog.</td></tr>
+    <tr><td><code>--radius-l</code> (gross)</td><td>8 px</td><td>Menüs, Branch-Dropdown, Suchfenster (Ctrl + Shift + N usw.), Meldungen, Popup der Änderungsbalken.</td></tr>
+    <tr><td><code>--radius-xl</code></td><td>10 px</td><td>Dialoge (Rückfragen, Einstellungen, Klonen, Verbindungen).</td></tr>
+    <tr><td><code>--radius-island</code> (Fläche)</td><td>10 px</td><td>Nur Variante b: Werkzeugfenster und Editor. Eigener Name, damit Dialoge und Inseln getrennt einstellbar bleiben. Dazu <code>--island-gap: 6px</code> als Abstand zwischen den Inseln.</td></tr>
+  </tbody>
+</table>
+<p class="muted" style="margin-top:10px">Weitere neue Werte: <code>--list-inset: 6px</code> (Abstand der Auswahlbalken zum Rand), <code>--git-incoming: #548af7</code>, <code>--git-outgoing: #5fb865</code>, <code>--git-head: #d6b33d</code> (gleich wie das HEAD-Etikett im Git-Log).</p>
+<details>
+  <summary>Heutige Radien in <code>app.css</code> und welcher Name sie ersetzt</summary>
+  <table class="t">
+    <thead><tr><th>Stelle</th><th>heute</th><th>neu</th></tr></thead>
+    <tbody>
+      <tr><td>Knöpfe (<code>button</code>), Eingabefelder, Suchfelder, Commit-Nachricht</td><td>4 px</td><td>m · 6 px</td></tr>
+      <tr><td>Symbolknöpfe, Projektkürzel, Menüeinträge, Find-Tabs</td><td>4 px</td><td>s · 4 px</td></tr>
+      <tr><td>Schliessknopf im Tab, Umbenennen eines Terminal-Tabs</td><td>3 px</td><td>s · 4 px</td></tr>
+      <tr><td>Kopfzeilen- und Leistenknöpfe, Markdown-Umschalter, Listenfeld im Dialog, Code-Block und Mermaid-Fehler</td><td>6 px</td><td>m · 6 px</td></tr>
+      <tr><td>Zuletzt geöffnete Projekte im Willkommensfenster (Hover)</td><td>6 px</td><td>s · 4 px (Auswahlbalken)</td></tr>
+      <tr><td>Menüs, Suchfenster, Meldungen</td><td>8 px</td><td>l · 8 px</td></tr>
+      <tr><td>Popup der Änderungsbalken</td><td>6 px</td><td>l · 8 px (ein Popup wie die anderen)</td></tr>
+      <tr><td>Dialoge</td><td>10 px</td><td>xl · 10 px</td></tr>
+      <tr><td>Etiketten im Git-Log, Inline-Code, Aufgaben-Kästchen</td><td>3 px</td><td>xs · 3 px</td></tr>
+      <tr><td>Fortschrittsbalken, Treffer-Markierungen</td><td>2 px</td><td>xs · 3 px</td></tr>
+      <tr><td>Zeilen in Dateibaum, Suchfenstern, Find, Änderungsansicht, Git-Log, Datenbank</td><td>eckig, volle Breite</td><td>s · 4 px, 6 px Abstand zum Rand</td></tr>
+      <tr><td>Punkt „ungespeichert“ im Tab</td><td>50 %</td><td>bleibt (Kreis)</td></tr>
+      <tr><td>Knöpfe in Monaco</td><td>0</td><td>bleibt (bewusst eckig)</td></tr>
+    </tbody>
+  </table>
+</details>
+
+<!-- ===================================================== GESAMT -->
+<h2 id="gesamt">Gesamtansicht des Projektfensters</h2>
+<p>Gleicher Inhalt wie im Foto: Projekt <em>shop-web</em>, Baum mit gewählter Datei, drei Tabs. In den Vorschlägen ist zusätzlich unten das Terminal offen, damit man sieht, wie die Flächen aneinanderstossen. Die Fensterknöpfe von Windows (rechts oben) zeichnet Windows selbst; sie fehlen auf allen Bildern.</p>
+<div class="cmp stack">
+  <figure>
+    <div class="tag today">Heute</div>
+    <div class="fit" data-w="1295" data-h="808"><div class="fit-inner"><img class="shot" src="heute/gesamt.png" width="1295" height="808" alt="Projektfenster heute"></div></div>
+    <figcaption>Auswahl im Baum über die ganze Breite und eckig. Trennlinien von 1 px zwischen allen Flächen.</figcaption>
+  </figure>
+  <figure>
+    <div class="tag prop">Vorschlag, Variante a: Bedienelemente rund, Flächen wie heute</div>
+    <div class="fit" data-w="1295" data-h="808"><div class="fit-inner scene mock" style="width:1295px;height:808px" data-window="var-a tabs-underline"></div></div>
+    <figcaption>Aufbau, Farben und Trennlinien wie heute. Neu: Auswahl als runder Balken mit Abstand zum Rand, Hover der Tabs rund, voraus und zurück in der Kopfzeile als farbige Pfeile. Der aktive Tab behält den blauen Unterstrich.</figcaption>
+  </figure>
+  <figure>
+    <div class="tag prop">Vorschlag, Variante b: zusätzlich Inseln</div>
+    <div class="fit" data-w="1295" data-h="808"><div class="fit-inner scene mock" style="width:1295px;height:808px" data-window="var-b tabs-pill"></div></div>
+    <figcaption>Werkzeugfenster und Editor als Inseln mit 10 px Radius und 6 px Abstand. Kopfzeile, Leisten und Statusleiste bilden den Rahmen in der heutigen Panelfarbe (<code>#2b2d30</code>); die Inseln haben einheitlich die Editorfarbe (<code>#1e1f22</code>). Die Trennlinien entfallen, der Abstand trennt. Der aktive Tab ist eine runde Fläche statt eines Unterstrichs.</figcaption>
+  </figure>
+  <figure>
+    <div class="tag alt">Zum Vergleich: Variante b mit anderer Farbaufteilung</div>
+    <div class="fit" data-w="1295" data-h="808" data-max="0.55"><div class="fit-inner scene mock" style="width:1295px;height:808px" data-window="var-b var-b2 tabs-pill"></div></div>
+    <figcaption>Werkzeugfenster wie heute in <code>#2b2d30</code>, Editor in <code>#1e1f22</code>, dafür ein dunklerer Rahmen (<code>#161719</code>) für Kopfzeile, Leisten und Abstände. Ändert die Kopfzeile, also auch die Farbe der Fensterknöpfe von Windows (<code>theme.ts</code>).</figcaption>
+  </figure>
+</div>
+
+<!-- ===================================================== BRANCH -->
+<h2 id="branch">Kopfzeile mit Branch-Dropdown</h2>
+<div class="cmp stack">
+  <figure>
+    <div class="tag today">Heute</div>
+    <div class="fit" data-w="1020" data-h="497"><div class="fit-inner"><img class="shot" src="heute/branch.png" width="1020" height="497" alt="Branch-Menü heute"></div></div>
+    <figcaption>Ein Suchfenster oben in der Mitte, nicht am Knopf. „Commit…“, „Push…“, „Pull“, „Fetch“ und „New Branch…“ als reine Textzeilen ohne Symbole und Kürzel. Das Untermenü eines Branches öffnet <em>unter</em> der Zeile und verdeckt den Rest der Liste (hier „main“ und alle Remote-Branches).</figcaption>
+  </figure>
+  <figure>
+    <div class="tag prop">Vorschlag</div>
+    <div class="fit" data-w="900" data-h="470"><div class="fit-inner scene mock" style="width:900px;height:470px" data-window="var-a tabs-underline" data-branch-open>
+      <div class="m-popup dd" data-anchor="branch">
+        <div class="dd-title"><span>Git Branches</span><span class="m-ib hover" title="Fetch"><i data-icon="fetch"></i></span></div>
+        <div class="dd-search"><i data-icon="find" data-size="16"></i><span>Search branches</span></div>
+        <div class="m-mi"><span class="ic"><i data-icon="pull"></i></span><span class="l">Pull</span><span class="k">Ctrl+T</span></div>
+        <div class="m-mi"><span class="ic"><i data-icon="commit" data-size="16"></i></span><span class="l">Commit…</span><span class="k">Ctrl+K</span></div>
+        <div class="m-mi"><span class="ic"><i data-icon="push"></i></span><span class="l">Push…</span><span class="k">Ctrl+Shift+K</span></div>
+        <div class="m-mi"><span class="ic"><i data-icon="plus"></i></span><span class="l">New Branch…</span></div>
+        <div class="m-sep"></div>
+        <div class="m-gh">Local</div>
+        <div class="m-mi br"><span class="ic"><i data-icon="branch"></i></span><span class="l">bugfix/header-height</span></div>
+        <div class="m-mi br par" data-sub-anchor><span class="ic"><i data-icon="branch"></i></span><span class="l">feature/login<span class="d">origin/feature/login</span></span><span class="more"><i data-icon="chevron-right"></i></span></div>
+        <div class="m-mi br"><span class="ic"><i data-icon="branch-current"></i></span><span class="l"><b>main</b><span class="d">origin/main</span></span><span class="sync"><span class="out"><i data-icon="outgoing"></i></span><span class="out">1</span><span class="in"><i data-icon="incoming"></i></span><span class="in" style="margin-left:1px">2</span></span></div>
+        <div class="m-gh">Remote</div>
+        <div class="m-mi br"><span class="ic"><i data-icon="branch"></i></span><span class="l">origin/feature/checkout</span></div>
+        <div class="m-mi br"><span class="ic"><i data-icon="branch"></i></span><span class="l">origin/feature/login</span></div>
+        <div class="m-mi br"><span class="ic"><i data-icon="branch"></i></span><span class="l">origin/main</span></div>
+      </div>
+      <div class="m-popup m-menu" data-besides>
+        <div class="m-mi hl"><span class="ic"><i data-icon="checkout"></i></span><span class="l">Checkout</span></div>
+        <div class="m-mi"><span class="ic"><i data-icon="plus"></i></span><span class="l">New Branch from 'feature/login'…</span></div>
+        <div class="m-mi"><span class="ic"></span><span class="l">Rename…</span></div>
+        <div class="m-sep"></div>
+        <div class="m-mi"><span class="ic"><i data-icon="trash"></i></span><span class="l">Delete</span></div>
+      </div>
+    </div></div>
+    <figcaption>
+      Direkt unter dem Branch-Knopf, links bündig (4 px Abstand wie beim Projektmenü). Oben die Titelzeile mit dem Symbolknopf <strong>Fetch</strong> (Tooltip „Fetch“), darunter das Suchfeld; Tippen filtert sofort. Aktionen mit Symbol und Kürzel. Branches mit Branch-Symbol, der aktuelle mit dem gelben Etikett (gleiche Farbe wie HEAD im Git-Log) statt des Texts „current“; voraus grün ↑, zurück blau ↓. Die gewählte Zeile zeigt ›; ihr Untermenü öffnet <em>rechts daneben</em>. Solange das Untermenü den Fokus hat, bleibt die Zeile grau markiert, der Eintrag im Untermenü blau. „Rename…“ hat kein Symbol, der Platz bleibt frei, damit die Texte bündig stehen.
+    </figcaption>
+  </figure>
+  <figure>
+    <div class="tag prop">Vorschlag, beim Tippen</div>
+    <div class="fit" data-w="560" data-h="300"><div class="fit-inner scene mock" style="width:560px;height:300px" data-window="var-a tabs-underline" data-branch-open>
+      <div class="m-popup dd" data-anchor="branch">
+        <div class="dd-title"><span>Git Branches</span><span class="m-ib" title="Fetch"><i data-icon="fetch"></i></span></div>
+        <div class="dd-search focus"><i data-icon="find" data-size="16"></i><span>log<span class="caret"></span></span></div>
+        <div class="m-gh">Local</div>
+        <div class="m-mi br hl"><span class="ic"><i data-icon="branch"></i></span><span class="l">feature/<mark>log</mark>in<span class="d">origin/feature/login</span></span><span class="more"><i data-icon="chevron-right"></i></span></div>
+        <div class="m-gh">Remote</div>
+        <div class="m-mi br"><span class="ic"><i data-icon="branch"></i></span><span class="l">origin/feature/<mark>log</mark>in</span></div>
+      </div>
+    </div></div>
+    <figcaption>Wie heute verschwinden die Aktionen, sobald man tippt. Pfeile wählen, Enter oder → öffnet das Untermenü, ← schliesst es, Escape schliesst das Dropdown und gibt den Fokus an den Branch-Knopf zurück.</figcaption>
+  </figure>
+</div>
+
+<!-- ===================================================== PROJEKTMENÜ -->
+<h2 id="projektmenue">Projektmenü</h2>
+<div class="cmp">
+  <figure>
+    <div class="tag today">Heute</div>
+    <img class="shot" src="heute/projektmenue.png" width="457" height="346" alt="Projektmenü heute">
+    <figcaption>Zuletzt geöffnete Projekte nur mit Name und Pfad. (Pfade fürs Bild gekürzt.)</figcaption>
+  </figure>
+  <figure>
+    <div class="tag prop">Vorschlag</div>
+    <div class="scene mock" style="width:457px;height:346px;max-width:100%" data-window="var-a tabs-underline" data-project-open>
+      <div class="m-popup m-menu badges" data-anchor="project" style="width:300px">
+        <div class="m-mi"><span class="ic"><i data-icon="project" data-size="16"></i></span><span class="l">Open Folder…</span></div>
+        <div class="m-mi"><span class="ic"><i data-icon="git" data-size="16"></i></span><span class="l">Clone Repository…</span></div>
+        <div class="m-sep"></div>
+        <div class="m-mi two hl"><span class="ic"><span class="m-badge" style="background:#3b6db3">CO</span></span><span class="l">codium<small>C:\workspace\codium</small></span></div>
+        <div class="m-mi two"><span class="ic"><span class="m-badge" style="background:#8a5aa8">TS</span></span><span class="l">thub-server<small>C:\workspace\thub-server</small></span></div>
+        <div class="m-mi two"><span class="ic"><span class="m-badge" style="background:#3d7a4f">N2</span></span><span class="l">notes-2026<small>C:\workspace\notes-2026</small></span></div>
+        <div class="m-sep"></div>
+        <div class="m-mi"><span class="ic"><i data-icon="gear"></i></span><span class="l">Settings…</span><span class="k">Ctrl+Alt+S</span></div>
+        <div class="m-sep"></div>
+        <div class="m-mi"><span class="ic"></span><span class="l">Exit</span></div>
+      </div>
+    </div>
+    <figcaption>Jedes Projekt mit seinem Farbkürzel wie in der Kopfzeile (Farbe aus dem Pfad, Buchstaben aus dem Namen). Die Symbolspalte ist hier 20 px breit, damit die Kürzel hineinpassen; Symbole stehen darin mittig. Symbole für „Open Folder…“, „Clone Repository…“ und „Settings…“ sind ein Angebot (Frage 9).</figcaption>
+  </figure>
+</div>
+
+<!-- ===================================================== KONTEXTMENÜ -->
+<h2 id="kontextmenue">Kontextmenü (Rechtsklick im Baum)</h2>
+<div class="cmp">
+  <figure>
+    <div class="tag today">Heute</div>
+    <img class="shot" src="heute/kontextmenue.png" width="297" height="294" alt="Kontextmenü heute">
+    <figcaption>Menüs haben heute schon runde Auswahlbalken mit Abstand zum Rand. Es fehlt die Symbolspalte.</figcaption>
+  </figure>
+  <figure>
+    <div class="tag prop">Vorschlag</div>
+    <div class="scene mock" style="width:580px;height:400px;max-width:100%" data-window="var-a tabs-underline" data-offset="40,96" data-select="components:inactive">
+      <div class="m-popup m-menu" data-at-row="components" style="width:250px">
+        <div class="m-mi par" data-sub-anchor><span class="ic"><i data-icon="plus"></i></span><span class="l">New</span><span class="more"><i data-icon="chevron-right"></i></span></div>
+        <div class="m-sep"></div>
+        <div class="m-mi"><span class="ic"><i data-icon="copy"></i></span><span class="l">Copy</span><span class="k">Ctrl+C</span></div>
+        <div class="m-mi"><span class="ic"></span><span class="l">Copy Path</span><span class="k">Ctrl+Shift+C</span></div>
+        <div class="m-mi dis"><span class="ic"><i data-icon="paste"></i></span><span class="l">Paste</span><span class="k">Ctrl+V</span></div>
+        <div class="m-sep"></div>
+        <div class="m-mi"><span class="ic"></span><span class="l">Rename…</span><span class="k">Shift+F6</span></div>
+        <div class="m-mi"><span class="ic"><i data-icon="trash"></i></span><span class="l">Delete…</span><span class="k">Delete</span></div>
+        <div class="m-sep"></div>
+        <div class="m-mi"><span class="ic"></span><span class="l">Open in Explorer</span></div>
+        <div class="m-mi"><span class="ic"><i data-icon="terminal" data-size="16"></i></span><span class="l">Open in Terminal</span></div>
+      </div>
+      <div class="m-popup m-menu" data-besides style="width:170px">
+        <div class="m-mi hl"><span class="ic"><i data-icon="file"></i></span><span class="l">File</span></div>
+        <div class="m-mi"><span class="ic"><i data-icon="folder"></i></span><span class="l">Directory</span></div>
+      </div>
+    </div>
+    <figcaption>Eigene, bündige Symbolspalte (16 px) in <code>Menu.tsx</code>; Einträge ohne Symbol lassen den Platz frei. Inaktive Einträge dämpfen auch ihr Symbol. Hier mit offenem Untermenü „New“.</figcaption>
+  </figure>
+</div>
+
+<!-- ===================================================== DIALOG -->
+<h2 id="dialog">Dialog</h2>
+<div class="cmp">
+  <figure>
+    <div class="tag today">Heute</div>
+    <img class="shot" src="heute/dialog.png" width="493" height="214" alt="Dialog heute">
+    <figcaption>Dialog mit 10 px Radius; Feld und Knöpfe 4 px, Häkchen von Chromium.</figcaption>
+  </figure>
+  <figure>
+    <div class="tag prop">Vorschlag</div>
+    <div class="scene mock" style="width:493px;height:214px;max-width:100%" data-window="var-a tabs-underline" data-offset="420,80">
+      <div class="m-scrim"></div>
+      <div class="m-dialog prop" style="left:16px;top:16px">
+        <div class="m-dialog-title">Create New Branch</div>
+        <div class="m-dialog-body">
+          <div style="margin:4px 0 6px">New branch name</div>
+          <div class="inp focus" style="width:100%;margin-top:4px">feature/islands<span class="caret"></span></div>
+          <div class="chk" style="margin-top:8px"><span class="box on"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.2l2 2 4-4.4"/></svg></span>Checkout branch</div>
+        </div>
+        <div class="m-dialog-buttons"><span class="btn primary" style="display:inline-block">Create</span><span class="btn" style="display:inline-block">Cancel</span></div>
+      </div>
+    </div>
+    <figcaption>Dialog bleibt bei 10 px (<code>--radius-xl</code>). Feld und Knöpfe 6 px, fokussiertes Feld mit 2 px breitem Rand, eigenes Häkchen mit 3 px Radius in der Akzentfarbe.</figcaption>
+  </figure>
+</div>
+
+<!-- ===================================================== BEDIENELEMENTE -->
+<h2 id="bedienelemente">Knöpfe und Eingabefelder</h2>
+<p class="muted">Beide Seiten nachgebaut: links mit den heutigen Werten aus <code>app.css</code>, rechts mit dem Vorschlag. Zustände von links nach rechts: normal, Hover, Fokus, inaktiv.</p>
+<div class="cmp">
+  <figure>
+    <div class="tag today">Heute</div>
+    <div class="gallery mock today">
+      <div class="row"><span class="lbl">Knöpfe</span>
+        <button class="btn primary">Create</button><button class="btn">Cancel</button><button class="btn hover">Cancel</button><button class="btn focus">Cancel</button><button class="btn primary focus">Create</button><button class="btn" disabled>Cancel</button></div>
+      <div class="row"><span class="lbl">Symbolknöpfe (normal, Hover, eingeschaltet)</span>
+        <span class="iconbtn"><i data-icon="locate"></i></span><span class="iconbtn hover"><i data-icon="collapse"></i></span><span class="iconbtn on"><i data-icon="hide"></i></span></div>
+      <div class="row"><span class="lbl">Eingabefelder (normal, Fokus, ungültig)</span>
+        <div class="inp">feature/islands</div><div class="inp focus">feature/islands</div><div class="inp invalid">feature islands</div><span class="err">Invalid branch name</span></div>
+      <div class="row"><span class="lbl">Suchfeld</span><div class="search">Search branches</div></div>
+      <div class="row"><span class="lbl">Häkchen</span>
+        <label class="chk"><input type="checkbox" checked> Checkout branch</label><label class="chk"><input type="checkbox"> Amend</label></div>
+    </div>
+  </figure>
+  <figure>
+    <div class="tag prop">Vorschlag</div>
+    <div class="gallery mock prop">
+      <div class="row"><span class="lbl">Knöpfe</span>
+        <span class="btn primary">Create</span><span class="btn">Cancel</span><span class="btn hover">Cancel</span><span class="btn focus">Cancel</span><span class="btn primary focus">Create</span><span class="btn" style="opacity:.5">Cancel</span></div>
+      <div class="row"><span class="lbl">Symbolknöpfe (normal, Hover, eingeschaltet)</span>
+        <span class="iconbtn"><i data-icon="locate"></i></span><span class="iconbtn hover"><i data-icon="collapse"></i></span><span class="iconbtn on"><i data-icon="hide"></i></span></div>
+      <div class="row"><span class="lbl">Eingabefelder (normal, Fokus, ungültig)</span>
+        <div class="inp">feature/islands</div><div class="inp focus">feature/islands</div><div class="inp invalid">feature islands</div><span class="err">Invalid branch name</span></div>
+      <div class="row"><span class="lbl">Suchfeld, mit Lupe</span><div class="search"><i data-icon="find" data-size="16"></i>Search branches</div></div>
+      <div class="row"><span class="lbl">Häkchen</span>
+        <span class="chk"><span class="box on"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.2l2 2 4-4.4"/></svg></span>Checkout branch</span><span class="chk"><span class="box"></span>Amend</span></div>
+      <div class="row"><span class="lbl">Unverändert: Umschalter der Markdown-Vorschau (6 / 4 px)</span>
+        <span class="seg"><span>Editor</span><span class="on">Split</span><span>Preview</span></span></div>
+    </div>
+    <figcaption>Knöpfe 6 px und mindestens 72 px breit (wie in IntelliJ), Fokus als Ring <em>aussen</em> für beide Knopfarten (heute innen beim normalen, aussen beim blauen Knopf). Felder mit Fokus oder Fehler bekommen einen 2 px breiten Rand.</figcaption>
+  </figure>
+</div>
+
+<!-- ===================================================== TABS -->
+<h2 id="tabs">Datei-Tabs</h2>
+<div class="cmp stack">
+  <figure>
+    <div class="tag today">Heute</div>
+    <img class="shot" src="heute/tabs.png" width="635" height="38" alt="Datei-Tabs heute" style="width:635px">
+  </figure>
+  <figure>
+    <div class="tag prop">Vorschlag zu Variante a: Unterstrich bleibt, Hover rund</div>
+    <div class="mock tabs-underline" style="width:635px;max-width:100%;background:#1e1f22;border:1px solid var(--page-line);border-radius:8px;overflow:hidden">
+      <div class="m-tabs" data-tpl="tabs" data-hover="Header.ts"></div>
+    </div>
+  </figure>
+  <figure>
+    <div class="tag prop">Vorschlag zu Variante b: aktiver Tab als runde Fläche</div>
+    <div class="mock tabs-pill" style="width:635px;max-width:100%;background:#1e1f22;border:1px solid var(--page-line);border-radius:8px;overflow:hidden">
+      <div class="m-tabs" data-tpl="tabs" data-hover="Header.ts"></div>
+    </div>
+    <figcaption>In beiden Vorschlägen ist „Header.ts“ unter der Maus (Hover als runde Fläche, 6 px) und „README.md“ ungespeichert. Der Schliessknopf hat 4 px. Die Wahl ist unabhängig von der Flächen-Variante (Frage 4).</figcaption>
+  </figure>
+</div>
+
+<!-- ===================================================== WERKZEUGFENSTER -->
+<h2 id="werkzeugfenster">Werkzeugfenster mit Baum und Auswahl</h2>
+<div class="cmp three">
+  <figure>
+    <div class="tag today">Heute</div>
+    <img class="shot" src="heute/werkzeugfenster.png" width="280" height="443" alt="Werkzeugfenster heute">
+    <figcaption>Auswahl über die ganze Breite, eckig.</figcaption>
+  </figure>
+  <figure>
+    <div class="tag prop">Variante a</div>
+    <div class="mock" style="width:280px;height:443px;border:1px solid var(--page-line);border-radius:8px;overflow:hidden;background:#2b2d30">
+      <div class="m-tw" style="height:100%" data-tpl="tree" data-hover="main.ts"></div>
+    </div>
+    <figcaption>Auswahl und Hover (hier „main.ts“) als runder Balken, 6 px Abstand zum Rand, 4 px Radius. Text steht an derselben Stelle wie heute.</figcaption>
+  </figure>
+  <figure>
+    <div class="tag prop">Variante b</div>
+    <div class="mock" style="width:292px;height:449px;padding:0 6px 6px;border:1px solid var(--page-line);border-radius:8px;overflow:hidden;background:#2b2d30">
+      <div class="m-tw" style="height:100%;border-radius:10px;overflow:hidden;background:#1e1f22" data-tpl="tree" data-hover="main.ts"></div>
+    </div>
+    <figcaption>Dasselbe als Insel in der Editorfarbe auf dem Rahmen.</figcaption>
+  </figure>
+</div>
+<div class="callout">
+  <p><strong>Wo die runden Auswahlbalken überall hinkommen</strong> (laut Ticket): Projektbaum, Änderungsansicht (Commit), Menüs (schon heute so), Branch-Dropdown, Suchfenster (Ctrl + Shift + N, Ctrl + E, Ctrl + Shift + F, Ctrl + N), Werkzeugfenster „Find“, Git-Log und Datenbankliste. Überall gleich: 6 px Abstand links und rechts, 4 px Radius, gewählte Zeile <code>#2e436e</code> mit Fokus, <code>#43454a</code> ohne Fokus, Hover <code>#393b40</code>.</p>
+  <p class="muted">Im Git-Log und in der Tabellenansicht der Datenbank bleiben Zellen und Raster eckig; nur die Zeilenauswahl im Log wird zum Balken.</p>
+</div>
+
+<!-- ===================================================== SYMBOLE -->
+<h2 id="symbole">Symbole</h2>
+<p>Selbst gezeichnet im Stil von <code>src/renderer/icons.tsx</code>: 16 px, Linien 1,2 px in der Symbolfarbe, runde Enden. Akzentfarben nur, wo sie etwas bedeuten: blau für Eingehendes (Pull, zurück), grün für Ausgehendes (Push, voraus), gelb für den aktuellen Branch. Je Symbol: 100 %, 150 % und dreifach auf dem Pixelraster.</p>
+<p class="muted">Zum Übernehmen: <a href="symbole/icons-neu.tsx"><code>symbole/icons-neu.tsx</code></a> (Komponenten im Format von <code>icons.tsx</code>, dazu die drei CSS-Regeln und Farben im Kopf der Datei). Einzeln als SVG mit festen Farben in <a href="symbole/"><code>symbole/</code></a>.</p>
+<h3>Neu</h3>
+<div class="icons" id="icons-new"></div>
+<h3>Bestehend und wiederverwendet</h3>
+<p class="muted">Diese kommen unverändert aus <code>icons.tsx</code>: „Commit…“ nutzt das Symbol des Werkzeugfensters Commit, „New Branch…“ und „New“ das Plus, die Branch-Zeilen das Branch-Symbol der Kopfzeile, das Suchfeld die Lupe, „Open Folder…“ den Ordner und „Clone Repository…“ das Git-Symbol.</p>
+<div class="icons" id="icons-old"></div>
+
+<!-- ===================================================== FRAGEN -->
+<h2 id="fragen">Empfehlung und Fragen zur Freigabe</h2>
+<div class="callout">
+  <p><strong>Empfehlung: Variante b</strong>, mit einheitlicher Inselfarbe (Werkzeugfenster wie der Editor). Sie bringt den Eindruck des neuen IntelliJ am deutlichsten: Die Flächen sind klar getrennt, ohne dass Linien nötig sind, und Kopfzeile, Leisten und Fensterknöpfe bleiben in der heutigen Farbe. Der Mehraufwand gegenüber a ist überschaubar: Abstände im Layout, Radius und Abschneiden an Werkzeugfenstern und Editor; die Griffe zum Verschieben liegen dann im Abstand und sind leichter zu treffen. Die Risiken (Monaco und Terminal in runden Ecken, maximierte Werkzeugfenster) prüft der Einbau mit Bildschirmfotos im Testmodus.</p>
+  <p>Variante a ist die vorsichtige Wahl: kaum sichtbare Änderung am Gesamtbild, dafür weniger „neues IntelliJ“.</p>
+</div>
+<ol class="questions">
+  <li><strong>Variante für die Flächen: a oder b?</strong> <span class="rec">Empfehlung b.</span></li>
+  <li><strong>Bei b: Farbaufteilung.</strong> Inseln einheitlich in der Editorfarbe auf dem heutigen Panelgrau (Vorschlag), oder Werkzeugfenster wie heute auf einem dunkleren Rahmen (Vergleichsbild)? <span class="rec">Empfehlung: einheitlich.</span></li>
+  <li><strong>Bei b: Masse der Inseln.</strong> 10 px Radius und 6 px Abstand passend, oder lieber enger (4 px) bzw. runder (12 px)?</li>
+  <li><strong>Datei-Tabs:</strong> blauer Unterstrich wie heute (mit rundem Hover) oder aktiver Tab als runde Fläche? <span class="rec">Empfehlung: Fläche zu b, Unterstrich zu a.</span></li>
+  <li><strong>Radien:</strong> Knöpfe und Felder 6 px statt 4 px, Auswahlbalken 4 px mit 6 px Abstand zum Rand – so freigeben?</li>
+  <li><strong>Branch-Dropdown, Kopf:</strong> eigene Titelzeile „Git Branches“ mit Fetch-Knopf über dem Suchfeld (wie im Ticket und hier gezeigt), oder kompakter Suchfeld und Fetch-Knopf in einer Zeile?</li>
+  <li><strong>Aktueller Branch:</strong> gelbes Etikett passend zu HEAD im Git-Log in Ordnung? Und bleibt er alphabetisch einsortiert (wie heute) oder steht er zuoberst unter „Local“?</li>
+  <li><strong>Symbole im Untermenü:</strong> „Rename…“ ohne Symbol (Platz frei, wie gezeigt) oder mit dem Stift (liegt bei den Symbolen bereit)? Und „Commit…“ mit dem Symbol des Werkzeugfensters (gezeigt) oder einem Häkchen wie in IntelliJ?</li>
+  <li><strong>Projektmenü:</strong> Symbole auch für „Open Folder…“, „Clone Repository…“ und „Settings…“ (gezeigt), oder nur die Farbkürzel der Projekte?</li>
+  <li><strong>Kopfzeile:</strong> voraus und zurück dort ebenfalls als farbige Pfeile (in den Vorschlägen gezeigt; heute grauer Text „↑1 ↓2“)? Das ist eine kleine Erweiterung über das Ticket hinaus.</li>
+</ol>
+
+<h3>So entstanden die Bilder</h3>
+<p class="muted">Die Fotos „Heute“ stammen von einem vorübergehenden Playwright-Test über <code>launchCodium</code> im Testmodus (verborgenes Fenster, eigener Datenordner, Temp-Repository mit lokalem Remote); der Test ist wieder entfernt. Temp-Pfade sind fürs Bild durch <code>C:\workspace\…</code> ersetzt. Die Vorschläge sind HTML und CSS in dieser Datei, mit denselben Farben, Schriften und Massen wie <code>tokens.css</code> und <code>app.css</code>; die Symbole kommen aus <code>symbole.js</code>.</p>
+
+</div>
+
+<!-- ===================================================== VORLAGEN -->
+<template id="tpl-window">
+  <div class="win">
+    <header class="m-header">
+      <span class="m-hw m-project" data-anchor-target="project"><span class="m-badge" style="background:#b0573d">SW</span><span>shop-web</span><i data-icon="chevron-down"></i></span>
+      <span class="m-hw m-branch" data-anchor-target="branch"><i data-icon="branch"></i><span>main</span><span class="m-sync"><span class="out"><i data-icon="outgoing"></i></span><span class="out">1</span><span class="in"><i data-icon="incoming"></i></span><span class="in" style="margin-left:1px">2</span></span><i data-icon="chevron-down"></i></span>
+    </header>
+    <div class="m-body">
+      <nav class="m-stripe m-stripe-left">
+        <div class="m-sg"><span class="m-sb active"><i data-icon="project"></i></span><span class="m-sb"><i data-icon="commit"></i></span></div>
+        <div class="m-sg"><span class="m-sb active"><i data-icon="terminal"></i></span><span class="m-sb"><i data-icon="git"></i></span></div>
+      </nav>
+      <div class="m-area">
+        <div class="m-row">
+          <section class="m-tw m-tw-left" data-tpl="tree"></section>
+          <section class="m-code">
+            <div class="m-tabs" data-tpl="tabs" data-only="3"></div>
+            <div class="m-editor">
+<div class="m-gutter"><b>1</b>
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13</div><div class="m-lines"><span class="c-k">import</span> { Header } <span class="c-k">from</span> <span class="c-s">'./components/Header'</span>;
+<span class="c-k">import</span> { Cart } <span class="c-k">from</span> <span class="c-s">'./components/Cart'</span>;
+
+<span class="c-k">export class</span> App {
+  <span class="c-k">constructor</span>(<span class="c-k">private readonly</span> root: HTMLElement) {}
+
+  <span class="c-f">start</span>(): <span class="c-k">void</span> {
+    <span class="c-k">const</span> header = <span class="c-k">new</span> Header(<span class="c-s">'Shop'</span>);
+    <span class="c-k">const</span> cart = <span class="c-k">new</span> Cart();
+    <span class="c-k">this</span>.<span class="c-p">root</span>.append(header.render(), cart.render());
+  }
+}
+</div>
+            </div>
+          </section>
+        </div>
+        <section class="m-tw m-tw-bottom">
+          <div class="m-twh"><span style="display:flex;align-items:center;gap:10px"><span class="m-twt">Terminal</span><span class="m-ttab">Local<i data-icon="close"></i></span><span class="m-ib"><i data-icon="plus"></i></span></span><span class="m-twa"><span class="m-ib"><i data-icon="hide"></i></span></span></div>
+<div class="m-term">C:\workspace\shop-web&gt;npm test
+
+&gt; shop-web@0.1.0 test
+&gt; vitest run
+
+ <span style="color:#5fb865">✓</span> test/App.test.ts (3 tests) 12ms
+ Test Files  <span style="color:#5fb865">1 passed</span> (1)
+
+C:\workspace\shop-web&gt;<span class="caret"></span></div>
+        </section>
+      </div>
+      <nav class="m-stripe m-stripe-right"><div class="m-sg"><span class="m-sb"><i data-icon="database"></i></span></div><div class="m-sg"></div></nav>
+    </div>
+    <footer class="m-status"><span class="sp"></span><span>8:1</span><span>LF</span><span>UTF-8</span></footer>
+  </div>
+</template>
+
+<template id="tpl-tree">
+  <div class="m-twh"><span class="m-twt">Project</span><span class="m-twa"><span class="m-ib"><i data-icon="locate"></i></span><span class="m-ib"><i data-icon="collapse"></i></span><span class="m-ib"><i data-icon="hide"></i></span></span></div>
+  <div class="m-tree">
+    <div class="m-tr" style="--lvl:0" data-name="shop-web"><span class="m-arrow open"><i data-icon="chevron-right"></i></span><span class="m-ti folder"><i data-icon="folder"></i></span><span class="m-tn root">shop-web</span><span class="m-td">C:\workspace\shop-web</span></div>
+    <div class="m-tr" style="--lvl:1" data-name="src"><span class="m-arrow open"><i data-icon="chevron-right"></i></span><span class="m-ti folder"><i data-icon="folder"></i></span><span class="m-tn">src</span></div>
+    <div class="m-tr" style="--lvl:2" data-name="components"><span class="m-arrow open"><i data-icon="chevron-right"></i></span><span class="m-ti folder"><i data-icon="folder"></i></span><span class="m-tn">components</span></div>
+    <div class="m-tr" style="--lvl:3" data-name="Button.ts"><span class="m-arrow none"></span><span class="m-ti"><i data-icon="file"></i></span><span class="m-tn">Button.ts</span></div>
+    <div class="m-tr" style="--lvl:3" data-name="Cart.ts"><span class="m-arrow none"></span><span class="m-ti"><i data-icon="file"></i></span><span class="m-tn">Cart.ts</span></div>
+    <div class="m-tr" style="--lvl:3" data-name="Header.ts"><span class="m-arrow none"></span><span class="m-ti"><i data-icon="file"></i></span><span class="m-tn">Header.ts</span></div>
+    <div class="m-tr" style="--lvl:2" data-name="styles"><span class="m-arrow"><i data-icon="chevron-right"></i></span><span class="m-ti folder"><i data-icon="folder"></i></span><span class="m-tn">styles</span></div>
+    <div class="m-tr" style="--lvl:2" data-name="App.ts"><span class="m-arrow none"></span><span class="m-ti"><i data-icon="file"></i></span><span class="m-tn">App.ts</span></div>
+    <div class="m-tr" style="--lvl:2" data-name="main.ts"><span class="m-arrow none"></span><span class="m-ti"><i data-icon="file"></i></span><span class="m-tn">main.ts</span></div>
+    <div class="m-tr" style="--lvl:1" data-name="test"><span class="m-arrow"><i data-icon="chevron-right"></i></span><span class="m-ti folder"><i data-icon="folder"></i></span><span class="m-tn">test</span></div>
+    <div class="m-tr" style="--lvl:1" data-name="package.json"><span class="m-arrow none"></span><span class="m-ti"><i data-icon="file"></i></span><span class="m-tn">package.json</span></div>
+    <div class="m-tr" style="--lvl:1" data-name="README.md"><span class="m-arrow none"></span><span class="m-ti"><i data-icon="file"></i></span><span class="m-tn">README.md</span></div>
+    <div class="m-tr" style="--lvl:1" data-name="tsconfig.json"><span class="m-arrow none"></span><span class="m-ti"><i data-icon="file"></i></span><span class="m-tn">tsconfig.json</span></div>
+  </div>
+</template>
+
+<template id="tpl-tabs">
+  <div class="m-tab" data-name="main.ts"><i data-icon="file"></i><span>main.ts</span><span class="m-tabx"><i data-icon="close"></i></span></div>
+  <div class="m-tab" data-name="Header.ts"><i data-icon="file"></i><span>Header.ts</span><span class="m-tabx"><i data-icon="close"></i></span></div>
+  <div class="m-tab active" data-name="App.ts"><i data-icon="file"></i><span>App.ts</span><span class="m-tabx"><i data-icon="close"></i></span></div>
+  <div class="m-tab" data-name="README.md"><i data-icon="file"></i><span>README.md</span><span class="m-tabdot"></span></div>
+</template>
+
+<script src="symbole.js"></script>
+<script>
+(function () {
+  const ICONS = window.CODIUM_SYMBOLE || {};
+
+  function svgFor(id, size) {
+    const icon = ICONS[id];
+    if (!icon) return '';
+    const s = size || icon.size;
+    const paint = icon.filled ? 'fill="currentColor"' : 'fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"';
+    const inner = icon.filled ? icon.inner.replace('<path ', '<path fill="currentColor" ') : icon.inner;
+    return `<svg class="icon" width="${s}" height="${s}" viewBox="0 0 16 16" ${paint} aria-hidden="true" focusable="false">${inner}</svg>`;
+  }
+
+  // Vorlagen einsetzen (auch verschachtelt).
+  function fill(root) {
+    for (const slot of root.querySelectorAll('[data-window]')) {
+      if (slot.dataset.filled) continue;
+      slot.dataset.filled = '1';
+      const win = document.getElementById('tpl-window').content.firstElementChild.cloneNode(true);
+      for (const cls of slot.dataset.window.split(/\s+/)) if (cls) win.classList.add(cls);
+      if (slot.dataset.offset) {
+        const [x, y] = slot.dataset.offset.split(',').map(Number);
+        win.style.left = `${-x}px`;
+        win.style.top = `${-y}px`;
+      }
+      const tree = win.querySelector('[data-tpl="tree"]');
+      tree.dataset.select = slot.dataset.select || 'App.ts:focus';
+      if ('branchOpen' in slot.dataset) win.querySelector('.m-branch').classList.add('open');
+      if ('projectOpen' in slot.dataset) win.querySelector('.m-project').classList.add('open');
+      slot.prepend(win);
+    }
+    for (const slot of root.querySelectorAll('[data-tpl]')) {
+      if (slot.dataset.filled) continue;
+      slot.dataset.filled = '1';
+      const tpl = document.getElementById(`tpl-${slot.dataset.tpl}`);
+      slot.append(tpl.content.cloneNode(true));
+      if (slot.dataset.tpl === 'tree') {
+        const [name, state] = (slot.dataset.select || 'App.ts:focus').split(':');
+        slot.querySelector(`[data-name="${name}"]`)?.classList.add(state === 'inactive' ? 'sel-inactive' : 'sel');
+        if (slot.dataset.hover) slot.querySelector(`[data-name="${slot.dataset.hover}"]`)?.classList.add('hov');
+      }
+      if (slot.dataset.tpl === 'tabs') {
+        if (slot.dataset.only) [...slot.children].slice(Number(slot.dataset.only)).forEach((el) => el.remove());
+        if (slot.dataset.hover) slot.querySelector(`[data-name="${slot.dataset.hover}"]`)?.classList.add('hover');
+      }
+    }
+  }
+
+  function icons(root) {
+    for (const el of root.querySelectorAll('i[data-icon]')) {
+      const html = svgFor(el.dataset.icon, Number(el.dataset.size) || 0);
+      if (html) el.outerHTML = html;
+    }
+  }
+
+  // Lage relativ zu einem Vorfahren, über die Layout-Werte (unabhängig von der Skalierung).
+  function pos(el, ancestor) {
+    let x = 0, y = 0;
+    while (el && el !== ancestor) { x += el.offsetLeft; y += el.offsetTop; el = el.offsetParent; }
+    return { x, y };
+  }
+
+  function place() {
+    for (const scene of document.querySelectorAll('.scene')) {
+      // Unter einem Knopf der Kopfzeile, links bündig, 4 px Abstand (wie Menu.tsx).
+      for (const pop of scene.querySelectorAll(':scope > [data-anchor]')) {
+        const target = scene.querySelector(`[data-anchor-target="${pop.dataset.anchor}"]`);
+        if (!target) continue;
+        const p = pos(target, scene);
+        pop.style.left = `${p.x}px`;
+        pop.style.top = `${p.y + target.offsetHeight + 4}px`;
+      }
+      // Rechtsklick: an der Mitte einer Baumzeile.
+      for (const pop of scene.querySelectorAll(':scope > [data-at-row]')) {
+        const row = scene.querySelector(`.m-tree [data-name="${pop.dataset.atRow}"]`);
+        if (!row) continue;
+        const p = pos(row, scene);
+        pop.style.left = `${p.x + row.offsetWidth / 2}px`;
+        pop.style.top = `${p.y + row.offsetHeight / 2}px`;
+      }
+      // Untermenü neben der gewählten Zeile: rechts 2 px überlappend, erste Zeile auf Höhe der Zeile (wie Menu.tsx).
+      for (const sub of scene.querySelectorAll(':scope > [data-besides]')) {
+        const row = scene.querySelector('[data-sub-anchor]');
+        if (!row) continue;
+        const p = pos(row, scene);
+        sub.style.left = `${p.x + row.offsetWidth - 2}px`;
+        sub.style.top = `${p.y - 7}px`;
+      }
+    }
+  }
+
+  function fit() {
+    for (const box of document.querySelectorAll('.fit')) {
+      const inner = box.firstElementChild;
+      const w = Number(box.dataset.w);
+      const max = Number(box.dataset.max) || 1;
+      const k = Math.min(max, box.clientWidth / w);
+      inner.style.width = `${w}px`;
+      inner.style.height = `${Number(box.dataset.h)}px`;
+      inner.style.transform = `scale(${k})`;
+      box.style.height = `${Math.ceil(Number(box.dataset.h) * k)}px`;
+    }
+  }
+
+  function iconCards() {
+    const make = (id) => {
+      const icon = ICONS[id];
+      const card = document.createElement('div');
+      card.className = `icon-card${icon.neu ? '' : ' old'}`;
+      const s = icon.size;
+      card.innerHTML = `
+        <div class="icon-sizes"><span class="z1">${svgFor(id, s)}</span><span class="z15">${svgFor(id, s)}</span><span class="z3 pixel-grid">${svgFor(id, s)}</span></div>
+        <h4>${icon.title || icon.name}</h4>
+        <code>${icon.name}${s !== 16 ? ` · ${s} px` : ''}</code>
+        <p>${icon.use || 'Aus icons.tsx.'}</p>`;
+      return card;
+    };
+    const ids = Object.keys(ICONS);
+    const neu = document.getElementById('icons-new');
+    const old = document.getElementById('icons-old');
+    for (const id of ids.filter((i) => ICONS[i].neu)) neu.append(make(id));
+    for (const id of ['commit', 'plus', 'branch', 'find', 'project', 'git', 'file', 'folder', 'terminal', 'chevron-right']) old.append(make(id));
+  }
+
+  fill(document);
+  fill(document); // verschachtelte Vorlagen
+  icons(document);
+  iconCards();
+  const ready = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+  ready.then(() => { place(); fit(); });
+  window.addEventListener('resize', fit);
+})();
+</script>
+</body>
+</html>
