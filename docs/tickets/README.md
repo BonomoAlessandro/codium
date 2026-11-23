@@ -64,7 +64,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 
 ## Übersicht
 
-Stand 2026-11-23: Codium 1 ist abgeschlossen, Tickets 01 bis 23 erledigt. Die Abnahme von Hand macht der Nutzer im Alltag ([Prüfliste](../abnahme.md)); Abweichungen werden neue Tickets. Von den später dazugekommenen Tickets 24 bis 26 sind 24 und 26 erledigt, 25 ist offen. Offene Punkte, Entscheide und bekannte Grenzen: [offene-punkte.md](../offene-punkte.md).
+Stand 2026-11-23: Codium 1 ist abgeschlossen, Tickets 01 bis 23 erledigt. Die Abnahme von Hand macht der Nutzer im Alltag ([Prüfliste](../abnahme.md)); Abweichungen werden neue Tickets. Auch die später dazugekommenen Tickets 24 bis 26 sind erledigt; damit sind alle Tickets erledigt. Offene Punkte, Entscheide und bekannte Grenzen: [offene-punkte.md](../offene-punkte.md).
 
 | Nr. | Ticket | Typ | Blockiert durch | Etappe | Stand |
 |---|---|---|---|---|---|
@@ -92,7 +92,7 @@ Stand 2026-11-23: Codium 1 ist abgeschlossen, Tickets 01 bis 23 erledigt. Die Ab
 | 22 | [README und Abnahme auf einem frischen Rechner](22-abschluss.md) | HITL | alle | – | erledigt |
 | 23 | [Markdown-Vorschau](23-markdown-vorschau.md) | AFK | 05 | 1 | erledigt |
 | 24 | [Logo und App-Symbol](24-logo.md) | HITL | – | – | erledigt |
-| 25 | [Oberfläche näher an IntelliJ: runde Formen, Branch-Dropdown mit Symbolen](25-intellij-oberflaeche.md) | HITL | – | – | offen |
+| 25 | [Oberfläche näher an IntelliJ: runde Formen, Branch-Dropdown mit Symbolen](25-intellij-oberflaeche.md) | HITL | – | – | erledigt |
 | 26 | [Zweimal Shift: Dateien suchen](26-doppelt-shift.md) | AFK | – | – | erledigt |
 
 ```mermaid
