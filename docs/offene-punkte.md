@@ -68,5 +68,11 @@ Unter Last (voller Lauf aller Testsuiten) gelegentlich rot, einzeln jeweils grü
 - Langsam: „Gradle 8: Import mit dem Wrapper“ und einmal 4 Terminal-Tests.
 - Langsam: einmal ein Absturz des Test-Workers in `terminal.test.ts` (0xC0000005, node-pty).
 
+Schneller Lauf, behoben am 2026-11-23: Klonen, Abbrechen einer Suche und die Dateiüberwachung bei übergelaufenem Puffer
+waren unter voller Last gelegentlich rot. Ursachen: das Standardlimit von Vitest (5 s) war kürzer als die inneren
+Wartezeiten der Tests (bis 10 s), und der Test zum Abbrechen der Suche mass die Dauer der folgenden Suche mit. Jetzt
+gilt im schnellen Lauf ein Limit von 30 s (Git-Gruppen 60 s), höchstens halb so viele Testdateien laufen gleichzeitig
+wie Prozessorkerne, und der Abbruch wird am Zeitpunkt seines Ereignisses gemessen. Danach 13 volle Läufe in Folge grün.
+
 Das Testgerüst räumt inzwischen liegengebliebene App-Instanzen (nach Zeitüberschreitungen) und verwaiste
 PostgreSQL-Hilfsprozesse selbst auf; beides war zuvor eine Ursache für Ausreisser.

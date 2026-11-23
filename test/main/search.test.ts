@@ -269,10 +269,18 @@ describe('Suche', () => {
       const cancelAt = Date.now();
       await search(test, windowId, { query: 'nothing', fileMask: 'none.xyz' });
       const doneOfFirst = () =>
-        test.events.sent.some((e) => e.name === 'search.results' && (e.payload as Events['search.results']).searchId === first.searchId && (e.payload as Events['search.results']).done);
-      await expect.poll(doneOfFirst, { timeout: 10_000 }).toBe(true);
-      // Die abgebrochene Suche endet weit vor der Dauer einer vollen.
-      expect(Date.now() - cancelAt).toBeLessThan(Math.max(300, full / 2));
+        test.events.sent.findIndex(
+          (e) =>
+            e.name === 'search.results' &&
+            (e.payload as Events['search.results']).searchId === first.searchId &&
+            (e.payload as Events['search.results']).done,
+        );
+      await expect.poll(doneOfFirst, { timeout: 10_000 }).toBeGreaterThanOrEqual(0);
+      // Die abgebrochene Suche endet weit vor der Dauer einer vollen. Gemessen wird bis zum Zeitpunkt ihres
+      // Abschlussereignisses, nicht bis zum Ende des Wartens: Sonst zählten die zweite Suche und das Abfragen mit, und
+      // unter Last riss das die Grenze, obwohl der Abbruch sofort griff.
+      const doneAt = test.events.sentAt[doneOfFirst()];
+      expect(doneAt - cancelAt).toBeLessThan(Math.max(500, full / 2));
     });
   });
 

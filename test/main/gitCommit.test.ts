@@ -23,7 +23,7 @@ async function until<T>(get: () => T | Promise<T>, ok: (v: T) => boolean, what: 
   }
 }
 
-describe('Commit und Rollback', { timeout: 30_000 }, () => {
+describe('Commit und Rollback', { timeout: 60_000 }, () => {
   const tempDir = useTempDirs();
 
   function call<K extends CommandName>(test: TestCore, windowId: number, name: K, ...args: CommandArgs<K>): Promise<CommandResult<K>> {

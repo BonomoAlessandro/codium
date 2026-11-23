@@ -59,7 +59,7 @@ describe('Zeilen-Diff', () => {
   });
 });
 
-describe('Vergleichsstand im Git-Dienst', { timeout: 30_000 }, () => {
+describe('Vergleichsstand im Git-Dienst', { timeout: 60_000 }, () => {
   const tempDir = useTempDirs();
 
   function call<K extends CommandName>(test: TestCore, windowId: number, name: K, ...args: CommandArgs<K>): Promise<CommandResult<K>> {

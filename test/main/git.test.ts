@@ -23,7 +23,7 @@ async function until<T>(get: () => T | Promise<T>, ok: (v: T) => boolean, what: 
   }
 }
 
-describe('Git-Dienst', { timeout: 30_000 }, () => {
+describe('Git-Dienst', { timeout: 60_000 }, () => {
   const tempDir = useTempDirs();
 
   function call<K extends CommandName>(test: TestCore, windowId: number, name: K, ...args: CommandArgs<K>): Promise<CommandResult<K>> {
