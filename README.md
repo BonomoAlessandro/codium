@@ -70,7 +70,10 @@ Wie in IntelliJ, auch auf der Schweizer Tastatur (Buchstaben nach dem getippten 
 
 ## Installieren
 
-`npm run dist` baut den Installer `release\Codium Setup <version>.exe`. Er installiert für den angemeldeten Benutzer
+`npm run dist` baut den Installer `release\Codium Setup <version>.exe` und zählt dafür die Version hoch: Solange
+Codium bei 0.x ist, steigt die zweite Stelle (0.1.0 → 0.2.0 → 0.3.0); ein Schritt auf 1.0 geschieht von Hand. Die neue
+Version steht danach in `package.json` und `package-lock.json` und gehört committet; scheitert das Bauen, bleibt die
+alte. `npm run test:packaged` zählt nicht hoch. Der Installer installiert für den angemeldeten Benutzer
 (ohne Administratorrechte), der Ordner lässt sich wählen. Codium speichert seine Daten (Fensterlage, Einstellungen,
 Zustand je Projekt samt Datenbank-Verbindungen) unter `%APPDATA%\Codium`, nie im Projektordner. Updates gibt es nicht
 automatisch, und der Installer ist nicht signiert (Windows SmartScreen fragt beim ersten Start nach).
@@ -82,7 +85,7 @@ npm ci
 npm start          # bauen + App starten
 npm run dev        # wie start, mit Sourcemaps und unminifiziert, mit Entwicklungsmenü (Ctrl + R, Ctrl + Shift + I)
 npm run typecheck  # TypeScript prüfen
-npm run dist       # Installer bauen -> release\Codium Setup <version>.exe
+npm run dist       # Version hochzählen (0.x) und Installer bauen -> release\Codium Setup <version>.exe
 ```
 
 Beim ersten `npm start` lädt Electron sein Programm einmalig herunter.
