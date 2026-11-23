@@ -31,7 +31,7 @@ Geprüft wird die installierte App (`release\Codium Setup <version>.exe`), ausse
 - [ ] Der Nutzer bestätigt die Aufteilung der Symbolleisten: links oben „Project“ und „Commit“, links unten „Terminal“ und „Git“ (später „Find“), rechts „Database“, keine Leiste am unteren Rand. (03)
 - [ ] Die Fensterknöpfe sitzen bündig rechts in der Kopfzeile. Beim Überfahren von „Maximieren“ erscheinen die Andock-Layouts von Windows 11. (03)
 - [ ] Am oberen Fensterrand (über der Kopfzeile) lässt sich die Fenstergrösse ändern. (03)
-- [ ] Die Trennlinie unter der Kopfzeile läuft unter den Fensterknöpfen durch, nichts Bedienbares liegt unter ihnen. (03)
+- [ ] Die Trennlinie unter der Kopfzeile läuft unter den Fensterknöpfen durch, nichts Bedienbares liegt unter ihnen. (03; im Projektfenster trennt seit Ticket 25 der Abstand zu den Inseln statt einer Linie)
 - [ ] Auch das Willkommensfenster lässt sich an seiner Kopfzeile verschieben und per Doppelklick maximieren. (03)
 - [ ] Ein Klick auf die leere Kopfzeile schliesst ein offenes Projektmenü. (Unter Windows erreicht ein Klick auf die Zieh-Fläche die Seite womöglich nicht.) (03)
 - [ ] Bei hellem Windows-Design blitzt beim Öffnen eines Fensters nichts Helles auf. (03)
@@ -61,7 +61,7 @@ Geprüft wird die installierte App (`release\Codium Setup <version>.exe`), ausse
 
 - [ ] Java-, TypeScript-, JSON-, XML-, YAML- und SQL-Dateien sehen farblich wie in IntelliJ „Dark“ aus. (05)
 - [ ] Die Schrift ist JetBrains Mono und wirkt gleich gross wie in IntelliJ mit Grösse 13. (05)
-- [ ] Die Tableiste sieht aus wie im neuen IntelliJ (aktiver Tab blau unterstrichen, Kreuz beim Überfahren, Punkt bei „ungespeichert“). (05)
+- [ ] Die Tableiste sieht aus wie im neuen IntelliJ (aktiver Tab als runde Fläche seit Ticket 25, Kreuz beim Überfahren, Punkt bei „ungespeichert“). (05)
 - [ ] Ein Bild (PNG mit Transparenz) erscheint mit Schachbrett dahinter; eine Binärdatei und eine Datei über 50 MB zeigen ihren Hinweis. (05)
 - [ ] Doppelklick auf eine Datei im Baum setzt den Fokus in den Editor; „Select Opened File“ findet die Datei des aktiven Tabs auch in zugeklappten Ordnern. (05)
 - [ ] Nach „Exit“ und Neustart stehen Tabs, aktiver Tab und Cursor wie vorher; auch eine Cursorbewegung kurz vor „Exit“ ist gesichert. (05)
@@ -153,6 +153,11 @@ Geprüft wird die installierte App (`release\Codium Setup <version>.exe`), ausse
 - [ ] `npm start`: Auch die Entwicklungsversion zeigt das Logo in Taskleiste und Alt + Tab, nicht das Symbol von Electron. (24)
 - [ ] Das Willkommensfenster sieht mit dem Logo über dem Titel stimmig aus. (24)
 - [ ] Zweimal Shift öffnet „Go to File“ und fühlt sich an wie in IntelliJ: weder zu träge noch löst es beim normalen Tippen (Grossbuchstaben, Shift + Klick, Alt + Shift) versehentlich aus. (26)
+- [ ] Codium wirkt neben IntelliJ stimmig: Rundungen, Auswahlbalken, Menüs und Dialoge fühlen sich vertraut an. (25)
+- [ ] Werkzeugfenster und Editor als Inseln: Bei normalem und maximiertem Fenster sind die Abstände gleichmässig, und nichts ragt über die runden Ecken hinaus (Editor, Vergleichsansicht, Markdown-Vorschau, Terminal, Git-Log, Datenbank, Tabellen). (25)
+- [ ] Die Griffe zwischen den Inseln lassen sich mit der Maus gut treffen und ziehen. (25)
+- [ ] Das Branch-Dropdown bedient sich wie das von IntelliJ, mit Maus und Tastatur: öffnet unter dem Branch-Knopf, Untermenü rechts daneben beim Überfahren, mit Enter oder Pfeil rechts, Pfeil links und Escape schliessen. (25)
+- [ ] Die Symbole sind bei 100 % und 150 % Skalierung klar und eindeutig. (25)
 
 ## Frischer Rechner bzw. Windows-Benutzer (22)
 
