@@ -654,6 +654,7 @@ Für Teststelle 2 und jede automatische Prüfung der echten App gibt es einen Te
 - Eine zweite Variable ersetzt die Wurzel des Datenordners (eigene Daten, eigene Einzelinstanz-Sperre).
 - Eine dritte beantwortet jede Ordnerauswahl mit einem vorgegebenen Ordner; ohne sie gilt die Auswahl als abgebrochen.
 - Eine vierte lässt den Port „System“ melden, dass Git fehlt.
+- Eine fünfte nennt eine benannte Pipe des Testprozesses (Wächter): Schliesst sie sich, weil der Testprozess endet, beendet sich die App samt Kindprozessen selbst.
 - Ohne die ersten beiden Variablen startet kein Test die App.
 
 ### Teststelle 1: Kern am Vertrag (Node, ohne Electron)

@@ -15,6 +15,8 @@ import { ripgrepPath } from './ripgrepPath';
 import { bundledTypeScript } from './typescriptPaths';
 import { javaTools } from './javaToolsPaths';
 import { NodeSystem } from './system/nodeSystem';
+import { killDescendants } from './core/processTree';
+import { watchTestGuard } from './testGuard';
 import { readTestMode, TEST_HOOKS_GLOBAL, TEST_RECORDER_GLOBAL, TestRecorder, type TestHooks } from './testMode';
 
 // Testmodus für automatische Prüfungen (siehe testMode.ts). Gilt auch für die gebaute App. Den Handler für nicht
@@ -22,6 +24,14 @@ import { readTestMode, TEST_HOOKS_GLOBAL, TEST_RECORDER_GLOBAL, TestRecorder, ty
 const testMode = readTestMode(process.env);
 const recorder = new TestRecorder(testMode.hidden);
 if (testMode.hidden) (globalThis as Record<string, unknown>)[TEST_RECORDER_GLOBAL] = recorder;
+// Wächter: Endet der Testprozess, der Codium gestartet hat, beendet sich Codium samt Kindprozessen (Sprachserver,
+// Shells) binnen weniger Sekunden, hart und ohne das geordnete Beenden, das gerade dann hängen kann (testGuard.ts).
+if (testMode.hidden && testMode.guardPipe) {
+  watchTestGuard(testMode.guardPipe, (reason) => {
+    console.error(`Wächter im Testmodus: ${reason}. Codium beendet sich samt Kindprozessen.`);
+    void killDescendants(process.pid).finally(() => app.exit(1));
+  });
+}
 process.on('unhandledRejection', (reason) => console.error('Nicht behandelte Ablehnung:', reason));
 
 // Datenordner %APPDATA%\Codium, unpaketiert (npm start) %APPDATA%\Codium-dev, damit die Entwicklung eine

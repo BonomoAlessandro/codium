@@ -6,12 +6,15 @@
 // - CODIUM_TEST_DATA_DIR: ersetzt %APPDATA% als Wurzel des Datenordners (eigene Daten, eigene Einzelinstanz).
 // - CODIUM_TEST_PICK_DIR: Antwort auf jede Ordnerauswahl; ohne sie gilt die Auswahl als abgebrochen.
 // - CODIUM_TEST_NO_GIT=1: Codium tut so, als fehle Git.
+// - CODIUM_TEST_GUARD_PIPE: benannte Pipe des Testprozesses (Wächter, testGuard.ts); schliesst sie sich, beendet sich
+//   Codium samt Kindprozessen. Wirkt nur zusammen mit CODIUM_TEST_HIDDEN=1.
 
 export interface TestMode {
   hidden: boolean;
   dataDir?: string;
   pickDir?: string;
   noGit: boolean;
+  guardPipe?: string;
 }
 
 export function readTestMode(env: NodeJS.ProcessEnv): TestMode {
@@ -20,6 +23,7 @@ export function readTestMode(env: NodeJS.ProcessEnv): TestMode {
     dataDir: env.CODIUM_TEST_DATA_DIR || undefined,
     pickDir: env.CODIUM_TEST_PICK_DIR || undefined,
     noGit: env.CODIUM_TEST_NO_GIT === '1',
+    guardPipe: env.CODIUM_TEST_GUARD_PIPE || undefined,
   };
 }
 

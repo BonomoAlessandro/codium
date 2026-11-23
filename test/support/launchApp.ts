@@ -2,18 +2,21 @@
 // Entwicklungsabhängigkeiten, immer im Testmodus, mit abgeschirmter Git-Konfiguration und cmd als Shell.
 
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import * as fs from 'node:fs';
+import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { _electron, type ElectronApplication, type Page } from 'playwright-core';
 import { dataFolder } from '../../src/main/dataFolder';
-import { APP_STATE_FILE, emptyAppState, type AppState } from '../../src/main/core/schema';
+import { APP_STATE_FILE, emptyAppState, PROJECT_STATE_DIR, type AppState, type ProjectState } from '../../src/main/core/schema';
+import { lexicalProjectKey, projectStateFileName } from '../../src/main/core/projectPath';
 import type { TestEvent, TestHooks } from '../../src/main/testMode';
 import type { EventName, Events } from '../../src/shared/types';
 import { shieldedGitEnv } from './git';
 import { beforeTempDirRemoval } from './tempDir';
-import { killProcessTree } from '../../src/main/core/processTree';
+import { killDescendants } from '../../src/main/core/processTree';
 
 /**
  * Laufende Instanzen. Läuft ein Test ins Zeitlimit, erreicht er sein `codium.close()` womöglich nicht; die Instanz
@@ -37,10 +40,50 @@ async function stopApp(app: ElectronApplication): Promise<void> {
     new Promise<boolean>((resolve) => (timer = setTimeout(() => resolve(false), 15_000))),
   ]);
   clearTimeout(timer);
-  if (!closed && pid !== undefined) await killProcessTree(pid);
+  if (!closed && pid !== undefined) {
+    await killDescendants(pid);
+    try {
+      process.kill(pid);
+    } catch {
+      // Inzwischen beendet.
+    }
+  }
 }
 
-const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
+/** Das Projekt mit `package.json` und `dist/`; Electron startet die App aus diesem Ordner. */
+export const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
+
+/** Das Electron aus den Entwicklungsabhängigkeiten. */
+export const ELECTRON_PATH = createRequire(__filename)('electron') as string;
+
+/**
+ * Die Pipe für den Wächter im Testmodus (`CODIUM_TEST_GUARD_PIPE`, src/main/testGuard.ts). Solange dieser Prozess
+ * läuft und `close` nicht aufgerufen ist, bleibt sie offen; endet er, schliesst Windows sie, und Codium beendet sich.
+ * Sie hält diesen Prozess nicht am Leben.
+ */
+export async function openTestGuard(): Promise<{ pipe: string; close(): void }> {
+  const pipe = `\\\\.\\pipe\\codium-test-guard-${process.pid}-${randomUUID()}`;
+  const sockets = new Set<net.Socket>();
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.unref();
+    socket.on('error', () => {});
+    socket.on('close', () => sockets.delete(socket));
+    socket.resume();
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(pipe, () => resolve());
+  });
+  server.unref();
+  return {
+    pipe,
+    close() {
+      for (const socket of sockets) socket.destroy();
+      server.close();
+    },
+  };
+}
 
 /**
  * Wirft, wenn die Umgebung den Testmodus nicht einschaltet oder der Datenordner nicht im Temp-Ordner liegt.
@@ -90,7 +133,11 @@ export interface LaunchedApp {
   close(): Promise<void>;
 }
 
-export async function launchCodium(options: LaunchOptions): Promise<LaunchedApp> {
+/**
+ * Die Umgebung für Codium im Testmodus, ohne Wächter: abgeschirmte Git-Konfiguration, Testmodus, Datenordner und cmd
+ * als Shell (die schreibt sie in den App-Zustand). Wirft wie `assertTestModeEnv`.
+ */
+export function codiumTestEnv(options: LaunchOptions): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(shieldedGitEnv(path.join(options.dataRoot, 'gitconfig-global')))) {
     // Nichts aus einer laufenden Codium-Instanz erben (etwa wenn der Testlauf selbst in Codium läuft).
@@ -99,15 +146,28 @@ export async function launchCodium(options: LaunchOptions): Promise<LaunchedApp>
   Object.assign(env, { CODIUM_TEST_HIDDEN: '1', CODIUM_TEST_DATA_DIR: options.dataRoot }, options.env);
   assertTestModeEnv(env);
   useCmdAsShell(options.dataRoot);
+  return env;
+}
 
-  const electronPath = createRequire(__filename)('electron') as string;
-  const app = await _electron.launch({ executablePath: electronPath, args: [PROJECT_ROOT], cwd: PROJECT_ROOT, env });
+export async function launchCodium(options: LaunchOptions): Promise<LaunchedApp> {
+  const guard = await openTestGuard();
+  let app: ElectronApplication;
+  let env: Record<string, string>;
+  try {
+    env = { ...codiumTestEnv(options), CODIUM_TEST_GUARD_PIPE: guard.pipe };
+    app = await _electron.launch({ executablePath: ELECTRON_PATH, args: [PROJECT_ROOT], cwd: PROJECT_ROOT, env });
+  } catch (err) {
+    guard.close();
+    throw err;
+  }
   running.add(app);
   let hasExited = false;
+  // Die Pipe des Wächters schliesst erst, wenn die App beendet ist; sonst bräche sie ein geordnetes Beenden ab.
   const closed = new Promise<void>((resolve) =>
     app.once('close', () => {
       hasExited = true;
       running.delete(app);
+      guard.close();
       resolve();
     }),
   );
@@ -143,7 +203,7 @@ export async function launchCodium(options: LaunchOptions): Promise<LaunchedApp>
         { id, name, payload: payload as unknown },
       );
     },
-    startSecondInstance: () => runSecondInstance(electronPath, env),
+    startSecondInstance: () => runSecondInstance(ELECTRON_PATH, env),
     exited: () => closed,
     close: async () => {
       if (hasExited) return;
@@ -195,6 +255,13 @@ export function prepareAppState(dataRoot: string, state: Partial<Omit<AppState, 
   const file = path.join(dataFolder(dataRoot, false), APP_STATE_FILE);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify({ ...emptyAppState(), ...state }, null, 2)}\n`, 'utf8');
+}
+
+/** Schreibt den Projekt-Zustand eines Projekts vor dem Start, etwa offene Tabs oder Werkzeugfenster. */
+export function prepareProjectState(dataRoot: string, projectPath: string, state: Partial<Omit<ProjectState, 'schemaVersion' | 'path'>>): void {
+  const file = path.join(dataFolder(dataRoot, false), PROJECT_STATE_DIR, projectStateFileName(lexicalProjectKey(projectPath)));
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify({ schemaVersion: 1, path: projectPath, ...state }, null, 2)}\n`, 'utf8');
 }
 
 /** Wartet auf die Seite eines Fensters mit diesem Titel (die Oberfläche übernimmt den Titel vom Kern). */

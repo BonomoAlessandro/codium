@@ -1,13 +1,19 @@
 // Teststelle 2: die echte App in Electron, gesteuert mit Playwright im Testmodus.
 
+import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { defaultLayout } from '../../src/main/core/schema';
 import { WM_ACTIVATE } from '../../src/main/testMode';
-import { launchCodium, prepareAppState } from '../support/launchApp';
+import { codiumTestEnv, ELECTRON_PATH, launchCodium, prepareAppState, prepareProjectState, PROJECT_ROOT } from '../support/launchApp';
 import { extendedWindowStyle, WS_EX_NOACTIVATE } from '../support/nativeWindow';
+import { killProcesses, listProcesses, listProcessesAsync, stillRunning, withDescendants, type ProcessInfo } from '../support/processes';
 import { useTempDirs } from '../support/tempDir';
+
+const GUARD_STARTER = path.join(__dirname, '..', 'support', 'guardStarter.ts');
 
 describe('App im Testmodus', () => {
   const tempDir = useTempDirs();
@@ -101,6 +107,72 @@ describe('App im Testmodus', () => {
       expect((await codium.recorded()).filter((e) => e.kind === 'window-activated')).toEqual([]);
     } finally {
       await codium.close();
+    }
+  });
+
+  it('beendet sich samt Kindprozessen binnen Sekunden, wenn der startende Prozess endet (Wächter, Ticket 27)', async () => {
+    // Eine TypeScript-Datei im Editor und das Terminal offen: Beim Start kommen der Sprachserver und eine Shell dazu.
+    const alpha = path.join(tempDir(), 'Alpha');
+    fs.mkdirSync(alpha, { recursive: true });
+    fs.writeFileSync(path.join(alpha, 'index.ts'), 'export const answer: number = 42;\n');
+    const dataRoot = tempDir();
+    prepareAppState(dataRoot, { openProjects: [alpha], recentProjects: [alpha] });
+    prepareProjectState(dataRoot, alpha, {
+      tabs: ['index.ts'],
+      activeTab: 'index.ts',
+      layout: { ...defaultLayout(), bottom: { active: 'terminal', open: true, size: 260 } },
+    });
+    const env = { ...codiumTestEnv({ dataRoot }), CODIUM_TEST_GUARD_PIPE: `\\\\.\\pipe\\codium-test-guard-${randomUUID()}` };
+
+    // Ein eigener Node-Prozess startet Codium und hält die Pipe des Wächters; er wird danach hart beendet.
+    const starter = spawn(process.execPath, [GUARD_STARTER], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
+    starter.stdin!.end(JSON.stringify({ electron: ELECTRON_PATH, root: PROJECT_ROOT, env }));
+    let tree: ProcessInfo[] = [];
+    try {
+      const appPid = await new Promise<number>((resolve, reject) => {
+        let out = '';
+        starter.stdout!.on('data', (chunk: Buffer) => {
+          out += chunk.toString('utf8');
+          if (out.includes('\n')) resolve((JSON.parse(out.split('\n')[0]) as { pid: number }).pid);
+        });
+        starter.once('exit', (code) => reject(new Error(`Der startende Prozess endete vor Codium (${code}).`)));
+      });
+      await expect
+        .poll(
+          async () => {
+            const table = await listProcessesAsync();
+            const app = table.find((p) => p.pid === appPid);
+            tree = app ? withDescendants(table, [app]) : [];
+            return {
+              shell: tree.some((p) => p.name.toLowerCase() === 'cmd.exe'),
+              // Ohne eigenes TypeScript im Projekt der native Server von TypeScript 7 (`tsc.exe --lsp`).
+              languageServer: tree.some((p) => p.name.toLowerCase() === 'tsc.exe' && p.cmd.includes('--lsp')),
+            };
+          },
+          { timeout: 60_000, interval: 1000 },
+        )
+        .toEqual({ shell: true, languageServer: true });
+
+      const exited = new Promise<void>((resolve) => starter.once('exit', () => resolve()));
+      starter.kill();
+      await exited;
+      const stoppedAt = Date.now();
+      await expect
+        .poll(
+          async () => {
+            const table = await listProcessesAsync();
+            return tree.filter((p) => stillRunning(p, table)).map((p) => `${p.name} ${p.pid}`);
+          },
+          { timeout: 20_000, interval: 500 },
+        )
+        .toEqual([]);
+      // Die Abfrage der Prozesstabelle dauert selbst etwa eine Sekunde.
+      expect(Date.now() - stoppedAt).toBeLessThan(10_000);
+    } finally {
+      if (starter.exitCode === null) starter.kill();
+      // Sicherheitsnetz, falls der Wächter versagt: nur Prozesse aus dem Baum dieser Instanz.
+      const table = listProcesses();
+      killProcesses(tree.filter((p) => stillRunning(p, table)).map((p) => p.pid));
     }
   });
 
