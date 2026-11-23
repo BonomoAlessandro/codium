@@ -324,10 +324,37 @@ describe('Unscharfer Vergleich', () => {
 
   it('bewertet 100 000 Pfade schnell genug für jeden Tastendruck', () => {
     const files = Array.from({ length: 100_000 }, (_, i) => ({ relative: `src/module${i % 300}/feature${i % 97}/Component${i}Service.ts` }));
+    // Gemessen wird gegen eine einfache Vergleichsarbeit über dieselben Pfade, im selben Moment: Ist der Rechner belastet
+    // (im vollen Lauf belegen andere Testdateien die Kerne), werden beide gleich langsamer, das Verhältnis bleibt. Ein
+    // festes Zeitbudget riss unter Last, obwohl die Sortierung in Ruhe nur 40 bis 480 ms braucht.
+    // Gemessen am 2026-11-23: Verhältnis in Ruhe höchstens 2,6, unter Last höchstens 3,3. Der langsame Algorithmus vor dem
+    // Review von Ticket 08 (rund 0,9 s je Tastendruck) läge um 11.
+    const reference = (query: string) => {
+      const wanted = query.toLowerCase();
+      let hits = 0;
+      for (let repeat = 0; repeat < 10; repeat++) {
+        for (const file of files) {
+          const name = file.relative.toLowerCase();
+          let next = 0;
+          for (let k = 0; k < name.length && next < wanted.length; k++) if (name.charCodeAt(k) === wanted.charCodeAt(next)) next++;
+          if (next === wanted.length) hits++;
+        }
+      }
+      return hits;
+    };
     for (const query of ['u', 'us', 'UsrSrv', 'compserv']) {
-      const started = performance.now();
-      rankFiles(query, files, 100);
-      expect(performance.now() - started, query).toBeLessThan(1500);
+      // Jeweils der schnellste von drei abwechselnden Durchläufen, damit ein kurzer Engpass nur eine Messung trifft.
+      let referenceMs = Infinity;
+      let rankMs = Infinity;
+      for (let run = 0; run < 3; run++) {
+        let started = performance.now();
+        reference(query);
+        referenceMs = Math.min(referenceMs, performance.now() - started);
+        started = performance.now();
+        rankFiles(query, files, 100);
+        rankMs = Math.min(rankMs, performance.now() - started);
+      }
+      expect(rankMs / referenceMs, `${query}: ${rankMs.toFixed(0)} ms gegen ${referenceMs.toFixed(0)} ms`).toBeLessThan(8);
     }
   });
 });

@@ -785,7 +785,8 @@ describe('Datei-Dienst', () => {
 
       fs.rmSync(project, { recursive: true });
       await expect.poll(() => changedEvents(test, windowId).some((e) => e.rescanned)).toBe(true);
-      expect(changes(test, windowId)).toContainEqual({ path: project, kind: 'deleted' });
+      // Das Löschen kann in einem späteren Bündel gemeldet werden als das Neueinlesen.
+      await expect.poll(() => changes(test, windowId)).toContainEqual({ path: project, kind: 'deleted' });
       // Windows meldet einen gelöschten überwachten Ordner ohne Ende; die Überwachung hat ihn losgelassen.
       await expect.poll(() => watchers()).toBe(before);
 
@@ -808,8 +809,10 @@ describe('Datei-Dienst', () => {
       fs.writeFileSync(at('pending.txt'), '');
       const disposal = test.core.closeProjectCore(windowId);
       // Der Ordner ist sofort freigegeben, noch bevor der Abbau fertig ist. Ein überwachter Ordner bliebe unter
-      // Windows stehen, bis die Überwachung ihn loslässt.
-      fs.rmSync(project, { recursive: true });
+      // Windows stehen, bis die Überwachung ihn loslässt. Kurze Wiederholungen fangen nur ab, dass der Virenscanner die
+      // eben geschriebene Datei noch Millisekunden offen hält (EPERM); eine Überwachung, die den Ordner festhielte,
+      // liesse ihn auch nach diesen Wiederholungen nicht los.
+      fs.rmSync(project, { recursive: true, maxRetries: 10, retryDelay: 20 });
       expect(fs.existsSync(project)).toBe(false);
       await disposal;
       await sleep(400);

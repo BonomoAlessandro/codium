@@ -21,5 +21,8 @@ export default defineConfig({
     // mit einer Datei je Kern stauten sie sich (ein Lauf dauerte einmal doppelt so lang). Gemessen ist der Lauf so
     // nicht langsamer, aber gleichmässiger.
     maxWorkers: '50%',
+    // expect.poll wartet ohne eigene Angabe nur 1 s; die Tests der Dateiüberwachung verlassen sich darauf, und unter Last
+    // kommt ein Ereignis auch einmal später. Wer kürzer warten will, gibt es beim Aufruf an.
+    expect: { poll: { timeout: 10_000 } },
   },
 });
