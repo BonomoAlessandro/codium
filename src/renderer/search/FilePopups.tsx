@@ -39,9 +39,14 @@ interface FileListProps {
 }
 
 function FileList({ label, placeholder, query, onQuery, items, initialIndex, onOpen, onClose, options, empty }: FileListProps) {
-  const [selected, setSelected] = useState(initialIndex);
+  // Neue Einträge setzen die Auswahl schon beim Zeichnen zurück, nicht erst in einem Effekt danach: Sonst nahm ein Enter
+  // gleich nach dem Erscheinen der ersten Treffer noch die alte Auswahl der leeren Liste und öffnete nichts (unter Last
+  // in den Oberflächentests gesehen, Review von Ticket 26).
+  const [selection, setSelection] = useState({ items, initialIndex, index: Math.min(initialIndex, items.length - 1) });
+  const selected =
+    selection.items === items && selection.initialIndex === initialIndex ? selection.index : Math.min(initialIndex, items.length - 1);
+  const setSelected = (index: number) => setSelection({ items, initialIndex, index });
   const listRef = useRef<HTMLDivElement>(null);
-  useEffect(() => setSelected(Math.min(initialIndex, items.length - 1)), [items, initialIndex]);
   useEffect(() => {
     listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
   }, [selected]);
