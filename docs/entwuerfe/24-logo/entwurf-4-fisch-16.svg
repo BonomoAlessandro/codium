@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <title>Codium – Entwurf 4 „Fisch“ (16 px)</title>
+  <path d="M0.5 4L6.5 8L0.5 12Q2 8 0.5 4Z" fill="#3574f0"/>
+  <path d="M5 8C6.9 4.6 10.2 3.4 12.6 4.6C14.3 5.5 15.3 6.7 15.5 8C15.3 9.3 14.3 10.5 12.6 11.4C10.2 12.6 6.9 11.4 5 8ZM11 7a1 1 0 1 0 2 0a1 1 0 1 0 -2 0Z" fill="#3574f0" fill-rule="evenodd"/>
+</svg>

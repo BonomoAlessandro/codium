@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codium Logo-Entwürfe</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #1e1f22;
+    --bg-panel: #2b2d30;
+    --bg-hover: #393b40;
+    --border: #4e5157;
+    --border-subtle: #393b40;
+    --text: #dfe1e5;
+    --text-muted: #868a91;
+    --accent: #3574f0;
+    --link: #548af7;
+    --zoom: 1;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  }
+  a { color: var(--link); }
+  code { font-family: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace; font-size: 0.95em; }
+  main { max-width: 1160px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { margin: 0 0 8px; font-size: 26px; font-weight: 600; }
+  h2 { margin: 0 0 8px; font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  h3 { margin: 24px 0 8px; font-size: 13px; font-weight: 600; color: var(--text-muted); }
+  p { margin: 0 0 8px; max-width: 80ch; }
+  .einleitung { color: var(--text); }
+  .gedaempft, .hinweis { color: var(--text-muted); font-size: 13px; }
+  .nummer {
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+  }
+  nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+  nav a {
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    text-decoration: none;
+  }
+  nav a:hover { background: var(--bg-hover); }
+  .schalter { display: inline-flex; align-items: center; gap: 8px; margin-top: 4px; color: var(--text-muted); font-size: 13px; }
+  section {
+    margin-top: 24px;
+    padding: 24px;
+    border-radius: 10px;
+    background: var(--bg-panel);
+  }
+  .idee { font-size: 15px; }
+  .farben, .dateien { color: var(--text-muted); font-size: 13px; }
+  .farbe { display: inline-flex; align-items: center; gap: 6px; margin-right: 12px; }
+  .muster { width: 12px; height: 12px; border-radius: 3px; outline: 1px solid rgba(255, 255, 255, 0.25); }
+
+  .zwei { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 500px), 1fr)); gap: 16px; }
+  .flaeche { border-radius: 8px; padding: 12px 16px 10px; overflow-x: auto; }
+  .flaeche-titel { margin: 0 0 8px; font-size: 12px; }
+  .dunkel { background: #1e1f22; color: #868a91; }
+  .hell { background: #f3f3f3; color: #5f5f5f; }
+  .flaeche.dunkel { outline: 1px solid var(--border-subtle); }
+  .groessen { display: flex; align-items: flex-end; gap: 20px; }
+  figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  figcaption { font-size: 12px; white-space: nowrap; }
+  img { display: block; }
+  .zoom-aktiv .massstab { zoom: var(--zoom); }
+
+  .lupen { display: flex; flex-wrap: wrap; gap: 16px; }
+  .lupe { width: 128px; height: 128px; image-rendering: pixelated; border-radius: 6px; }
+  .lupe.dunkel { outline: 1px solid var(--border-subtle); }
+
+  /* Nachgestellte Taskleiste von Windows 11 */
+  .taskleiste {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 48px;
+    border-radius: 8px 8px 0 0;
+  }
+  .taskleiste.dunkel { background: #1c1c1c; border-top: 1px solid #2f2f2f; color: #e6e6e6; }
+  .taskleiste.hell { background: #eeeeee; border-top: 1px solid #d6d6d6; color: #1a1a1a; }
+  .taskleiste-mitte { display: flex; gap: 4px; }
+  .tl-app {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 4px;
+  }
+  .tl-aktiv::after,
+  .tl-laeuft::after {
+    content: '';
+    position: absolute;
+    bottom: 2px;
+    left: 50%;
+    height: 3px;
+    border-radius: 2px;
+    transform: translateX(-50%);
+  }
+  .dunkel .tl-aktiv { background: rgba(255, 255, 255, 0.07); }
+  .hell .tl-aktiv { background: rgba(255, 255, 255, 0.75); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05); }
+  .tl-aktiv::after { width: 16px; background: #4cc2ff; }
+  .hell .tl-aktiv::after { background: #005fb8; }
+  .tl-laeuft::after { width: 6px; background: #9a9a9a; }
+  .taskleiste-uhr {
+    position: absolute;
+    right: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    font-size: 12px;
+    line-height: 1.3;
+  }
+
+  /* Nachgestellter Explorer, Detailansicht mit 16-px-Symbolen */
+  .explorer { margin-top: 8px; padding: 6px; border-radius: 0 0 8px 8px; font-size: 12px; }
+  .explorer.dunkel { background: #191919; color: #e6e6e6; }
+  .explorer.hell { background: #ffffff; color: #1a1a1a; outline: 1px solid #e0e0e0; }
+  .ex-zeile { display: flex; align-items: center; gap: 8px; height: 24px; padding: 0 8px; border-radius: 4px; }
+  .explorer.dunkel .ex-gewaehlt { background: #2d2d2d; }
+  .explorer.hell .ex-gewaehlt { background: #e5f1fb; }
+
+  /* Nachgestelltes Willkommensfenster, Masse und Farben wie in app.css */
+  .fenster {
+    max-width: 720px;
+    border: 1px solid #43454a;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #1e1f22;
+    font: 13px 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  }
+  .fenster-kopf { display: flex; align-items: center; height: 40px; background: #2b2d30; }
+  .fenster-titel { display: flex; flex: 1; align-items: center; gap: 8px; padding: 0 12px; color: #868a91; min-width: 0; }
+  .fenster-knoepfe { display: flex; height: 100%; }
+  .wk { display: grid; place-items: center; width: 46px; height: 100%; }
+  .fenster-inhalt {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 28px 40px;
+    border-top: 1px solid #1e1f22;
+  }
+  .w-kopf { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+  .w-titel { margin: 0; font-size: 24px; font-weight: 600; line-height: 1.3; }
+  .w-version { margin: 2px 0 0; color: #868a91; }
+  .w-knoepfe { display: flex; gap: 8px; }
+  .w-knopf { padding: 4px 14px; border: 1px solid #4e5157; border-radius: 4px; background: #2b2d30; }
+  .w-primaer { background: #3574f0; border-color: #3574f0; color: #fff; }
+  .w-h2 { margin: 0 0 8px; font-weight: 600; color: #868a91; }
+  .w-projekt { display: flex; flex-direction: column; padding: 6px 8px; border-radius: 6px; }
+  .w-projekt:first-of-type { background: #393b40; }
+  .w-name { font-weight: 600; }
+  .w-pfad { color: #868a91; font-size: 12px; }
+
+  .ueberblick-reihe { display: flex; flex-wrap: wrap; gap: 16px; }
+  .ueberblick-reihe figure { padding: 16px; border-radius: 8px; min-width: 128px; }
+  .ueberblick-reihe figcaption { font-size: 13px; color: var(--text); }
+  .ueberblick-reihe .hell figcaption { color: #1a1a1a; }
+  .ueberblick-paar { display: flex; flex-wrap: wrap; gap: 12px; }
+</style>
+</head>
+<body>
+  <main>
+    <h1>Logo-Entwürfe für Codium</h1>
+    <p class="einleitung">Ticket 24, erste Runde: vier eigenständige Entwürfe. Zur Wahl genügt die Nummer, etwa „Entwurf 2“. Rückmeldungen wie „Entwurf 1, aber ohne Punkt“ oder „Form von 4, Farben von 2“ sind genauso willkommen; dann folgt eine zweite Runde.</p>
+    <p class="gedaempft">Alle Entwürfe verwenden flache Farben aus <code>src/renderer/styles/tokens.css</code>, keinen Farbverlauf, kein Quadrat mit Buchstaben (wie bei JetBrains) und keine gefaltete blaue Schleife (wie bei VS Code und VSCodium). Jeder Entwurf hat eine eigene vereinfachte Fassung für 16 px. Die Seite braucht kein Netz und nicht die App.</p>
+    <label class="schalter" id="schalter-zeile"><input type="checkbox" id="echte-pixel"> <span id="schalter-text">Skalierung von Windows ausgleichen (Grössen und Taskleisten in echten Bildschirmpixeln)</span></label>
+    <nav aria-label="Entwürfe">
+      <a href="#ueberblick">Überblick</a>
+      <a href="#entwurf-1">Entwurf 1 · Orbit</a>
+      <a href="#entwurf-2">Entwurf 2 · Bausteine</a>
+      <a href="#entwurf-3">Entwurf 3 · Klammer</a>
+      <a href="#entwurf-4">Entwurf 4 · Fisch</a>
+    </nav>
+
+    <section id="ueberblick">
+      <h2>Alle auf einen Blick</h2>
+      <div class="ueberblick-reihe">
+        <div class="ueberblick-paar">
+          <figure class="dunkel"><img src="entwurf-1-orbit.svg" width="96" height="96" alt="Entwurf 1, dunkel"><figcaption>1 · Orbit</figcaption></figure>
+          <figure class="hell"><img src="entwurf-1-orbit.svg" width="96" height="96" alt="Entwurf 1, hell"><figcaption>1 · Orbit</figcaption></figure>
+        </div>
+        <div class="ueberblick-paar">
+          <figure class="dunkel"><img src="entwurf-2-bausteine.svg" width="96" height="96" alt="Entwurf 2, dunkel"><figcaption>2 · Bausteine</figcaption></figure>
+          <figure class="hell"><img src="entwurf-2-bausteine.svg" width="96" height="96" alt="Entwurf 2, hell"><figcaption>2 · Bausteine</figcaption></figure>
+        </div>
+        <div class="ueberblick-paar">
+          <figure class="dunkel"><img src="entwurf-3-klammer.svg" width="96" height="96" alt="Entwurf 3, dunkel"><figcaption>3 · Klammer</figcaption></figure>
+          <figure class="hell"><img src="entwurf-3-klammer.svg" width="96" height="96" alt="Entwurf 3, hell"><figcaption>3 · Klammer</figcaption></figure>
+        </div>
+        <div class="ueberblick-paar">
+          <figure class="dunkel"><img src="entwurf-4-fisch.svg" width="96" height="96" alt="Entwurf 4, dunkel"><figcaption>4 · Fisch</figcaption></figure>
+          <figure class="hell"><img src="entwurf-4-fisch.svg" width="96" height="96" alt="Entwurf 4, hell"><figcaption>4 · Fisch</figcaption></figure>
+        </div>
+      </div>
+      <h3>In der Taskleiste nebeneinander (von links: Entwurf 1, 2, 3, 4)</h3>
+      <div class="zwei">
+        <div>
+        <div class="taskleiste dunkel massstab" role="img" aria-label="Nachgestellte Taskleiste, dunkel">
+          <div class="taskleiste-mitte">
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#d9a032"/><path d="M2 9h20v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#f0bd4f"/></svg></span>
+            <span class="tl-app tl-laeuft"><img src="entwurf-1-orbit.svg" width="24" height="24" alt="Entwurf 1 mit 24 px"></span>
+            <span class="tl-app tl-laeuft"><img src="entwurf-2-bausteine.svg" width="24" height="24" alt="Entwurf 2 mit 24 px"></span>
+            <span class="tl-app tl-laeuft"><img src="entwurf-3-klammer.svg" width="24" height="24" alt="Entwurf 3 mit 24 px"></span>
+            <span class="tl-app tl-laeuft"><img src="entwurf-4-fisch.svg" width="24" height="24" alt="Entwurf 4 mit 24 px"></span>
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="2" y="3.5" width="20" height="17" rx="3" fill="#3b3b3b" stroke="#7a7a7a"/><path d="M6.5 9l3 3-3 3M11.5 15.5h5" fill="none" stroke="#f0f0f0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </div>
+          <div class="taskleiste-uhr"><span>14:32</span><span>23.11.2026</span></div>
+        </div></div>
+        <div>
+        <div class="taskleiste hell massstab" role="img" aria-label="Nachgestellte Taskleiste, hell">
+          <div class="taskleiste-mitte">
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#d9a032"/><path d="M2 9h20v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#f0bd4f"/></svg></span>
+            <span class="tl-app tl-laeuft"><img src="entwurf-1-orbit.svg" width="24" height="24" alt="Entwurf 1 mit 24 px"></span>
+            <span class="tl-app tl-laeuft"><img src="entwurf-2-bausteine.svg" width="24" height="24" alt="Entwurf 2 mit 24 px"></span>
+            <span class="tl-app tl-laeuft"><img src="entwurf-3-klammer.svg" width="24" height="24" alt="Entwurf 3 mit 24 px"></span>
+            <span class="tl-app tl-laeuft"><img src="entwurf-4-fisch.svg" width="24" height="24" alt="Entwurf 4 mit 24 px"></span>
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="2" y="3.5" width="20" height="17" rx="3" fill="#3b3b3b" stroke="#7a7a7a"/><path d="M6.5 9l3 3-3 3M11.5 15.5h5" fill="none" stroke="#f0f0f0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </div>
+          <div class="taskleiste-uhr"><span>14:32</span><span>23.11.2026</span></div>
+        </div></div>
+      </div>
+      <p class="hinweis">Ordner, Globus und Konsole sind neutrale Platzhalter für andere Programme.</p>
+    </section>
+
+    <section class="entwurf" id="entwurf-1">
+      <h2><span class="nummer">Entwurf 1</span> Orbit</h2>
+      <p class="idee">Ein offener Ring bildet das C von Codium; in seiner Öffnung kreist ein Punkt wie ein Elektron um den Kern, denn „-ium“ klingt nach einem chemischen Element.</p>
+      <p class="farben">Farben: <span class="farbe"><span class="muster" style="background:#3574f0"></span>#3574f0 Akzent (--accent)</span> <span class="farbe"><span class="muster" style="background:#5fb865"></span>#5fb865 Erfolg (--success)</span></p>
+      <p class="dateien">Dateien: <a href="entwurf-1-orbit.svg">entwurf-1-orbit.svg</a> (ab 24 px) und <a href="entwurf-1-orbit-16.svg">entwurf-1-orbit-16.svg</a> (vereinfachte Fassung für 16 px)</p>
+
+      <h3>Grössen</h3>
+      <div class="zwei">
+        <div class="flaeche dunkel massstab">
+          <p class="flaeche-titel">Dunkel (Hintergrund von Codium)</p>
+          <div class="groessen">
+            <figure><img src="entwurf-1-orbit-16.svg" width="16" height="16" alt="Entwurf 1 mit 16 px"><figcaption>16 px*</figcaption></figure>
+            <figure><img src="entwurf-1-orbit.svg" width="24" height="24" alt="Entwurf 1 mit 24 px"><figcaption>24 px</figcaption></figure>
+            <figure><img src="entwurf-1-orbit.svg" width="32" height="32" alt="Entwurf 1 mit 32 px"><figcaption>32 px</figcaption></figure>
+            <figure><img src="entwurf-1-orbit.svg" width="48" height="48" alt="Entwurf 1 mit 48 px"><figcaption>48 px</figcaption></figure>
+            <figure><img src="entwurf-1-orbit.svg" width="256" height="256" alt="Entwurf 1 mit 256 px"><figcaption>256 px</figcaption></figure>
+          </div>
+        </div>
+        <div class="flaeche hell massstab">
+          <p class="flaeche-titel">Hell (helles Windows)</p>
+          <div class="groessen">
+            <figure><img src="entwurf-1-orbit-16.svg" width="16" height="16" alt="Entwurf 1 mit 16 px"><figcaption>16 px*</figcaption></figure>
+            <figure><img src="entwurf-1-orbit.svg" width="24" height="24" alt="Entwurf 1 mit 24 px"><figcaption>24 px</figcaption></figure>
+            <figure><img src="entwurf-1-orbit.svg" width="32" height="32" alt="Entwurf 1 mit 32 px"><figcaption>32 px</figcaption></figure>
+            <figure><img src="entwurf-1-orbit.svg" width="48" height="48" alt="Entwurf 1 mit 48 px"><figcaption>48 px</figcaption></figure>
+            <figure><img src="entwurf-1-orbit.svg" width="256" height="256" alt="Entwurf 1 mit 256 px"><figcaption>256 px</figcaption></figure>
+          </div>
+        </div>
+      </div>
+      <p class="hinweis">* 16 px zeigt die vereinfachte Fassung. Die 16-px-Fassung hat einen etwas dickeren Ring, gerade Enden und einen Punkt auf dem Pixelraster.</p>
+
+      <h3>16 px, Pixel für Pixel (achtfach vergrössert)</h3>
+      <div class="lupen">
+        <canvas class="lupe dunkel" width="16" height="16" data-src="entwurf-1-orbit-16.svg" aria-label="16 px vergrössert, dunkel"></canvas>
+        <canvas class="lupe hell" width="16" height="16" data-src="entwurf-1-orbit-16.svg" aria-label="16 px vergrössert, hell"></canvas>
+      </div>
+
+      <h3>Taskleiste und Explorer</h3>
+      <div class="zwei">
+        <div>
+        <div class="taskleiste dunkel massstab" role="img" aria-label="Nachgestellte Taskleiste, dunkel">
+          <div class="taskleiste-mitte">
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#d9a032"/><path d="M2 9h20v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#f0bd4f"/></svg></span>
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#2f8f83"/><path d="M2 12h20M12 2c3 3 3 17 0 20M12 2c-3 3-3 17 0 20" fill="none" stroke="#bfe6df" stroke-width="1.4"/></svg></span>
+            <span class="tl-app tl-aktiv"><img src="entwurf-1-orbit.svg" width="24" height="24" alt="Entwurf 1 mit 24 px"></span>
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="2" y="3.5" width="20" height="17" rx="3" fill="#3b3b3b" stroke="#7a7a7a"/><path d="M6.5 9l3 3-3 3M11.5 15.5h5" fill="none" stroke="#f0f0f0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </div>
+          <div class="taskleiste-uhr"><span>14:32</span><span>23.11.2026</span></div>
+        </div>
+          <div class="explorer dunkel massstab" role="img" aria-label="Nachgestellter Explorer, dunkel">
+            <div class="ex-zeile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M1.5 4a1 1 0 0 1 1-1h3.5l1.5 1.5h6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" fill="#e3ad3f"/></svg><span>locales</span></div>
+            <div class="ex-zeile ex-gewaehlt"><img src="entwurf-1-orbit-16.svg" width="16" height="16" alt="Entwurf 1 mit 16 px"><span>Codium.exe</span></div>
+            <div class="ex-zeile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 1.5h5.2l3.3 3.3v9.7H4z" fill="#f5f5f5" stroke="#8a8a8a"/><path d="M9 1.7V5h3.3" fill="none" stroke="#8a8a8a"/></svg><span>LICENSES.chromium.html</span></div>
+          </div>
+        </div>
+        <div>
+        <div class="taskleiste hell massstab" role="img" aria-label="Nachgestellte Taskleiste, hell">
+          <div class="taskleiste-mitte">
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#d9a032"/><path d="M2 9h20v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#f0bd4f"/></svg></span>
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#2f8f83"/><path d="M2 12h20M12 2c3 3 3 17 0 20M12 2c-3 3-3 17 0 20" fill="none" stroke="#bfe6df" stroke-width="1.4"/></svg></span>
+            <span class="tl-app tl-aktiv"><img src="entwurf-1-orbit.svg" width="24" height="24" alt="Entwurf 1 mit 24 px"></span>
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="2" y="3.5" width="20" height="17" rx="3" fill="#3b3b3b" stroke="#7a7a7a"/><path d="M6.5 9l3 3-3 3M11.5 15.5h5" fill="none" stroke="#f0f0f0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </div>
+          <div class="taskleiste-uhr"><span>14:32</span><span>23.11.2026</span></div>
+        </div>
+          <div class="explorer hell massstab" role="img" aria-label="Nachgestellter Explorer, hell">
+            <div class="ex-zeile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M1.5 4a1 1 0 0 1 1-1h3.5l1.5 1.5h6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" fill="#e3ad3f"/></svg><span>locales</span></div>
+            <div class="ex-zeile ex-gewaehlt"><img src="entwurf-1-orbit-16.svg" width="16" height="16" alt="Entwurf 1 mit 16 px"><span>Codium.exe</span></div>
+            <div class="ex-zeile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 1.5h5.2l3.3 3.3v9.7H4z" fill="#f5f5f5" stroke="#8a8a8a"/><path d="M9 1.7V5h3.3" fill="none" stroke="#8a8a8a"/></svg><span>LICENSES.chromium.html</span></div>
+          </div>
+        </div>
+      </div>
+
+      <h3>Willkommensfenster</h3>
+      
+        <div class="fenster" role="img" aria-label="Nachgestelltes Willkommensfenster mit Entwurf 1">
+          <div class="fenster-kopf">
+            <div class="fenster-titel"><img src="entwurf-1-orbit-16.svg" width="16" height="16" alt="Entwurf 1 mit 16 px"><span>Welcome to Codium</span></div>
+            <div class="fenster-knoepfe">
+              <span class="wk" aria-hidden="true"><svg viewBox="0 0 10 10" width="10" height="10"><path d="M0 5.5h10" stroke="#ced0d6"/></svg></span>
+              <span class="wk" aria-hidden="true"><svg viewBox="0 0 10 10" width="10" height="10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="#ced0d6"/></svg></span>
+              <span class="wk" aria-hidden="true"><svg viewBox="0 0 10 10" width="10" height="10"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9" stroke="#ced0d6"/></svg></span>
+            </div>
+          </div>
+          <div class="fenster-inhalt">
+            <div class="w-kopf">
+              <img src="entwurf-1-orbit.svg" width="64" height="64" alt="Entwurf 1 mit 64 px">
+              <div>
+                <p class="w-titel">Codium</p>
+                <p class="w-version">Version 0.1.0</p>
+              </div>
+            </div>
+            <div class="w-knoepfe">
+              <span class="w-knopf w-primaer">Open Folder</span>
+              <span class="w-knopf">Clone Repository</span>
+            </div>
+            <div class="w-zuletzt">
+              <p class="w-h2">Recent Projects</p>
+              <div class="w-projekt"><span class="w-name">shop-backend</span><span class="w-pfad">C:\Projekte\shop-backend</span></div>
+              <div class="w-projekt"><span class="w-name">notizen</span><span class="w-pfad">C:\Projekte\notizen</span></div>
+            </div>
+          </div>
+        </div>
+      <p class="hinweis">Gross über dem Titel, wie im Ticket verlangt. Das kleine Logo vor „Welcome to Codium“ in der Kopfzeile ist ein Vorschlag; heute steht dort nur der Titel.</p>
+    </section>
+
+    <section class="entwurf" id="entwurf-2">
+      <h2><span class="nummer">Entwurf 2</span> Bausteine</h2>
+      <p class="idee">Ein C aus sieben Quadraten im 3×3-Raster; der letzte Baustein ist grün wie die Schreibmarke, an der der Code gerade weiterwächst.</p>
+      <p class="farben">Farben: <span class="farbe"><span class="muster" style="background:#3574f0"></span>#3574f0 Akzent (--accent)</span> <span class="farbe"><span class="muster" style="background:#5fb865"></span>#5fb865 Erfolg (--success)</span></p>
+      <p class="dateien">Dateien: <a href="entwurf-2-bausteine.svg">entwurf-2-bausteine.svg</a> (ab 24 px) und <a href="entwurf-2-bausteine-16.svg">entwurf-2-bausteine-16.svg</a> (vereinfachte Fassung für 16 px)</p>
+
+      <h3>Grössen</h3>
+      <div class="zwei">
+        <div class="flaeche dunkel massstab">
+          <p class="flaeche-titel">Dunkel (Hintergrund von Codium)</p>
+          <div class="groessen">
+            <figure><img src="entwurf-2-bausteine-16.svg" width="16" height="16" alt="Entwurf 2 mit 16 px"><figcaption>16 px*</figcaption></figure>
+            <figure><img src="entwurf-2-bausteine.svg" width="24" height="24" alt="Entwurf 2 mit 24 px"><figcaption>24 px</figcaption></figure>
+            <figure><img src="entwurf-2-bausteine.svg" width="32" height="32" alt="Entwurf 2 mit 32 px"><figcaption>32 px</figcaption></figure>
+            <figure><img src="entwurf-2-bausteine.svg" width="48" height="48" alt="Entwurf 2 mit 48 px"><figcaption>48 px</figcaption></figure>
+            <figure><img src="entwurf-2-bausteine.svg" width="256" height="256" alt="Entwurf 2 mit 256 px"><figcaption>256 px</figcaption></figure>
+          </div>
+        </div>
+        <div class="flaeche hell massstab">
+          <p class="flaeche-titel">Hell (helles Windows)</p>
+          <div class="groessen">
+            <figure><img src="entwurf-2-bausteine-16.svg" width="16" height="16" alt="Entwurf 2 mit 16 px"><figcaption>16 px*</figcaption></figure>
+            <figure><img src="entwurf-2-bausteine.svg" width="24" height="24" alt="Entwurf 2 mit 24 px"><figcaption>24 px</figcaption></figure>
+            <figure><img src="entwurf-2-bausteine.svg" width="32" height="32" alt="Entwurf 2 mit 32 px"><figcaption>32 px</figcaption></figure>
+            <figure><img src="entwurf-2-bausteine.svg" width="48" height="48" alt="Entwurf 2 mit 48 px"><figcaption>48 px</figcaption></figure>
+            <figure><img src="entwurf-2-bausteine.svg" width="256" height="256" alt="Entwurf 2 mit 256 px"><figcaption>256 px</figcaption></figure>
+          </div>
+        </div>
+      </div>
+      <p class="hinweis">* 16 px zeigt die vereinfachte Fassung. Die 16-px-Fassung liegt genau auf dem Pixelraster (Bausteine 4 px, Fugen 1 px) und bleibt dadurch scharf.</p>
+
+      <h3>16 px, Pixel für Pixel (achtfach vergrössert)</h3>
+      <div class="lupen">
+        <canvas class="lupe dunkel" width="16" height="16" data-src="entwurf-2-bausteine-16.svg" aria-label="16 px vergrössert, dunkel"></canvas>
+        <canvas class="lupe hell" width="16" height="16" data-src="entwurf-2-bausteine-16.svg" aria-label="16 px vergrössert, hell"></canvas>
+      </div>
+
+      <h3>Taskleiste und Explorer</h3>
+      <div class="zwei">
+        <div>
+        <div class="taskleiste dunkel massstab" role="img" aria-label="Nachgestellte Taskleiste, dunkel">
+          <div class="taskleiste-mitte">
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#d9a032"/><path d="M2 9h20v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#f0bd4f"/></svg></span>
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#2f8f83"/><path d="M2 12h20M12 2c3 3 3 17 0 20M12 2c-3 3-3 17 0 20" fill="none" stroke="#bfe6df" stroke-width="1.4"/></svg></span>
+            <span class="tl-app tl-aktiv"><img src="entwurf-2-bausteine.svg" width="24" height="24" alt="Entwurf 2 mit 24 px"></span>
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="2" y="3.5" width="20" height="17" rx="3" fill="#3b3b3b" stroke="#7a7a7a"/><path d="M6.5 9l3 3-3 3M11.5 15.5h5" fill="none" stroke="#f0f0f0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </div>
+          <div class="taskleiste-uhr"><span>14:32</span><span>23.11.2026</span></div>
+        </div>
+          <div class="explorer dunkel massstab" role="img" aria-label="Nachgestellter Explorer, dunkel">
+            <div class="ex-zeile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M1.5 4a1 1 0 0 1 1-1h3.5l1.5 1.5h6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" fill="#e3ad3f"/></svg><span>locales</span></div>
+            <div class="ex-zeile ex-gewaehlt"><img src="entwurf-2-bausteine-16.svg" width="16" height="16" alt="Entwurf 2 mit 16 px"><span>Codium.exe</span></div>
+            <div class="ex-zeile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 1.5h5.2l3.3 3.3v9.7H4z" fill="#f5f5f5" stroke="#8a8a8a"/><path d="M9 1.7V5h3.3" fill="none" stroke="#8a8a8a"/></svg><span>LICENSES.chromium.html</span></div>
+          </div>
+        </div>
+        <div>
+        <div class="taskleiste hell massstab" role="img" aria-label="Nachgestellte Taskleiste, hell">
+          <div class="taskleiste-mitte">
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#d9a032"/><path d="M2 9h20v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#f0bd4f"/></svg></span>
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#2f8f83"/><path d="M2 12h20M12 2c3 3 3 17 0 20M12 2c-3 3-3 17 0 20" fill="none" stroke="#bfe6df" stroke-width="1.4"/></svg></span>
+            <span class="tl-app tl-aktiv"><img src="entwurf-2-bausteine.svg" width="24" height="24" alt="Entwurf 2 mit 24 px"></span>
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="2" y="3.5" width="20" height="17" rx="3" fill="#3b3b3b" stroke="#7a7a7a"/><path d="M6.5 9l3 3-3 3M11.5 15.5h5" fill="none" stroke="#f0f0f0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </div>
+          <div class="taskleiste-uhr"><span>14:32</span><span>23.11.2026</span></div>
+        </div>
+          <div class="explorer hell massstab" role="img" aria-label="Nachgestellter Explorer, hell">
+            <div class="ex-zeile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M1.5 4a1 1 0 0 1 1-1h3.5l1.5 1.5h6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" fill="#e3ad3f"/></svg><span>locales</span></div>
+            <div class="ex-zeile ex-gewaehlt"><img src="entwurf-2-bausteine-16.svg" width="16" height="16" alt="Entwurf 2 mit 16 px"><span>Codium.exe</span></div>
+            <div class="ex-zeile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 1.5h5.2l3.3 3.3v9.7H4z" fill="#f5f5f5" stroke="#8a8a8a"/><path d="M9 1.7V5h3.3" fill="none" stroke="#8a8a8a"/></svg><span>LICENSES.chromium.html</span></div>
+          </div>
+        </div>
+      </div>
+
+      <h3>Willkommensfenster</h3>
+      
+        <div class="fenster" role="img" aria-label="Nachgestelltes Willkommensfenster mit Entwurf 2">
+          <div class="fenster-kopf">
+            <div class="fenster-titel"><img src="entwurf-2-bausteine-16.svg" width="16" height="16" alt="Entwurf 2 mit 16 px"><span>Welcome to Codium</span></div>
+            <div class="fenster-knoepfe">
+              <span class="wk" aria-hidden="true"><svg viewBox="0 0 10 10" width="10" height="10"><path d="M0 5.5h10" stroke="#ced0d6"/></svg></span>
+              <span class="wk" aria-hidden="true"><svg viewBox="0 0 10 10" width="10" height="10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="#ced0d6"/></svg></span>
+              <span class="wk" aria-hidden="true"><svg viewBox="0 0 10 10" width="10" height="10"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9" stroke="#ced0d6"/></svg></span>
+            </div>
+          </div>
+          <div class="fenster-inhalt">
+            <div class="w-kopf">
+              <img src="entwurf-2-bausteine.svg" width="64" height="64" alt="Entwurf 2 mit 64 px">
+              <div>
+                <p class="w-titel">Codium</p>
+                <p class="w-version">Version 0.1.0</p>
+              </div>
+            </div>
+            <div class="w-knoepfe">
+              <span class="w-knopf w-primaer">Open Folder</span>
+              <span class="w-knopf">Clone Repository</span>
+            </div>
+            <div class="w-zuletzt">
+              <p class="w-h2">Recent Projects</p>
+              <div class="w-projekt"><span class="w-name">shop-backend</span><span class="w-pfad">C:\Projekte\shop-backend</span></div>
+              <div class="w-projekt"><span class="w-name">notizen</span><span class="w-pfad">C:\Projekte\notizen</span></div>
+            </div>
+          </div>
+        </div>
+      <p class="hinweis">Gross über dem Titel, wie im Ticket verlangt. Das kleine Logo vor „Welcome to Codium“ in der Kopfzeile ist ein Vorschlag; heute steht dort nur der Titel.</p>
+    </section>
+
+    <section class="entwurf" id="entwurf-3">
+      <h2><span class="nummer">Entwurf 3</span> Klammer</h2>
+      <p class="idee">Eine geschweifte Klammer, die einen Codeblock öffnet, auf einer dunklen Scheibe in den Farben der Oberfläche: das Logo, das am meisten nach dem dunklen Codium aussieht.</p>
+      <p class="farben">Farben: <span class="farbe"><span class="muster" style="background:#548af7"></span>#548af7 Link (--link)</span> <span class="farbe"><span class="muster" style="background:#2b2d30"></span>#2b2d30 Panel (--bg-panel)</span> <span class="farbe"><span class="muster" style="background:#4e5157"></span>#4e5157 Rand (--border)</span></p>
+      <p class="dateien">Dateien: <a href="entwurf-3-klammer.svg">entwurf-3-klammer.svg</a> (ab 24 px) und <a href="entwurf-3-klammer-16.svg">entwurf-3-klammer-16.svg</a> (vereinfachte Fassung für 16 px)</p>
+
+      <h3>Grössen</h3>
+      <div class="zwei">
+        <div class="flaeche dunkel massstab">
+          <p class="flaeche-titel">Dunkel (Hintergrund von Codium)</p>
+          <div class="groessen">
+            <figure><img src="entwurf-3-klammer-16.svg" width="16" height="16" alt="Entwurf 3 mit 16 px"><figcaption>16 px*</figcaption></figure>
+            <figure><img src="entwurf-3-klammer.svg" width="24" height="24" alt="Entwurf 3 mit 24 px"><figcaption>24 px</figcaption></figure>
+            <figure><img src="entwurf-3-klammer.svg" width="32" height="32" alt="Entwurf 3 mit 32 px"><figcaption>32 px</figcaption></figure>
+            <figure><img src="entwurf-3-klammer.svg" width="48" height="48" alt="Entwurf 3 mit 48 px"><figcaption>48 px</figcaption></figure>
+            <figure><img src="entwurf-3-klammer.svg" width="256" height="256" alt="Entwurf 3 mit 256 px"><figcaption>256 px</figcaption></figure>
+          </div>
+        </div>
+        <div class="flaeche hell massstab">
+          <p class="flaeche-titel">Hell (helles Windows)</p>
+          <div class="groessen">
+            <figure><img src="entwurf-3-klammer-16.svg" width="16" height="16" alt="Entwurf 3 mit 16 px"><figcaption>16 px*</figcaption></figure>
+            <figure><img src="entwurf-3-klammer.svg" width="24" height="24" alt="Entwurf 3 mit 24 px"><figcaption>24 px</figcaption></figure>
+            <figure><img src="entwurf-3-klammer.svg" width="32" height="32" alt="Entwurf 3 mit 32 px"><figcaption>32 px</figcaption></figure>
+            <figure><img src="entwurf-3-klammer.svg" width="48" height="48" alt="Entwurf 3 mit 48 px"><figcaption>48 px</figcaption></figure>
+            <figure><img src="entwurf-3-klammer.svg" width="256" height="256" alt="Entwurf 3 mit 256 px"><figcaption>256 px</figcaption></figure>
+          </div>
+        </div>
+      </div>
+      <p class="hinweis">* 16 px zeigt die vereinfachte Fassung. Die 16-px-Fassung hat eine grössere Klammer mit senkrechtem Mittelteil auf ganzen Pixeln.</p>
+
+      <h3>16 px, Pixel für Pixel (achtfach vergrössert)</h3>
+      <div class="lupen">
+        <canvas class="lupe dunkel" width="16" height="16" data-src="entwurf-3-klammer-16.svg" aria-label="16 px vergrössert, dunkel"></canvas>
+        <canvas class="lupe hell" width="16" height="16" data-src="entwurf-3-klammer-16.svg" aria-label="16 px vergrössert, hell"></canvas>
+      </div>
+
+      <h3>Taskleiste und Explorer</h3>
+      <div class="zwei">
+        <div>
+        <div class="taskleiste dunkel massstab" role="img" aria-label="Nachgestellte Taskleiste, dunkel">
+          <div class="taskleiste-mitte">
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#d9a032"/><path d="M2 9h20v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#f0bd4f"/></svg></span>
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#2f8f83"/><path d="M2 12h20M12 2c3 3 3 17 0 20M12 2c-3 3-3 17 0 20" fill="none" stroke="#bfe6df" stroke-width="1.4"/></svg></span>
+            <span class="tl-app tl-aktiv"><img src="entwurf-3-klammer.svg" width="24" height="24" alt="Entwurf 3 mit 24 px"></span>
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="2" y="3.5" width="20" height="17" rx="3" fill="#3b3b3b" stroke="#7a7a7a"/><path d="M6.5 9l3 3-3 3M11.5 15.5h5" fill="none" stroke="#f0f0f0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </div>
+          <div class="taskleiste-uhr"><span>14:32</span><span>23.11.2026</span></div>
+        </div>
+          <div class="explorer dunkel massstab" role="img" aria-label="Nachgestellter Explorer, dunkel">
+            <div class="ex-zeile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M1.5 4a1 1 0 0 1 1-1h3.5l1.5 1.5h6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" fill="#e3ad3f"/></svg><span>locales</span></div>
+            <div class="ex-zeile ex-gewaehlt"><img src="entwurf-3-klammer-16.svg" width="16" height="16" alt="Entwurf 3 mit 16 px"><span>Codium.exe</span></div>
+            <div class="ex-zeile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 1.5h5.2l3.3 3.3v9.7H4z" fill="#f5f5f5" stroke="#8a8a8a"/><path d="M9 1.7V5h3.3" fill="none" stroke="#8a8a8a"/></svg><span>LICENSES.chromium.html</span></div>
+          </div>
+        </div>
+        <div>
+        <div class="taskleiste hell massstab" role="img" aria-label="Nachgestellte Taskleiste, hell">
+          <div class="taskleiste-mitte">
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#d9a032"/><path d="M2 9h20v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#f0bd4f"/></svg></span>
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#2f8f83"/><path d="M2 12h20M12 2c3 3 3 17 0 20M12 2c-3 3-3 17 0 20" fill="none" stroke="#bfe6df" stroke-width="1.4"/></svg></span>
+            <span class="tl-app tl-aktiv"><img src="entwurf-3-klammer.svg" width="24" height="24" alt="Entwurf 3 mit 24 px"></span>
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="2" y="3.5" width="20" height="17" rx="3" fill="#3b3b3b" stroke="#7a7a7a"/><path d="M6.5 9l3 3-3 3M11.5 15.5h5" fill="none" stroke="#f0f0f0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </div>
+          <div class="taskleiste-uhr"><span>14:32</span><span>23.11.2026</span></div>
+        </div>
+          <div class="explorer hell massstab" role="img" aria-label="Nachgestellter Explorer, hell">
+            <div class="ex-zeile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M1.5 4a1 1 0 0 1 1-1h3.5l1.5 1.5h6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" fill="#e3ad3f"/></svg><span>locales</span></div>
+            <div class="ex-zeile ex-gewaehlt"><img src="entwurf-3-klammer-16.svg" width="16" height="16" alt="Entwurf 3 mit 16 px"><span>Codium.exe</span></div>
+            <div class="ex-zeile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 1.5h5.2l3.3 3.3v9.7H4z" fill="#f5f5f5" stroke="#8a8a8a"/><path d="M9 1.7V5h3.3" fill="none" stroke="#8a8a8a"/></svg><span>LICENSES.chromium.html</span></div>
+          </div>
+        </div>
+      </div>
+
+      <h3>Willkommensfenster</h3>
+      
+        <div class="fenster" role="img" aria-label="Nachgestelltes Willkommensfenster mit Entwurf 3">
+          <div class="fenster-kopf">
+            <div class="fenster-titel"><img src="entwurf-3-klammer-16.svg" width="16" height="16" alt="Entwurf 3 mit 16 px"><span>Welcome to Codium</span></div>
+            <div class="fenster-knoepfe">
+              <span class="wk" aria-hidden="true"><svg viewBox="0 0 10 10" width="10" height="10"><path d="M0 5.5h10" stroke="#ced0d6"/></svg></span>
+              <span class="wk" aria-hidden="true"><svg viewBox="0 0 10 10" width="10" height="10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="#ced0d6"/></svg></span>
+              <span class="wk" aria-hidden="true"><svg viewBox="0 0 10 10" width="10" height="10"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9" stroke="#ced0d6"/></svg></span>
+            </div>
+          </div>
+          <div class="fenster-inhalt">
+            <div class="w-kopf">
+              <img src="entwurf-3-klammer.svg" width="64" height="64" alt="Entwurf 3 mit 64 px">
+              <div>
+                <p class="w-titel">Codium</p>
+                <p class="w-version">Version 0.1.0</p>
+              </div>
+            </div>
+            <div class="w-knoepfe">
+              <span class="w-knopf w-primaer">Open Folder</span>
+              <span class="w-knopf">Clone Repository</span>
+            </div>
+            <div class="w-zuletzt">
+              <p class="w-h2">Recent Projects</p>
+              <div class="w-projekt"><span class="w-name">shop-backend</span><span class="w-pfad">C:\Projekte\shop-backend</span></div>
+              <div class="w-projekt"><span class="w-name">notizen</span><span class="w-pfad">C:\Projekte\notizen</span></div>
+            </div>
+          </div>
+        </div>
+      <p class="hinweis">Gross über dem Titel, wie im Ticket verlangt. Das kleine Logo vor „Welcome to Codium“ in der Kopfzeile ist ein Vorschlag; heute steht dort nur der Titel.</p>
+    </section>
+
+    <section class="entwurf" id="entwurf-4">
+      <h2><span class="nummer">Entwurf 4</span> Fisch</h2>
+      <p class="idee">„Cod“ ist englisch der Kabeljau, und <code>&gt;&lt;&gt;</code> ist der Fisch, den man mit Code-Zeichen schreibt: ein verspieltes, sehr gut erkennbares Zeichen.</p>
+      <p class="farben">Farben: <span class="farbe"><span class="muster" style="background:#3574f0"></span>#3574f0 Akzent (--accent)</span></p>
+      <p class="dateien">Dateien: <a href="entwurf-4-fisch.svg">entwurf-4-fisch.svg</a> (ab 24 px) und <a href="entwurf-4-fisch-16.svg">entwurf-4-fisch-16.svg</a> (vereinfachte Fassung für 16 px)</p>
+
+      <h3>Grössen</h3>
+      <div class="zwei">
+        <div class="flaeche dunkel massstab">
+          <p class="flaeche-titel">Dunkel (Hintergrund von Codium)</p>
+          <div class="groessen">
+            <figure><img src="entwurf-4-fisch-16.svg" width="16" height="16" alt="Entwurf 4 mit 16 px"><figcaption>16 px*</figcaption></figure>
+            <figure><img src="entwurf-4-fisch.svg" width="24" height="24" alt="Entwurf 4 mit 24 px"><figcaption>24 px</figcaption></figure>
+            <figure><img src="entwurf-4-fisch.svg" width="32" height="32" alt="Entwurf 4 mit 32 px"><figcaption>32 px</figcaption></figure>
+            <figure><img src="entwurf-4-fisch.svg" width="48" height="48" alt="Entwurf 4 mit 48 px"><figcaption>48 px</figcaption></figure>
+            <figure><img src="entwurf-4-fisch.svg" width="256" height="256" alt="Entwurf 4 mit 256 px"><figcaption>256 px</figcaption></figure>
+          </div>
+        </div>
+        <div class="flaeche hell massstab">
+          <p class="flaeche-titel">Hell (helles Windows)</p>
+          <div class="groessen">
+            <figure><img src="entwurf-4-fisch-16.svg" width="16" height="16" alt="Entwurf 4 mit 16 px"><figcaption>16 px*</figcaption></figure>
+            <figure><img src="entwurf-4-fisch.svg" width="24" height="24" alt="Entwurf 4 mit 24 px"><figcaption>24 px</figcaption></figure>
+            <figure><img src="entwurf-4-fisch.svg" width="32" height="32" alt="Entwurf 4 mit 32 px"><figcaption>32 px</figcaption></figure>
+            <figure><img src="entwurf-4-fisch.svg" width="48" height="48" alt="Entwurf 4 mit 48 px"><figcaption>48 px</figcaption></figure>
+            <figure><img src="entwurf-4-fisch.svg" width="256" height="256" alt="Entwurf 4 mit 256 px"><figcaption>256 px</figcaption></figure>
+          </div>
+        </div>
+      </div>
+      <p class="hinweis">* 16 px zeigt die vereinfachte Fassung. In der 16-px-Fassung ist das Auge eine Lücke von genau zwei mal zwei Pixeln, damit es nicht zuläuft.</p>
+
+      <h3>16 px, Pixel für Pixel (achtfach vergrössert)</h3>
+      <div class="lupen">
+        <canvas class="lupe dunkel" width="16" height="16" data-src="entwurf-4-fisch-16.svg" aria-label="16 px vergrössert, dunkel"></canvas>
+        <canvas class="lupe hell" width="16" height="16" data-src="entwurf-4-fisch-16.svg" aria-label="16 px vergrössert, hell"></canvas>
+      </div>
+
+      <h3>Taskleiste und Explorer</h3>
+      <div class="zwei">
+        <div>
+        <div class="taskleiste dunkel massstab" role="img" aria-label="Nachgestellte Taskleiste, dunkel">
+          <div class="taskleiste-mitte">
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#d9a032"/><path d="M2 9h20v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#f0bd4f"/></svg></span>
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#2f8f83"/><path d="M2 12h20M12 2c3 3 3 17 0 20M12 2c-3 3-3 17 0 20" fill="none" stroke="#bfe6df" stroke-width="1.4"/></svg></span>
+            <span class="tl-app tl-aktiv"><img src="entwurf-4-fisch.svg" width="24" height="24" alt="Entwurf 4 mit 24 px"></span>
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="2" y="3.5" width="20" height="17" rx="3" fill="#3b3b3b" stroke="#7a7a7a"/><path d="M6.5 9l3 3-3 3M11.5 15.5h5" fill="none" stroke="#f0f0f0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </div>
+          <div class="taskleiste-uhr"><span>14:32</span><span>23.11.2026</span></div>
+        </div>
+          <div class="explorer dunkel massstab" role="img" aria-label="Nachgestellter Explorer, dunkel">
+            <div class="ex-zeile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M1.5 4a1 1 0 0 1 1-1h3.5l1.5 1.5h6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" fill="#e3ad3f"/></svg><span>locales</span></div>
+            <div class="ex-zeile ex-gewaehlt"><img src="entwurf-4-fisch-16.svg" width="16" height="16" alt="Entwurf 4 mit 16 px"><span>Codium.exe</span></div>
+            <div class="ex-zeile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 1.5h5.2l3.3 3.3v9.7H4z" fill="#f5f5f5" stroke="#8a8a8a"/><path d="M9 1.7V5h3.3" fill="none" stroke="#8a8a8a"/></svg><span>LICENSES.chromium.html</span></div>
+          </div>
+        </div>
+        <div>
+        <div class="taskleiste hell massstab" role="img" aria-label="Nachgestellte Taskleiste, hell">
+          <div class="taskleiste-mitte">
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#d9a032"/><path d="M2 9h20v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" fill="#f0bd4f"/></svg></span>
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#2f8f83"/><path d="M2 12h20M12 2c3 3 3 17 0 20M12 2c-3 3-3 17 0 20" fill="none" stroke="#bfe6df" stroke-width="1.4"/></svg></span>
+            <span class="tl-app tl-aktiv"><img src="entwurf-4-fisch.svg" width="24" height="24" alt="Entwurf 4 mit 24 px"></span>
+            <span class="tl-app"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="2" y="3.5" width="20" height="17" rx="3" fill="#3b3b3b" stroke="#7a7a7a"/><path d="M6.5 9l3 3-3 3M11.5 15.5h5" fill="none" stroke="#f0f0f0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </div>
+          <div class="taskleiste-uhr"><span>14:32</span><span>23.11.2026</span></div>
+        </div>
+          <div class="explorer hell massstab" role="img" aria-label="Nachgestellter Explorer, hell">
+            <div class="ex-zeile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M1.5 4a1 1 0 0 1 1-1h3.5l1.5 1.5h6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" fill="#e3ad3f"/></svg><span>locales</span></div>
+            <div class="ex-zeile ex-gewaehlt"><img src="entwurf-4-fisch-16.svg" width="16" height="16" alt="Entwurf 4 mit 16 px"><span>Codium.exe</span></div>
+            <div class="ex-zeile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 1.5h5.2l3.3 3.3v9.7H4z" fill="#f5f5f5" stroke="#8a8a8a"/><path d="M9 1.7V5h3.3" fill="none" stroke="#8a8a8a"/></svg><span>LICENSES.chromium.html</span></div>
+          </div>
+        </div>
+      </div>
+
+      <h3>Willkommensfenster</h3>
+      
+        <div class="fenster" role="img" aria-label="Nachgestelltes Willkommensfenster mit Entwurf 4">
+          <div class="fenster-kopf">
+            <div class="fenster-titel"><img src="entwurf-4-fisch-16.svg" width="16" height="16" alt="Entwurf 4 mit 16 px"><span>Welcome to Codium</span></div>
+            <div class="fenster-knoepfe">
+              <span class="wk" aria-hidden="true"><svg viewBox="0 0 10 10" width="10" height="10"><path d="M0 5.5h10" stroke="#ced0d6"/></svg></span>
+              <span class="wk" aria-hidden="true"><svg viewBox="0 0 10 10" width="10" height="10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="#ced0d6"/></svg></span>
+              <span class="wk" aria-hidden="true"><svg viewBox="0 0 10 10" width="10" height="10"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9" stroke="#ced0d6"/></svg></span>
+            </div>
+          </div>
+          <div class="fenster-inhalt">
+            <div class="w-kopf">
+              <img src="entwurf-4-fisch.svg" width="64" height="64" alt="Entwurf 4 mit 64 px">
+              <div>
+                <p class="w-titel">Codium</p>
+                <p class="w-version">Version 0.1.0</p>
+              </div>
+            </div>
+            <div class="w-knoepfe">
+              <span class="w-knopf w-primaer">Open Folder</span>
+              <span class="w-knopf">Clone Repository</span>
+            </div>
+            <div class="w-zuletzt">
+              <p class="w-h2">Recent Projects</p>
+              <div class="w-projekt"><span class="w-name">shop-backend</span><span class="w-pfad">C:\Projekte\shop-backend</span></div>
+              <div class="w-projekt"><span class="w-name">notizen</span><span class="w-pfad">C:\Projekte\notizen</span></div>
+            </div>
+          </div>
+        </div>
+      <p class="hinweis">Gross über dem Titel, wie im Ticket verlangt. Das kleine Logo vor „Welcome to Codium“ in der Kopfzeile ist ein Vorschlag; heute steht dort nur der Titel.</p>
+    </section>
+  </main>
+  <script>
+    // 16 px Pixel für Pixel: das SVG in 16×16 rastern und vergrössert ohne Glättung zeigen.
+    for (const canvas of document.querySelectorAll('canvas.lupe')) {
+      const img = new Image();
+      img.onload = () => canvas.getContext('2d').drawImage(img, 0, 0, 16, 16);
+      img.src = canvas.dataset.src;
+    }
+    // Bei 125 % oder 150 % Skalierung zeigt der Browser 16 CSS-Pixel grösser; der Schalter gleicht das aus.
+    const ratio = window.devicePixelRatio || 1;
+    const schalter = document.getElementById('echte-pixel');
+    if (ratio === 1) {
+      schalter.disabled = true;
+      document.getElementById('schalter-text').textContent =
+        'Die Skalierung ist 100 %: Die Grössen entsprechen bereits Bildschirmpixeln.';
+    } else {
+      document.documentElement.style.setProperty('--zoom', String(1 / ratio));
+      document.getElementById('schalter-text').textContent +=
+        ' – Skalierung jetzt ' + Math.round(ratio * 100) + ' %';
+      schalter.addEventListener('change', () => document.body.classList.toggle('zoom-aktiv', schalter.checked));
+    }
+  </script>
+</body>
+</html>
