@@ -1,0 +1,61 @@
+# 25 – Oberfläche näher an IntelliJ: runde Formen, Branch-Dropdown mit Symbolen
+
+Status: `ready-for-human` · Typ: HITL
+Blockiert durch: –
+User Stories: 24 (dunkel im Stil des neuen IntelliJ), 94–96 (Branch-Menü)
+Spezifikation: „Oberfläche“, „Git“ (Branch-Menü)
+
+Dieses Ticket kam nach Codium 1 dazu, auf Wunsch des Nutzers: Codium soll sich in der Oberfläche stärker an IntelliJ orientieren. Wie Ticket 24 sollte es vor der Abnahme in Ticket 22 erledigt sein.
+
+Typ HITL, weil das Aussehen Geschmackssache ist: Der Agent legt zuerst eine Skizze vor, der Nutzer gibt sie frei oder gibt Rückmeldung, erst dann wird eingebaut. So wurde schon die Symbolleiste entschieden (Präzisierung 37 der Spezifikation).
+
+## Heutiger Stand
+
+- **Branch-Menü** (`src/renderer/git/BranchPopup.tsx`): Ein Klick auf den Branch in der Kopfzeile öffnet ein Suchfenster oben in der Mitte des Fensters, im selben Rahmen wie Ctrl + Shift + N. Es ist kein Dropdown, das am Branch-Knopf hängt.
+- **Aktionen im Branch-Menü:** „Commit…“, „Push…“, „Pull“, „Fetch“ und „New Branch…“ stehen als reine Textzeilen über den Branches, ohne Symbole und ohne Tastenkürzel. Die Branches selbst und ihr Untermenü (Checkout, New Branch from…, Rename…, Delete) haben ebenfalls keine Symbole.
+- **Rundungen:** In `src/renderer/styles/app.css` stehen Radien von 0, 2, 3, 4, 6, 8 und 10 px nebeneinander, jeweils von Hand gesetzt. Es gibt keine gemeinsamen Variablen in `tokens.css`. Auswahlbalken in Listen und Menüs gehen über die ganze Breite und sind eckig.
+
+## Was gebaut wird
+
+- **Skizze (zuerst, dann Rückmeldung des Nutzers):**
+  - Eine Vorschauseite als lokale HTML-Datei, die die App nicht startet. Sie zeigt den heutigen Stand und den Vorschlag nebeneinander: Kopfzeile mit offenem Branch-Dropdown (mit offenem Untermenü), Projektmenü, ein Kontextmenü, einen Dialog, Knöpfe, Eingabefelder, Datei-Tabs, ein Werkzeugfenster mit Baum und Auswahl.
+  - Für die grossen Flächen zeigt sie zwei Varianten: (a) nur die Bedienelemente rund, die Flächen wie heute; (b) zusätzlich Werkzeugfenster und Editor als abgerundete Flächen mit schmalem Abstand dazwischen, wie im neueren IntelliJ-Design „Islands“.
+  - Der Agent wartet auf die Wahl des Nutzers, arbeitet Rückmeldungen ein und legt bei Bedarf eine zweite Runde vor.
+- **Rundungen, einheitlich:**
+  - Radien als Variablen in `src/renderer/styles/tokens.css` (etwa klein für Knöpfe, Eingabefelder, Tabs und Auswahl, mittel für Menüs und Popups, gross für Dialoge und, bei Variante b, für die Flächen). Richtwerte: 4–6 px, 8 px und 10–12 px; die endgültigen Werte folgen der freigegebenen Skizze.
+  - Alle Radien in `app.css` nutzen diese Variablen; feste Werte bleiben nur für Kreise (`50%`) und bewusst eckige Stellen (`0`).
+  - Auswahl und Hover in Listen und Menüs als abgerundeter Balken mit kleinem Abstand zum Rand, wie im neuen IntelliJ: im Projektbaum, in der Änderungsansicht, in Menüs, im Branch-Dropdown, in den Suchfenstern und in der Datenbankliste.
+- **Branch-Menü als echtes Dropdown:**
+  - Es öffnet direkt unter dem Branch-Knopf der Kopfzeile, links bündig mit ihm, wie das Projektmenü, nicht mehr oben in der Mitte. Escape oder ein Klick daneben schliesst es; danach liegt der Fokus wieder auf dem Branch-Knopf.
+  - Oben das Suchfeld; Tippen filtert sofort, wie heute.
+  - Darunter die Aktionen als Zeilen mit Symbol und, wo Codium eines hat, dem Tastenkürzel rechts: „Pull“ (Ctrl + T), „Commit…“ (Ctrl + K), „Push…“ (Ctrl + Shift + K), „New Branch…“. „Fetch“ ist wie in IntelliJ ein Symbolknopf rechts in der Titelzeile des Dropdowns (Tooltip „Fetch“); die Spezifikation verlangt Fetch im Branch-Menü (User Story 95), und das bleibt so erfüllt.
+  - Die Gruppen „Local“ und „Remote“ wie heute, jede Zeile mit Branch-Symbol. Der aktuelle Branch hat ein eigenes, hervorgehobenes Symbol statt des Textes „current“. Voraus und zurück stehen als kleine Pfeile mit Zahl, eingehend und ausgehend farbig unterschieden.
+  - Eine gewählte Branch-Zeile zeigt rechts einen Pfeil (›); ihr Untermenü öffnet rechts daneben, per Maus beim Darüberfahren oder Klick, per Tastatur mit Enter oder Pfeil rechts. Pfeil links schliesst das Untermenü wieder. Die Einträge im Untermenü haben Symbole, wo IntelliJ welche zeigt (etwa Checkout, New Branch from…, Delete); die übrigen behalten den Platz frei, damit die Texte bündig stehen.
+- **Menüs allgemein:**
+  - `src/renderer/popup/Menu.tsx` bekommt ein optionales Symbol pro Eintrag, in einer eigenen, bündigen Spalte.
+  - Im Projektmenü zeigen die zuletzt geöffneten Projekte ihr Farbkürzel, wie in der Kopfzeile und wie in IntelliJ.
+- **Symbole:**
+  - Eigene SVG-Symbole in `src/renderer/icons.tsx`, im Stil der bestehenden (16 px, Linien in der Symbolfarbe, eine Akzentfarbe nur wo sie etwas bedeutet). Sie dürfen sich in der Form an IntelliJ anlehnen, aber keine Dateien von JetBrains übernehmen. Wird doch eine frei lizenzierte Sammlung genutzt, steht ihre Lizenz im Repository.
+  - Die zugänglichen Namen bleiben: „Commit…“, „Push…“, „Pull“, „Fetch“ und „New Branch…“ sind für Screenreader und Tests weiter unter diesem Namen zu finden.
+
+## Akzeptanzkriterien
+
+- [ ] Die Vorschauseite liegt vor, und der Nutzer hat den Vorschlag freigegeben, mit Wahl der Variante für die Flächen (im Abschnitt „Entscheidung“ des Tickets festgehalten, mit der Rückmeldung).
+- [ ] Ein Einheitstest liest `app.css` und prüft, dass alle Radien über die Variablen aus `tokens.css` laufen (ausser `50%` und `0`).
+- [ ] Ein Playwright-Test (im Testmodus) prüft, dass das Branch-Dropdown direkt unter dem Branch-Knopf öffnet: Oberkante knapp unter dessen Unterkante, links bündig.
+- [ ] Ein Playwright-Test prüft, dass die Aktionszeilen „Pull“, „Commit…“, „Push…“ und „New Branch…“ ein Symbol tragen, die Kürzel anzeigen und ausführbar sind, und dass der Knopf „Fetch“ in der Titelzeile fetcht.
+- [ ] Ein Playwright-Test prüft die Bedienung per Tastatur: Pfeile, Enter bzw. Pfeil rechts öffnet das Untermenü, Pfeil links schliesst es, Escape schliesst das Dropdown und gibt den Fokus an den Branch-Knopf zurück.
+- [ ] Die bestehenden Oberflächentests (`test/ui/git.test.ts` und weitere, die Menüs nutzen) laufen angepasst weiter.
+- [ ] Alle Testläufe bleiben grün (`npm test`, `npm run test:slow`, `npm run test:ui`, `npm run test:packaged`).
+
+## Abnahme von Hand
+
+- [ ] Codium wirkt neben IntelliJ stimmig: Rundungen, Auswahlbalken, Menüs und Dialoge fühlen sich vertraut an.
+- [ ] Das Branch-Dropdown bedient sich wie das von IntelliJ, mit Maus und Tastatur.
+- [ ] Die Symbole sind bei 100 % und 150 % Skalierung klar und eindeutig.
+
+## Hinweise
+
+- Bildschirmfotos für die Abnahme entstehen über Playwright im Testmodus (verborgenes Fenster), nicht durch einen Start der App.
+- Die Spielregeln gelten auch hier: Die echte App nur über die Testläufe bzw. `launchCodium` starten, nie direkt; die Vorschauseite ist eine HTML-Datei und braucht die App nicht.
+- Mehr als Rundungen, Menüs und Branch-Dropdown umfasst dieses Ticket nicht. Weitere Angleichungen an IntelliJ, die der Nutzer beim Freigeben der Skizze wünscht, werden eigene Tickets, wenn sie über diesen Rahmen hinausgehen.
