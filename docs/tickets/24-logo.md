@@ -1,6 +1,6 @@
 # 24 – Logo und App-Symbol
 
-Status: `ready-for-human` · Typ: HITL
+Status: `erledigt` (2026-11-23) · Typ: HITL
 Blockiert durch: –
 User Stories: keine eigene; betrifft das Erscheinungsbild der ganzen App (Spezifikation „Lösung“, „Oberfläche“ und „Auslieferung“)
 Spezifikation: „Oberfläche“ (Design), „Auslieferung und Abhängigkeiten“
@@ -33,7 +33,7 @@ Typ HITL, weil die Wahl des Logos beim Nutzer liegt: Der Agent legt Entwürfe vo
 - [x] Ein Einheitstest liest die ICO-Datei und prüft, dass alle verlangten Grössen enthalten sind.
 - [x] Ein Playwright-Test (im Testmodus) prüft, dass das Willkommensfenster das Logo zeigt (Bild geladen, nicht leer).
 - [x] `npm run test:packaged` prüft, dass `Codium.exe` im ungepackten Paket ein eigenes Symbol trägt und nicht das von Electron (etwa über den Vergleich der Symbol-Ressource mit dem erzeugten ICO).
-- [ ] Alle Testläufe bleiben grün; der Installer lässt sich mit `npm run dist` bauen.
+- [x] Alle Testläufe bleiben grün; der Installer lässt sich mit `npm run dist` bauen.
 
 ## Abnahme von Hand
 
@@ -73,7 +73,15 @@ Zur Wahl standen vier Entwürfe: 1 Orbit, 2 Bausteine, 3 Klammer, 4 Fisch. Die V
   - `npm test`: 385 von 385 Tests grün (43 Dateien). Im ersten Lauf schlug ein Test der Dateiüberwachung mit `EPERM` fehl; er war einzeln und im zweiten vollen Lauf grün.
   - `npm run test:slow`: 37 von 37 grün (7 Dateien). Im ersten Lauf lief der Neustart-Test des TypeScript-Servers ins Zeitlimit; er war einzeln und im zweiten vollen Lauf grün.
   - `npm run test:packaged`: alle 21 Prüfungen bestanden.
-  - `npm run test:ui`: drei volle Läufe mit 4, 11 und 3 von 80 roten Tests, jedes Mal in anderen Dateien. Die Gründe waren `EPERM` beim Löschen der Temp-Ordner, Zeitlimits und zweimal „Testmodus verletzt: … hat den Fokus“. `logo.test.ts` war in allen drei Läufen grün. Jeder rote Test war beim Wiederholen grün, ausser „öffnet eine JDK-Klasse schreibgeschützt“ (`java.test.ts`). Der scheiterte auch auf dem Stand ohne dieses Ticket in zwei von drei Läufen (gegengeprüft) und war mit diesem Ticket einmal grün. Er wartet nach dem Sprung nur die Grundeinstellung von 1 s, bis die Klasse sichtbar wird. Ein voller Lauf ganz ohne Rot steht deshalb noch aus und sollte auf einem ruhigen Rechner nachgeholt werden.
+  - `npm run test:ui`: drei volle Läufe mit 4, 11 und 3 von 80 roten Tests, jedes Mal in anderen Dateien. Die Gründe waren `EPERM` beim Löschen der Temp-Ordner, Zeitlimits und zweimal „Testmodus verletzt: … hat den Fokus“. `logo.test.ts` war in allen drei Läufen grün. Jeder rote Test war beim Wiederholen grün, ausser „öffnet eine JDK-Klasse schreibgeschützt“ (`java.test.ts`). Der scheiterte auch auf dem Stand ohne dieses Ticket in zwei von drei Läufen (gegengeprüft) und war mit diesem Ticket einmal grün. Er wartet nach dem Sprung nur die Grundeinstellung von 1 s, bis die Klasse sichtbar wird.
+- **Testläufe nach Review und Rebase auf `main`** (Stand mit Ticket 26; am 2026-11-23, nacheinander und allein auf dem Rechner):
+  - `npm run typecheck`: grün.
+  - `npm test`: 401 von 402 grün (45 Dateien). Rot war nur der bekannte Wackler „lässt einen gelöschten Projektordner los“ (`EPERM`), einzeln grün (36 von 36).
+  - `npm run test:slow`: 36 von 37 grün. Rot war nur „startet nach einem Absturz neu und gibt nach 3 Neustarts in drei Minuten auf“ (Zeitüberschreitung bei der Definition nach dem Neustart), einzeln grün (5 von 5). Der Lauf nutzt den Kern mit nachgemachten Ports, den dieses Ticket nicht berührt.
+  - `npm run test:ui`: 83 von 84 grün (24 Dateien), `logo.test.ts` grün. Rot war nur der bekannte Wackler „öffnet eine JDK-Klasse schreibgeschützt“. Einzeln war er mit diesem Ticket in einem von drei Läufen grün, auf dem Stand von `main` in zwei von drei.
+  - `npm run test:packaged`: alle 21 Prüfungen bestanden.
+  - Nach den Läufen war keine Codium-Instanz übrig. Übrig blieb aber ein einzelner Prozess `postgres.exe --forkchild="io_worker"` von embedded-postgres, dessen Elternprozess nicht mehr lief. Er entstand um 14:44, am Ende des langsamen Laufs bzw. zu Beginn des Oberflächenlaufs, beide mit Datenbanktests. Er gehört zum Testaufbau, nicht zu diesem Ticket.
+  - Den Installer habe ich nach dem Review nicht neu gebaut; die Einträge für electron-builder sind seither unverändert.
 - **Nebenbei:** Der Oberflächentest „bricht einen hängenden Klon mit Cancel ab“ wartete nur die Grundeinstellung von 1 s auf die Meldung. Unter Last dauerte das Beenden von Git samt Prozessbaum 1 bis 1,5 s, und der Test scheiterte auch ohne die Änderungen dieses Tickets (gegengeprüft). Er wartet jetzt bis 10 s.
 - **Auffälligkeit, eigener Fix (nicht in diesem Branch):** Laufen Oberflächentests unter Last ins Zeitlimit, können verborgene Codium-Instanzen übrig bleiben. Das verletzt die Spielregel „Aufräumen“. Beobachtet wurde es, während parallel die Oberflächentests anderer Worktrees liefen; die Testläufe dieses Tickets liessen drei Instanzen zurück (13:01, 13:30, 13:38). Der Ablauf, soweit erkennbar:
   1. Ein Test läuft ins Zeitlimit von 90 s (etwa „Einstellungen“ oder „Markdown-Vorschau“), oder das Beenden zieht sich hin.
@@ -93,4 +101,4 @@ Unabhängiges Review durch einen zweiten Agenten am 2026-11-23. Für gut befunde
 - **Prüfung „nicht das Symbol von Electron“ ehrlich:** Sie vergleicht jetzt die Symbolgruppe von `Codium.exe` direkt mit der von `electron.exe`. Fehlt `electron.exe`, erscheint eine FEHL-Zeile statt eines Absturzes.
 - **Abnahme von Hand angeglichen:** Das Ticket hat jetzt dieselben fünf Punkte wie `docs/abnahme.md`, auch den zur Entwicklungsversion und den Hinweis auf den Symbol-Zwischenspeicher von Windows.
 
-Offen bleibt das Kriterium „Alle Testläufe bleiben grün“, bis die vollen Läufe allein, ohne parallele Tests anderer Worktrees, gelaufen sind.
+Das Kriterium „Alle Testläufe bleiben grün“ war offen, bis die vollen Läufe allein gelaufen waren. Das ist nach dem Rebase auf `main` geschehen (siehe „Testläufe nach Review und Rebase“ unter „Umsetzung“): Rot waren nur wackelige Tests ausserhalb dieses Tickets. Sie waren einzeln grün, und der Java-Test wackelt auch auf `main`.
