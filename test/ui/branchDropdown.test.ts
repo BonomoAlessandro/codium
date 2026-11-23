@@ -7,8 +7,11 @@ import * as path from 'node:path';
 import type { Locator, Page } from 'playwright-core';
 import { describe, expect, it } from 'vitest';
 import { createRepoWithRemote, git } from '../support/git';
-import { launchCodium, prepareAppState } from '../support/launchApp';
+import { launchCodium, prepareAppState, type LaunchedApp } from '../support/launchApp';
 import { useTempDirs } from '../support/tempDir';
+
+/** Wartezeit für Abfragen an die App; die Grundeinstellung von expect.poll (1 s) reicht unter Last nicht. */
+const APP = { timeout: 10_000 };
 
 function branchButton(page: Page, name = 'main'): Locator {
   return page.getByRole('button', { name: `Branch ${name}`, exact: true });
@@ -37,6 +40,13 @@ async function openDropdown(page: Page, firstBranch: string): Promise<Locator> {
   return popup;
 }
 
+/** Wählt per Pfeil runter den Eintrag mit diesem Namen. */
+async function selectByKeyboard(page: Page, popup: Locator, name: string): Promise<void> {
+  const selected = () => popup.locator('[role="option"][aria-selected="true"]').getAttribute('aria-label');
+  for (let i = 0; i < 10 && (await selected()) !== name; i++) await page.keyboard.press('ArrowDown');
+  expect(await selected()).toBe(name);
+}
+
 describe('Branch-Dropdown', () => {
   const tempDir = useTempDirs();
 
@@ -61,6 +71,16 @@ describe('Branch-Dropdown', () => {
       other('push');
     };
     return { ...repo, codium, page, remoteCommit };
+  }
+
+  /** Ändert die Fenstergrösse (bleibt im Testmodus ausserhalb des Bildschirms). */
+  async function resize(codium: LaunchedApp, width: number, height: number): Promise<void> {
+    await codium.app.evaluate(
+      ({ BrowserWindow }, size) => {
+        for (const w of BrowserWindow.getAllWindows()) w.setSize(size.width, size.height);
+      },
+      { width, height },
+    );
   }
 
   it('öffnet direkt unter dem Branch-Knopf; Aktionen mit Symbol und Kürzel, Fetch in der Titelzeile', async () => {
@@ -93,11 +113,13 @@ describe('Branch-Dropdown', () => {
       expect(await popup.getByRole('option', { name: 'main', exact: true }).locator('.icon-head').count()).toBe(1);
       expect(await popup.innerText()).not.toContain('current');
 
-      // „Fetch“ in der Titelzeile holt die neuen Commits des Remotes; die Kopfzeile zeigt sie als eingehend.
+      // „Fetch“ in der Titelzeile holt die neuen Commits des Remotes; die Kopfzeile zeigt sie als eingehend. Der Fokus
+      // liegt danach auf dem Branch-Knopf.
       remoteCommit('fern.txt');
       await popup.getByRole('button', { name: 'Fetch', exact: true }).click();
       await expect.poll(() => page.getByRole('status').filter({ hasText: 'Fetched from all remotes.' }).count(), { timeout: 30_000 }).toBe(1);
       expect(await popup.count()).toBe(0);
+      await expect.poll(() => focusedLabel(page), APP).toBe('Branch main');
       await expect.poll(() => page.locator('.branch-widget .branch-sync-incoming').textContent(), { timeout: 15_000 }).toBe('1');
 
       // „Pull“ holt sie in den Branch.
@@ -113,12 +135,16 @@ describe('Branch-Dropdown', () => {
       await expect.poll(() => page.getByRole('status').filter({ hasText: 'Pushed main to origin/main' }).count(), { timeout: 30_000 }).toBe(1);
       expect(git(path.dirname(remote), {}, '--git-dir', remote, 'rev-parse', 'main')).toBe(run('rev-parse', 'HEAD'));
 
-      // „Commit…“ öffnet die Änderungsansicht, „New Branch…“ den Dialog.
+      // „Commit…“ öffnet die Änderungsansicht, „New Branch…“ den Dialog; nach dessen Abbruch liegt der Fokus wieder auf
+      // dem Branch-Knopf.
       await (await openDropdown(page, 'main')).getByRole('option', { name: 'Commit…', exact: true }).click();
       await page.locator('section[aria-label="Commit"]').waitFor();
       await (await openDropdown(page, 'main')).getByRole('option', { name: 'New Branch…', exact: true }).click();
-      await page.getByRole('dialog', { name: 'Create New Branch' }).waitFor();
+      const dialog = page.getByRole('dialog', { name: 'Create New Branch' });
+      await dialog.waitFor();
       await page.keyboard.press('Escape');
+      await expect.poll(() => dialog.count(), APP).toBe(0);
+      await expect.poll(() => focusedLabel(page), APP).toBe('Branch main');
     } finally {
       await codium.close();
     }
@@ -128,13 +154,12 @@ describe('Branch-Dropdown', () => {
     const { codium, page } = await launch((repo) => repo.run('branch', 'feature'));
     try {
       const popup = await openDropdown(page, 'feature');
+      const search = popup.getByRole('textbox', { name: 'Search branches' });
       expect(await focusedLabel(page)).toBe('Search branches');
 
       // Pfeile wählen; die Aktionen stehen vor den Branches.
-      const selected = () => popup.locator('[role="option"][aria-selected="true"]').getAttribute('aria-label');
-      expect(await selected()).toBe('Pull');
-      for (let i = 0; i < 10 && (await selected()) !== 'feature'; i++) await page.keyboard.press('ArrowDown');
-      expect(await selected()).toBe('feature');
+      expect(await popup.locator('[role="option"][aria-selected="true"]').getAttribute('aria-label')).toBe('Pull');
+      await selectByKeyboard(page, popup, 'feature');
 
       // Enter öffnet das Untermenü rechts neben der Zeile, den ersten Eintrag hervorgehoben.
       await page.keyboard.press('Enter');
@@ -147,33 +172,72 @@ describe('Branch-Dropdown', () => {
 
       // Pfeil links schliesst es, der Fokus ist wieder im Suchfeld; Pfeil rechts öffnet es erneut.
       await page.keyboard.press('ArrowLeft');
-      await expect.poll(() => submenu.count()).toBe(0);
+      await expect.poll(() => submenu.count(), APP).toBe(0);
       expect(await focusedLabel(page)).toBe('Search branches');
       await page.keyboard.press('ArrowRight');
       await submenu.waitFor();
 
       // Escape schliesst erst das Untermenü, dann das Dropdown; der Fokus geht an den Branch-Knopf zurück.
       await page.keyboard.press('Escape');
-      await expect.poll(() => submenu.count()).toBe(0);
+      await expect.poll(() => submenu.count(), APP).toBe(0);
       expect(await popup.count()).toBe(1);
       await page.keyboard.press('Escape');
-      await expect.poll(() => popup.count()).toBe(0);
+      await expect.poll(() => popup.count(), APP).toBe(0);
       expect(await focusedLabel(page)).toBe('Branch main');
       expect(await branchButton(page).getAttribute('aria-expanded')).toBe('false');
 
-      // Mit der Maus: Überfahren öffnet das Untermenü, ein Klick daneben schliesst das Dropdown.
+      // Mit der Maus: Überfahren öffnet das Untermenü, der Fokus bleibt im Suchfeld, Tippen filtert weiter.
       await openDropdown(page, 'feature');
       await popup.getByRole('option', { name: 'feature', exact: true }).hover();
       await submenu.waitFor();
-      await page.locator('.statusbar').click();
-      await expect.poll(() => popup.count()).toBe(0);
-      expect(await submenu.count()).toBe(0);
-      await expect.poll(() => focusedLabel(page)).toBe('Branch main');
+      expect(await focusedLabel(page)).toBe('Search branches');
+      await page.keyboard.type('fea');
+      await expect.poll(() => search.inputValue(), APP).toBe('fea');
+      await expect.poll(() => submenu.count(), APP).toBe(0);
 
-      // Ein zweiter Klick auf den Knopf schliesst es ebenfalls.
+      // Ein getipptes Zeichen im fokussierten Untermenü schliesst es und geht ins Suchfeld.
+      await page.keyboard.press('Enter');
+      await submenu.waitFor();
+      expect(await focusedLabel(page)).toBe('feature');
+      await page.keyboard.type('t');
+      await expect.poll(() => submenu.count(), APP).toBe(0);
+      expect(await search.inputValue()).toBe('feat');
+      expect(await focusedLabel(page)).toBe('Search branches');
+
+      // Ein Klick daneben schliesst das Dropdown, der Fokus geht an den Branch-Knopf.
+      await page.locator('.statusbar').click();
+      await expect.poll(() => popup.count(), APP).toBe(0);
+      await expect.poll(() => focusedLabel(page), APP).toBe('Branch main');
+
+      // Ein zweiter Klick auf den Knopf schliesst es ebenfalls, ein Tastenkürzel der App auch.
       await openDropdown(page, 'feature');
       await branchButton(page).click();
-      await expect.poll(() => popup.count()).toBe(0);
+      await expect.poll(() => popup.count(), APP).toBe(0);
+      await openDropdown(page, 'feature');
+      await page.keyboard.press('Alt+1');
+      await expect.poll(() => popup.count(), APP).toBe(0);
+    } finally {
+      await codium.close();
+    }
+  });
+
+  it('legt das Untermenü bei schmalem Fenster nie über die eigene Zeile', async () => {
+    const { codium, page } = await launch((repo) => repo.run('branch', 'feature-with-a-rather-long-name'));
+    try {
+      await resize(codium, 720, 640);
+      const popup = await openDropdown(page, 'feature-with-a-rather-long-name');
+      await selectByKeyboard(page, popup, 'feature-with-a-rather-long-name');
+      await page.keyboard.press('Enter');
+      const submenu = page.getByRole('menu', { name: 'feature-with-a-rather-long-name', exact: true });
+      await submenu.waitFor();
+      const row = await box(popup.getByRole('option', { name: 'feature-with-a-rather-long-name', exact: true }));
+      const panel = await box(popup);
+      const menu = await box(submenu);
+      const besideRight = menu.x >= row.x + row.width - 4;
+      const besideLeft = menu.x + menu.width <= panel.x + 4;
+      const belowOrAbove = menu.y >= row.y + row.height - 1 || menu.y + menu.height <= row.y + 1;
+      expect(besideRight || besideLeft || belowOrAbove).toBe(true);
+      expect(menu.x + menu.width).toBeLessThanOrEqual(await page.evaluate(() => window.innerWidth));
     } finally {
       await codium.close();
     }

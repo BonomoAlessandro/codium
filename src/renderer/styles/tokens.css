@@ -72,7 +72,7 @@
   --error: #f75464;
 
   /* Git: eingehend (zurück, Pull), ausgehend (voraus, Push), aktueller Branch (wie HEAD im Git-Log) */
-  --git-incoming: #548af7;
-  --git-outgoing: #5fb865;
+  --git-incoming: var(--info);
+  --git-outgoing: var(--success);
   --git-head: #d6b33d;
 }

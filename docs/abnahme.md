@@ -157,6 +157,7 @@ Geprüft wird die installierte App (`release\Codium Setup <version>.exe`), ausse
 - [ ] Werkzeugfenster und Editor als Inseln: Bei normalem und maximiertem Fenster sind die Abstände gleichmässig, und nichts ragt über die runden Ecken hinaus (Editor, Vergleichsansicht, Markdown-Vorschau, Terminal, Git-Log, Datenbank, Tabellen). (25)
 - [ ] Die Griffe zwischen den Inseln lassen sich mit der Maus gut treffen und ziehen. (25)
 - [ ] Das Branch-Dropdown bedient sich wie das von IntelliJ, mit Maus und Tastatur: öffnet unter dem Branch-Knopf, Untermenü rechts daneben beim Überfahren, mit Enter oder Pfeil rechts, Pfeil links und Escape schliessen. (25)
+- [ ] Ein Klick auf die leere Kopfzeile schliesst das Branch-Dropdown. (Unter Windows erreicht ein Klick auf die Zieh-Fläche die Seite womöglich nicht.) (25)
 - [ ] Die Symbole sind bei 100 % und 150 % Skalierung klar und eindeutig. (25)
 
 ## Frischer Rechner bzw. Windows-Benutzer (22)

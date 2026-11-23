@@ -303,7 +303,8 @@ input[type='checkbox']:disabled {
 }
 
 /*
- * Fläche einer Seite mit ihren Werkzeugfenstern; die Trennlinie zum Code-Bereich gehört zu ihrer Breite bzw. Höhe.
+ * Fläche einer Seite mit ihren Werkzeugfenstern; der Abstand zum Code-Bereich (darin der Griff zum Ziehen) gehört zu
+ * ihrer Breite bzw. Höhe.
  * Geschlossene Seiten und nicht aktive Werkzeugfenster bleiben eingehängt und sind nur verborgen.
  */
 .tool-window-side {
@@ -2448,7 +2449,7 @@ input[type='checkbox']:disabled {
 }
 
 .git-log-ref.head {
-  color: #d6b33d;
+  color: var(--git-head);
 }
 
 .git-log-ref.local {

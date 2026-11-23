@@ -350,7 +350,7 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
 - **Werkzeugfenster:**
   - Symbolleisten links und rechts wie im neuen IntelliJ: links oben „Project“ und „Commit“, links in der unteren Gruppe „Terminal“, „Git“ und „Find“, rechts „Database“. Die Symbole der unteren Gruppe öffnen ihr Werkzeugfenster unten.
   - Pro Seite ist höchstens ein Werkzeugfenster sichtbar; ein Klick auf das Symbol des sichtbaren Fensters schliesst es, ein Klick auf ein anderes wechselt.
-  - Grössen per Ziehen an den Trennlinien; Mindest- und Höchstgrössen verhindern, dass der Code-Bereich verschwindet.
+  - Grössen per Ziehen an den Griffen zwischen den Flächen (seit Ticket 25 im Abstand zwischen den Inseln); Mindest- und Höchstgrössen verhindern, dass der Code-Bereich verschwindet.
   - Das untere Werkzeugfenster geht über die ganze Breite zwischen den Symbolleisten.
   - Das Werkzeugfenster „Find“ erscheint in der unteren Gruppe der linken Symbolleiste, sobald es Trefferlisten gibt (abgelegte Projektsuche, Verwendungen über Alt + F7), und verschwindet, wenn der Nutzer alle schliesst. Jede Trefferliste ist ein eigener Reiter.
 - **Rückfragen** (Löschen, Rollback, nicht gemergter Branch, offene Änderungen in der Datenbank) sind Dialoge in der Oberfläche, nicht Dialoge von Windows.
