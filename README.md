@@ -86,6 +86,7 @@ npm start          # bauen + App starten
 npm run dev        # wie start, mit Sourcemaps und unminifiziert, mit Entwicklungsmenü (Ctrl + R, Ctrl + Shift + I)
 npm run typecheck  # TypeScript prüfen
 npm run dist       # Version hochzählen (0.x) und Installer bauen -> release\Codium Setup <version>.exe
+npm run icons      # App-Symbole aus dem Logo neu erzeugen (assets/icons)
 ```
 
 Beim ersten `npm start` lädt Electron sein Programm einmalig herunter.
@@ -93,6 +94,18 @@ Beim ersten `npm start` lädt Electron sein Programm einmalig herunter.
 **Eigener Datenordner:** Unpaketiert (`npm start`, `npm run dev`) verwendet Codium `%APPDATA%\Codium-dev` und berührt
 eine installierte App (`%APPDATA%\Codium`) nicht. Die Einzelinstanz-Sperre hängt am Datenordner: Die
 Entwicklungsversion läuft neben einer installierten Codium, aber nur einmal.
+
+### Logo und App-Symbol
+
+Die Quelle des Logos liegt als SVG in `assets/logo`: `codium.svg` ist die Hauptfassung, `codium-16.svg` eine
+vereinfachte Fassung für kleine Grössen (16 bis 24 px). `npm run icons` (`scripts/icons.mjs`) rastert daraus mit resvg
+das App-Symbol `assets/icons/codium.ico` (16, 20, 24, 32, 40, 48, 64, 96, 128 und 256 px) und PNG-Dateien bis 512 px
+unter `assets/icons/png`; den ICO-Container schreibt `scripts/iconFormat.mjs` selbst. Zweimal ausgeführt entstehen
+byte-gleiche Dateien. Die erzeugten Dateien sind eingecheckt, damit `npm run dist` sie ohne Zwischenschritt findet; nach
+einer Änderung am Logo `npm run icons` ausführen und die Dateien mit committen (ein Test in `npm test` bemerkt
+vergessene). Das ICO tragen `Codium.exe`, Installer, Deinstallierer und die Verknüpfungen (`build` in `package.json`);
+die Fenster setzen es selbst, damit Taskleiste und Alt + Tab es auch unpaketiert zeigen. Das Willkommensfenster zeigt
+`codium.svg`. Die Entwürfe, aus denen das Logo gewählt wurde, liegen unter `docs/entwuerfe/24-logo`.
 
 ### Tests
 
@@ -103,7 +116,7 @@ Vier Testläufe; keiner berührt den Desktop, die echten Einstellungen oder frem
 | `npm test` | Schnelle Tests: der Kern am Vertrag in Node ohne Electron (nachgemachte Ports), Regeln der Oberfläche ohne DOM, Git gegen Temp-Repositories | – |
 | `npm run test:slow` | Langsame Tests: echte Sprachserver (TypeScript, jdtls mit Maven und Gradle), Terminal mit echten Shells, PostgreSQL aus embedded-postgres | JDK 25 und Netz für die Java-Tests (sonst übersprungen) |
 | `npm run test:ui` | Oberflächentests: die gebaute App im Testmodus, gesteuert mit Playwright | – |
-| `npm run test:packaged` | Prüfungen am ungepackten Paket (`release\win-unpacked`): Inhalt, mitgelieferte Programme, Sprachserver im Paket | – |
+| `npm run test:packaged` | Prüfungen am ungepackten Paket (`release\win-unpacked`): Inhalt, App-Symbol der exe, mitgelieferte Programme, Sprachserver im Paket | – |
 
 Alle Tests schirmen ab: Git mit eigener Konfiguration (`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_NOSYSTEM`) und nur gegen
 Temp-Repositories, Maven und Gradle mit eigenen Einstellungen unter `.test-cache`, Datenbanken nur aus embedded-postgres,
@@ -147,8 +160,9 @@ src/
 test/
   support/     Test-Gerüst (nachgemachte Ports, Temp-Ordner, Git, PostgreSQL, Starthilfe für die App)
   main/, renderer/, slow/, ui/   die Testläufe
-scripts/       jdtls holen, Prüfungen am Paket
-docs/          Spezifikation, Tickets, Prüfliste für die Abnahme
+assets/        Logo (SVG-Quelle) und die daraus erzeugten App-Symbole
+scripts/       jdtls holen, App-Symbole erzeugen, Prüfungen am Paket
+docs/          Spezifikation, Tickets, Prüfliste für die Abnahme, Entwürfe
 ```
 
 | Teil | Technik |
@@ -157,7 +171,7 @@ docs/          Spezifikation, Tickets, Prüfliste für die Abnahme
 | Oberfläche | [React](https://react.dev/) mit TypeScript, Monaco, xterm.js |
 | Sprachserver | TypeScript 7 (nativ), typescript-language-server, jdtls mit Lombok |
 | Weiteres | node-pty, ripgrep, node-postgres, markdown-it, DOMPurify, Mermaid |
-| Build | esbuild (Bundling), TypeScript (nur Typecheck), electron-builder (NSIS-Installer) |
+| Build | esbuild (Bundling), TypeScript (nur Typecheck), electron-builder (NSIS-Installer), resvg (App-Symbole) |
 | Tests | Vitest, Playwright, embedded-postgres |
 
 ## Bewusst nicht dabei

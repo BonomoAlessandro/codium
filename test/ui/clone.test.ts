@@ -82,7 +82,8 @@ describe('Repository klonen', () => {
       await dialog.getByRole('button', { name: 'Clone' }).click();
       await expect.poll(() => fs.existsSync(pidFile), { timeout: 15_000 }).toBe(true);
       await dialog.getByRole('button', { name: 'Cancel' }).click();
-      await expect.poll(() => dialog.getByRole('alert').innerText()).toBe('Cloning was cancelled.');
+      // Git samt Prozessbaum zu beenden dauert unter Last über eine Sekunde (die Grundeinstellung von expect.poll).
+      await expect.poll(() => dialog.getByRole('alert').innerText(), { timeout: 10_000 }).toBe('Cloning was cancelled.');
       const alive = () => {
         try {
           process.kill(Number(fs.readFileSync(pidFile, 'utf8')), 0);

@@ -1,7 +1,9 @@
 // Willkommensfenster: zuletzt geöffnete Projekte, „Open Folder“ und „Clone Repository“. Öffnet sich daraus ein Projekt, schliesst der
-// Kern dieses Fenster. Oben eine schlichte Kopfzeile als Zieh-Fläche, rechts die Fensterknöpfe von Windows.
+// Kern dieses Fenster. Oben eine schlichte Kopfzeile als Zieh-Fläche, rechts die Fensterknöpfe von Windows; das Logo
+// steht gross über dem Titel (Ticket 24).
 
 import { useEffect, useState } from 'react';
+import logoUrl from '../../assets/logo/codium.svg';
 import type { AppInfo, CodiumApi } from '../shared/types';
 import { CLONE_WITHOUT_GIT, useCloneDialog, useGitAvailable } from './CloneDialog';
 import { ProgressIndicator } from './ProgressIndicator';
@@ -34,6 +36,8 @@ export function WelcomeScreen({ api, actions, title, work }: WelcomeScreenProps)
       </header>
       <main className="welcome">
         <div className="welcome-header">
+          {/* Schmuck: Der Titel darunter nennt den Namen schon. */}
+          <img className="welcome-logo" src={logoUrl} width={64} height={64} alt="" draggable={false} />
           <h1>Codium</h1>
           <p className="welcome-version">{info ? `Version ${info.version}` : '…'}</p>
         </div>

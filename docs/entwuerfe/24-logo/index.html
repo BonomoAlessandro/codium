@@ -33,6 +33,7 @@
   h3 { margin: 24px 0 8px; font-size: 13px; font-weight: 600; color: var(--text-muted); }
   p { margin: 0 0 8px; max-width: 80ch; }
   .einleitung { color: var(--text); }
+  .gewaehlt { padding: 10px 14px; border-left: 3px solid #5fb865; border-radius: 4px; background: var(--bg-panel); }
   .gedaempft, .hinweis { color: var(--text-muted); font-size: 13px; }
   .nummer {
     padding: 2px 10px;
@@ -174,6 +175,7 @@
 <body>
   <main>
     <h1>Logo-Entwürfe für Codium</h1>
+    <p class="gewaehlt">Entschieden am 2026-11-23: Der Nutzer hat <strong>Entwurf 1 „Orbit“</strong> gewählt. Die Seite bleibt als Beleg der ersten Runde; die Quelle des Logos liegt jetzt in <code>assets/logo</code> (siehe Ticket 24, Abschnitt „Entscheidung“).</p>
     <p class="einleitung">Ticket 24, erste Runde: vier eigenständige Entwürfe. Zur Wahl genügt die Nummer, etwa „Entwurf 2“. Rückmeldungen wie „Entwurf 1, aber ohne Punkt“ oder „Form von 4, Farben von 2“ sind genauso willkommen; dann folgt eine zweite Runde.</p>
     <p class="gedaempft">Alle Entwürfe verwenden flache Farben aus <code>src/renderer/styles/tokens.css</code>, keinen Farbverlauf, kein Quadrat mit Buchstaben (wie bei JetBrains) und keine gefaltete blaue Schleife (wie bei VS Code und VSCodium). Jeder Entwurf hat eine eigene vereinfachte Fassung für 16 px. Die Seite braucht kein Netz und nicht die App.</p>
     <label class="schalter" id="schalter-zeile"><input type="checkbox" id="echte-pixel"> <span id="schalter-text">Skalierung von Windows ausgleichen (Grössen und Taskleisten in echten Bildschirmpixeln)</span></label>

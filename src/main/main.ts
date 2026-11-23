@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { IPC, type EventMessage, type EventName, type RequestMessage, type ResponseMessage } from '../shared/types';
 import { AppCore } from './core/appCore';
 import type { EventSink } from './core/ports';
+import { appIconPath } from './appIcon';
 import { dataFolder } from './dataFolder';
 import { DEV_MENU } from './devMenu';
 import { ElectronFolderPicker, ElectronSecrets, ElectronShellActions } from './electron/otherPorts';
@@ -102,6 +103,7 @@ async function startCore(): Promise<void> {
       windows: new ElectronWindowPort({
         preloadFile: path.join(__dirname, '..', 'preload', 'preload.js'),
         indexFile: path.join(__dirname, '..', 'renderer', 'index.html'),
+        iconFile: appIconPath(app.getAppPath(), app.isPackaged, process.resourcesPath),
         testMode,
         recorder,
       }),

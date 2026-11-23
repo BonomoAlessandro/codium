@@ -8,6 +8,7 @@
   "scripts": {
     "build": "node build.mjs",
     "fetch:java": "node scripts/fetch-java-tools.mjs",
+    "icons": "node scripts/icons.mjs",
     "start": "node build.mjs && electron .",
     "dev": "node build.mjs --dev && electron .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -33,12 +34,15 @@
     ],
     "npmRebuild": false,
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "assets/icons/codium.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "perMachine": false
+      "perMachine": false,
+      "installerIcon": "assets/icons/codium.ico",
+      "uninstallerIcon": "assets/icons/codium.ico"
     },
     "asarUnpack": [
       "node_modules/@vscode/ripgrep-win32-x64/**",
@@ -49,6 +53,10 @@
       {
         "from": "README.md",
         "to": "README.md"
+      },
+      {
+        "from": "assets/icons/codium.ico",
+        "to": "codium.ico"
       },
       {
         "from": "node_modules/@typescript/typescript-win32-x64/lib",
@@ -82,6 +90,7 @@
   },
   "devDependencies": {
     "@fontsource/jetbrains-mono": "^5.3.0",
+    "@resvg/resvg-js": "2.6.2",
     "@types/node": "^26.6.6",
     "@types/pg": "8.23.1",
     "@types/react": "^19.3.0",

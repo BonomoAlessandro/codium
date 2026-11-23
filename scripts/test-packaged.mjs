@@ -6,6 +6,7 @@ import { existsSync, readdirSync, readFileSync, rmdirSync, statSync } from 'node
 import { createRequire } from 'node:module';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { readExeIconGroups, readIco } from './iconFormat.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const unpacked = path.join(root, 'release', 'win-unpacked');
@@ -57,6 +58,36 @@ if (existsSync(exe)) {
   }).trim();
   check(actual === expected, `das Paket startet mit Electron ${expected} (gemeldet: ${actual})`);
 }
+
+// Das eigene Symbol (Ticket 24). Die erste Symbolgruppe einer exe zeigt Windows im Explorer, in der Taskleiste und auf
+// den Verknüpfungen; bei Codium.exe besteht sie genau aus den Bildern von assets/icons/codium.ico, Byte für Byte, und
+// teilt kein Bild mit der Gruppe von electron.exe. Gelesen wird die Ressource aus der Datei, ohne die exe zu starten.
+const icoFile = path.join(root, 'assets', 'icons', 'codium.ico');
+const ownIcons = readIco(readFileSync(icoFile));
+if (existsSync(exe)) {
+  const [group] = readExeIconGroups(exe);
+  const sizes = group ? group.images.map((image) => image.width).join(', ') : 'keine';
+  const sameAsIco =
+    group !== undefined &&
+    group.images.length === ownIcons.length &&
+    ownIcons.every((own) => group.images.some((image) => image.width === own.width && image.data.equals(own.data)));
+  check(sameAsIco, `Codium.exe trägt das eigene Symbol aus assets/icons/codium.ico (Grössen: ${sizes})`);
+  const electronExe = path.join(root, 'node_modules', 'electron', 'dist', 'electron.exe');
+  if (!existsSync(electronExe)) {
+    check(false, `electron.exe zum Vergleich der Symbole fehlt (${electronExe})`);
+  } else {
+    const [electronGroup] = readExeIconGroups(electronExe);
+    check(
+      group !== undefined &&
+        electronGroup !== undefined &&
+        !group.images.some((image) => electronGroup.images.some((theirs) => theirs.data.equals(image.data))),
+      'die Symbolgruppe von Codium.exe enthält kein Bild aus der von electron.exe',
+    );
+  }
+}
+// Die Fenster setzen das Symbol selbst (Taskleiste, Alt + Tab); im Paket liegt es dafür neben dem App-Archiv.
+const windowIcon = path.join(unpacked, 'resources', 'codium.ico');
+check(existsSync(windowIcon) && readFileSync(windowIcon).equals(readFileSync(icoFile)), 'das Symbol für die Fenster liegt ausserhalb des App-Archivs');
 
 // ripgrep liegt ausserhalb des App-Archivs und lässt sich starten (Dateiliste und Suchen, Ticket 08). Der Pfad muss zu
 // src/main/ripgrepPath.ts passen.

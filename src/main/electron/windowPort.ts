@@ -16,6 +16,8 @@ const DEFAULT_SIZE: Record<WindowKind, { width: number; height: number }> = {
 export interface ElectronWindowPortOptions {
   preloadFile: string;
   indexFile: string;
+  /** App-Symbol (ICO) für Taskleiste und Alt + Tab, auch in der Entwicklungsversion. */
+  iconFile: string;
   testMode: TestMode;
   recorder: TestRecorder;
 }
@@ -53,6 +55,7 @@ export class ElectronWindowPort implements WindowPort {
       titleBarStyle: 'hidden',
       titleBarOverlay: { color: PANEL_BACKGROUND, symbolColor: WINDOW_SYMBOL_COLOR, height: HEADER_HEIGHT },
       title: options.title,
+      icon: this.options.iconFile,
       webPreferences: {
         preload: this.options.preloadFile,
         contextIsolation: true,

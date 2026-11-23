@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Logo von Codium, Entwurf „Orbit“ (Ticket 24): offener Ring als C, in der Öffnung ein Punkt wie ein Elektron.
+       Hauptfassung ab 32 px; die kleinen Grössen kommen aus codium-16.svg. Die Symbole in assets/icons erzeugt
+       `npm run icons` aus diesen beiden Dateien. Farben: Design-Variablen accent und success aus src/renderer/styles/tokens.css. -->
+  <title>Codium</title>
+  <path d="M26.993 16.384A11 11 0 1 1 17.531 5.107" fill="none" stroke="#3574f0" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="24.426" cy="8.929" r="3.5" fill="#5fb865"/>
+</svg>

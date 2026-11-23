@@ -61,12 +61,13 @@ await Promise.all([
   build({
     ...browser,
     // React-Oberfläche; JSX wird mit der automatischen Laufzeit von React übersetzt. CSS-Imports (auch die von
-    // Monaco) landen in dist/renderer/renderer.css, Schriften (JetBrains Mono, Monacos Symbole) unter assets/.
+    // Monaco) landen in dist/renderer/renderer.css, Schriften (JetBrains Mono, Monacos Symbole) und Bilder (das Logo
+    // aus assets/logo) unter assets/.
     entryPoints: ['src/renderer/main.tsx'],
     outfile: 'dist/renderer/renderer.js',
     format: 'iife',
     jsx: 'automatic',
-    loader: { '.ttf': 'file', '.woff': 'file', '.woff2': 'file' },
+    loader: { '.ttf': 'file', '.woff': 'file', '.woff2': 'file', '.svg': 'file' },
     assetNames: 'assets/[name]-[hash]',
     plugins: [monacoWithoutLanguageServices],
   }),

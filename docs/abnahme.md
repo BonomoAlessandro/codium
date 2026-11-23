@@ -147,6 +147,11 @@ Geprüft wird die installierte App (`release\Codium Setup <version>.exe`), ausse
 
 ## Nach Codium 1
 
+- [ ] Das Logo gefällt; es wirkt auch mit 16 px in der Taskleiste und im Explorer (`Codium.exe`) noch klar. (24)
+- [ ] Installer und Deinstallierer zeigen das Logo, ebenso die Verknüpfungen im Startmenü und auf dem Desktop. Nach dem Aktualisieren einer bestehenden Installation kann Windows eine Weile noch das alte Symbol aus seinem Zwischenspeicher zeigen; dann nach einer Neuanmeldung nochmals ansehen. (24)
+- [ ] Taskleiste und Alt + Tab zeigen das Logo, bei hellem und dunklem Windows-Design und bei 100 % und 150 % Skalierung. (24)
+- [ ] `npm start`: Auch die Entwicklungsversion zeigt das Logo in Taskleiste und Alt + Tab, nicht das Symbol von Electron. (24)
+- [ ] Das Willkommensfenster sieht mit dem Logo über dem Titel stimmig aus. (24)
 - [ ] Zweimal Shift öffnet „Go to File“ und fühlt sich an wie in IntelliJ: weder zu träge noch löst es beim normalen Tippen (Grossbuchstaben, Shift + Klick, Alt + Shift) versehentlich aus. (26)
 
 ## Frischer Rechner bzw. Windows-Benutzer (22)
