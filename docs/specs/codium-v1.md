@@ -648,7 +648,7 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
 Für Teststelle 2 und jede automatische Prüfung der echten App gibt es einen Testmodus, der den Desktop des Nutzers unberührt lässt (Vorbild THub):
 
 - Eine Variable schaltet den Testmodus ein:
-  - Fenster öffnen ausserhalb des Bildschirms, ohne Aktivierung und ohne Taskleisten-Eintrag, und speichern ihre Lage nicht.
+  - Fenster öffnen ausserhalb des Bildschirms, nicht aktivierbar (Windows bringt sie nie in den Vordergrund) und ohne Taskleisten-Eintrag, und speichern ihre Lage nicht.
   - „Nach vorne holen“, „Im Explorer zeigen“, das Öffnen externer Programme und die echte Zwischenablage werden nicht ausgeführt, sondern aufgezeichnet. Der Test kann die Aufzeichnung abfragen.
   - Der Papierkorb ist ein Ordner im Test-Datenordner.
 - Eine zweite Variable ersetzt die Wurzel des Datenordners (eigene Daten, eigene Einzelinstanz-Sperre).

@@ -158,13 +158,15 @@ export async function launchCodium(options: LaunchOptions): Promise<LaunchedApp>
 }
 
 /**
- * Prüft alle offenen Fenster: Keines liegt auf einem Bildschirm, keines hat den Fokus. Windows setzt die Lage nicht
- * genau auf die verlangten -32000, deshalb wird gegen alle Bildschirme geprüft.
+ * Prüft alle offenen Fenster: Keines liegt auf einem Bildschirm, keines ist aktivierbar, keines hat den Fokus. Dazu
+ * jede Aktivierung durch Windows, die der Testmodus seit dem Start aufgezeichnet hat, auch an inzwischen
+ * geschlossenen Fenstern. Windows setzt die Lage nicht genau auf die verlangten -32000, deshalb wird gegen alle
+ * Bildschirme geprüft.
  */
 async function testModeViolations(app: ElectronApplication): Promise<string[]> {
   return app.evaluate(({ BrowserWindow, screen }) => {
     const displays = screen.getAllDisplays().map((d) => d.bounds);
-    return BrowserWindow.getAllWindows()
+    const open = BrowserWindow.getAllWindows()
       .filter((w) => !w.isDestroyed())
       .flatMap((w) => {
         const b = w.getBounds();
@@ -173,9 +175,15 @@ async function testModeViolations(app: ElectronApplication): Promise<string[]> {
         );
         const problems: string[] = [];
         if (onSomeDisplay) problems.push(`„${w.getTitle()}“ liegt auf einem Bildschirm (${JSON.stringify(b)})`);
+        if (w.isFocusable()) problems.push(`„${w.getTitle()}“ ist aktivierbar`);
         if (w.isFocused()) problems.push(`„${w.getTitle()}“ hat den Fokus`);
         return problems;
       });
+    const events = (globalThis as { __codiumTest?: { events: Array<{ kind: string; detail?: unknown }> } }).__codiumTest?.events ?? [];
+    const activated = events
+      .filter((e) => e.kind === 'window-activated')
+      .map((e) => `„${(e.detail as { title?: string } | undefined)?.title ?? '?'}“ wurde von Windows aktiviert`);
+    return [...open, ...activated];
   });
 }
 

@@ -1,9 +1,12 @@
 // Teststelle 2: die echte App in Electron, gesteuert mit Playwright im Testmodus.
 
+import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { launchCodium } from '../support/launchApp';
+import { WM_ACTIVATE } from '../../src/main/testMode';
+import { launchCodium, prepareAppState } from '../support/launchApp';
+import { extendedWindowStyle, WS_EX_NOACTIVATE } from '../support/nativeWindow';
 import { useTempDirs } from '../support/tempDir';
 
 describe('App im Testmodus', () => {
@@ -43,6 +46,59 @@ describe('App im Testmodus', () => {
 
       const recorded = await codium.recorded();
       expect(recorded.map((e) => e.kind)).toContain('window-opened');
+    } finally {
+      await codium.close();
+    }
+  });
+
+  it('öffnet Fenster, die Windows nicht aktivieren kann; Fokus und Eingaben in der Seite gehen trotzdem (Ticket 27)', async () => {
+    // Ein aktivierbares Testfenster nähme Windows als nächstes Vordergrundfenster, wenn der Nutzer sein eigenes
+    // schliesst oder minimiert; seine Eingaben landeten dann im unsichtbaren Fenster.
+    const alpha = path.join(tempDir(), 'Alpha');
+    fs.mkdirSync(alpha, { recursive: true });
+    fs.writeFileSync(path.join(alpha, 'notes.txt'), 'hello\n');
+    const dataRoot = tempDir();
+    prepareAppState(dataRoot, { openProjects: [alpha], recentProjects: [alpha] });
+    const codium = await launchCodium({ dataRoot });
+    try {
+      const page = await codium.page('Alpha – Codium');
+      const windows = await codium.app.evaluate(
+        ({ BrowserWindow }, message) =>
+          BrowserWindow.getAllWindows().map((w) => ({
+            hwnd: w.getNativeWindowHandle().readBigUInt64LE(0).toString(),
+            focusable: w.isFocusable(),
+            activationHooked: w.isWindowMessageHooked(message),
+          })),
+        WM_ACTIVATE,
+      );
+      expect(windows).toHaveLength(1);
+      expect(windows[0].focusable).toBe(false);
+      // So sieht Windows das Fenster (nur gelesen): WS_EX_NOACTIVATE ist gesetzt.
+      expect(extendedWindowStyle(BigInt(windows[0].hwnd)) & WS_EX_NOACTIVATE).toBe(WS_EX_NOACTIVATE);
+      // Eine Aktivierung trotz allem käme in die Aufzeichnung, und `close()` meldete sie.
+      expect(windows[0].activationHooked).toBe(true);
+
+      // In der Seite geht Fokus weiter: Fokus-Ereignisse, :focus und Tastatureingaben im Editor.
+      await page.evaluate(() => {
+        const seen: string[] = [];
+        (window as unknown as { focusEvents: string[] }).focusEvents = seen;
+        document.addEventListener('focusin', (event) => seen.push((event.target as Element).closest('.editor-host') ? 'editor' : 'other'));
+      });
+      const tree = page.getByRole('tree', { name: 'Project Files' });
+      await tree.getByRole('treeitem', { name: 'notes.txt', exact: true }).dblclick({ timeout: 15_000 });
+      await page.locator('.editor-host .view-lines').click({ timeout: 15_000 });
+      await expect.poll(() => page.locator('.editor-host :focus').count(), { timeout: 10_000 }).toBe(1);
+      expect(await page.evaluate(() => document.hasFocus())).toBe(true);
+      expect(await page.evaluate(() => (window as unknown as { focusEvents: string[] }).focusEvents)).toContain('editor');
+      await page.keyboard.press('Control+End');
+      await page.keyboard.type('fokus');
+      await expect
+        .poll(() => page.locator('.editor-host .view-lines').innerText(), { timeout: 10_000 })
+        .toMatch(/fokus/);
+
+      // Windows hat das Fenster dabei nie aktiviert.
+      expect(await codium.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some((w) => w.isFocused()))).toBe(false);
+      expect((await codium.recorded()).filter((e) => e.kind === 'window-activated')).toEqual([]);
     } finally {
       await codium.close();
     }

@@ -22,7 +22,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 - **Der Desktop des Nutzers ist tabu:** Agenten senden keine echten Maus- oder Tastatureingaben, holen keine Fenster in den Vordergrund und ändern keine Systemeinstellungen, auch nicht vorübergehend. Geprüft wird über Tests, über Playwright mit den Entwicklerwerkzeugen der App (Chrome DevTools Protocol) und über Screenshots der eigenen Seite. Was sich nur mit echter Bedienung prüfen lässt, kommt in die Prüfliste „Abnahme von Hand“.
 - **Testmodus der App** (eingeführt in Ticket 01): Für jede Prüfung der echten App (`npm start`, `electron .`, Playwright oder die gebaute `Codium.exe`) mindestens `CODIUM_TEST_HIDDEN=1` und `CODIUM_TEST_DATA_DIR=<Temp-Ordner>` setzen. Ohne beide die App nie starten.
   - `CODIUM_TEST_HIDDEN=1`:
-    - Fenster öffnen ausserhalb des Bildschirms, ohne Aktivierung und ohne Taskleisten-Eintrag, und speichern ihre Lage nicht.
+    - Fenster öffnen ausserhalb des Bildschirms, nicht aktivierbar (Windows bringt sie nie in den Vordergrund) und ohne Taskleisten-Eintrag, und speichern ihre Lage nicht.
     - „Nach vorne holen“, „Open in Explorer“, das Öffnen externer Programme und die Zwischenablage werden nicht ausgeführt, sondern im Hauptprozess aufgezeichnet. Playwright liest die Aufzeichnung über die Auswertung im Hauptprozess.
     - Der Papierkorb ist ein Ordner im Test-Datenordner.
   - `CODIUM_TEST_DATA_DIR` ersetzt `%APPDATA%` als Wurzel des Datenordners (eigene Daten, eigene Einzelinstanz-Sperre). Ein umgeleitetes `APPDATA` allein genügt nicht.

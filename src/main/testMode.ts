@@ -1,6 +1,6 @@
 // Testmodus der echten App für automatische Prüfungen (Agenten, Playwright). Lädt nie Electron.
 //
-// - CODIUM_TEST_HIDDEN=1: Fenster ausserhalb des Bildschirms, ohne Aktivierung und ohne Taskleisten-Eintrag;
+// - CODIUM_TEST_HIDDEN=1: Fenster ausserhalb des Bildschirms, nicht aktivierbar und ohne Taskleisten-Eintrag;
 //   „nach vorne holen“, Explorer und Zwischenablage werden nicht ausgeführt, sondern aufgezeichnet; der
 //   Papierkorb ist ein Ordner im Datenordner.
 // - CODIUM_TEST_DATA_DIR: ersetzt %APPDATA% als Wurzel des Datenordners (eigene Daten, eigene Einzelinstanz).
@@ -53,6 +53,17 @@ export class TestRecorder {
 
 /** Name der Eigenschaft auf `globalThis`, unter der die Aufzeichnung liegt. */
 export const TEST_RECORDER_GLOBAL = '__codiumTest';
+
+/** Windows-Nachricht, mit der ein Fenster erfährt, dass es aktiviert oder deaktiviert wird. */
+export const WM_ACTIVATE = 0x0006;
+
+/**
+ * Ob eine WM_ACTIVATE-Nachricht eine Aktivierung meldet: Das untere Wort von wParam ist WA_ACTIVE (1) oder
+ * WA_CLICKACTIVE (2), bei einer Deaktivierung WA_INACTIVE (0). wParam kommt von Electron als Puffer in Zeigergrösse.
+ */
+export function isActivation(wParam: Buffer): boolean {
+  return wParam.length >= 2 && wParam.readUInt16LE(0) !== 0;
+}
 
 /**
  * Eingriffe für Oberflächentests, nur im Testmodus unter `globalThis.__codiumTestHooks`. Sie spielen die Seite des

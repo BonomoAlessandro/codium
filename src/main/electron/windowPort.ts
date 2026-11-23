@@ -1,11 +1,11 @@
-// Echter Port „Fenster“ mit Electron. Im Testmodus öffnen Fenster ausserhalb des Bildschirms, ohne
-// Aktivierung und ohne Taskleisten-Eintrag; „nach vorne holen“ wird nur aufgezeichnet, und Fenster melden
-// keine Lage zum Speichern.
+// Echter Port „Fenster“ mit Electron. Im Testmodus öffnen Fenster ausserhalb des Bildschirms, nicht aktivierbar
+// und ohne Taskleisten-Eintrag; „nach vorne holen“ wird nur aufgezeichnet, und Fenster melden keine Lage zum
+// Speichern.
 
 import { app, BrowserWindow, screen } from 'electron';
 import { HEADER_HEIGHT, PANEL_BACKGROUND, WINDOW_BACKGROUND, WINDOW_SYMBOL_COLOR } from '../../shared/theme';
 import type { DisplayInfo, WindowKind, WindowOpenOptions, WindowPlacement, WindowPort } from '../core/ports';
-import type { TestMode, TestRecorder } from '../testMode';
+import { isActivation, WM_ACTIVATE, type TestMode, type TestRecorder } from '../testMode';
 
 /** Grösse eines Fensters ohne gespeicherte Lage; es öffnet dann zentriert auf dem Hauptbildschirm. */
 const DEFAULT_SIZE: Record<WindowKind, { width: number; height: number }> = {
@@ -42,8 +42,12 @@ export class ElectronWindowPort implements WindowPort {
     const hidden = this.options.testMode.hidden;
     const win = new BrowserWindow({
       ...(options.placement?.bounds ?? DEFAULT_SIZE[options.kind]),
-      // Testmodus: ausserhalb des Bildschirms und ohne Taskleisten-Eintrag.
-      ...(hidden ? { x: -32000, y: -32000, skipTaskbar: true } : {}),
+      // Testmodus: ausserhalb des Bildschirms, ohne Taskleisten-Eintrag und nicht aktivierbar. Ein neues Fenster liegt
+      // in der Z-Reihenfolge gleich unter dem Vordergrundfenster; schliesst oder minimiert der Nutzer dieses, aktiviert
+      // Windows das nächste aktivierbare Fenster, also das unsichtbare Testfenster, und Eingaben des Nutzers landen
+      // dort. `focusable: false` setzt WS_EX_NOACTIVATE: Windows aktiviert das Fenster dann weder so noch über
+      // Alt + Tab. Fokus in der Seite geht für Playwright weiter (es emuliert ihn über die Entwicklerwerkzeuge).
+      ...(hidden ? { x: -32000, y: -32000, skipTaskbar: true, focusable: false } : {}),
       minWidth: 720,
       minHeight: 400,
       show: false,
@@ -81,6 +85,14 @@ export class ElectronWindowPort implements WindowPort {
           this.options.recorder.record('console-message', { windowId: id, level: event.level, message: event.message, source: event.sourceId });
         }
       });
+      // Jede Aktivierung durch Windows landet in der Aufzeichnung; die Starthilfe der Tests meldet sie als Verletzung.
+      // `isFocused()` allein genügt dafür nicht mehr: Es fragt die Aktivierung in Chromium ab, und Chromium führt ein
+      // nicht aktivierbares Fenster nie als aktiv, auch wenn Windows es doch aktivieren sollte.
+      if (process.platform === 'win32') {
+        win.hookWindowMessage(WM_ACTIVATE, (wParam) => {
+          if (isActivation(wParam)) this.options.recorder.record('window-activated', { windowId: id, title: win.isDestroyed() ? '' : win.getTitle() });
+        });
+      }
     }
     // Den Titel bestimmt der Kern („Projektname – Codium“), nicht das <title> der Seite.
     win.on('page-title-updated', (event) => event.preventDefault());
