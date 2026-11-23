@@ -6,7 +6,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 
 - **AFK** (Status `ready-for-agent`): Ein Agent setzt das Ticket allein um.
   - Er erfüllt die **„Akzeptanzkriterien“**, die alle automatisch oder am Code prüfbar sind, und liefert einen lauffähigen Stand (`npm start`, bei Bedarf ein gebautes Paket).
-  - Für den Abschnitt **„Abnahme von Hand“** liefert er eine kurze Prüfliste. Die Abnahme machst du **gesammelt am Schluss** (Ticket 22), nicht nach jedem Ticket.
+  - Für den Abschnitt **„Abnahme von Hand“** liefert er eine kurze Prüfliste. Die Abnahme machst du selbst, wenn es passt, nicht nach jedem Ticket; Abweichungen erfasst du als neue Tickets. (Für Codium 1 war das Ticket 22, abgeschlossen am 2026-11-23.)
   - Agenten installieren den Installer nicht über eine bestehende Codium-Installation. Zum Prüfen dient `npm start` mit eigenem Entwicklungs-Datenordner bzw. das ungepackte Paket (`release/win-unpacked`).
 - **HITL** (Status `ready-for-human`): Das Ticket braucht dich laufend, zum Beispiel für Rückmeldungen.
 - **Ablauf pro Ticket:**
@@ -14,7 +14,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
   2. **Umsetzen**, bis die Akzeptanzkriterien erfüllt und alle Testläufe grün sind.
   3. **Review durch einen weiteren Agenten:** Ein zweiter Agent, der an der Umsetzung nicht beteiligt war, prüft die Änderungen des Branches gegen Ticket, Spezifikation und diese Spielregeln. Er bekommt Ticket und Branch, nicht die Einschätzung des umsetzenden Agenten, damit sein Blick unabhängig bleibt.
   4. **Befunde gemeinsam einarbeiten:** Der umsetzende Agent (Entwickler) und der Review-Agent gehen die Befunde zusammen durch und arbeiten ein, was sinnvoll ist. Im Ticket hält ein Abschnitt „Review“ kurz fest, was eingearbeitet wurde und welche Befunde mit welcher Begründung verworfen wurden.
-  5. **Abschluss:** Die erfüllten Akzeptanzkriterien im Ticket abhaken; die Punkte unter „Abnahme von Hand“ bleiben offen bis zur gesammelten Abnahme in Ticket 22. Status im Ticket auf `erledigt` mit Datum setzen, ebenso den Stand in der Übersicht unten. Die Prüfliste „Abnahme von Hand“ aktualisieren, falls sich etwas ergeben hat. Danach den Branch nach `main` mergen; die Testläufe sind auch nach dem Merge grün.
+  5. **Abschluss:** Die erfüllten Akzeptanzkriterien im Ticket abhaken; die Punkte unter „Abnahme von Hand“ bleiben offen, bis der Nutzer sie prüft. Status im Ticket auf `erledigt` mit Datum setzen, ebenso den Stand in der Übersicht unten. Die Prüfliste „Abnahme von Hand“ aktualisieren, falls sich etwas ergeben hat. Danach den Branch nach `main` mergen; die Testläufe sind auch nach dem Merge grün.
   - **Wann ein Branch:** Nur die Umsetzung von Features und Fixes läuft auf einem eigenen Branch. Neue Tickets, Spezifikationen und andere Definitionen kommen direkt auf `main`.
   - **Alles bleibt lokal:** Ticket-Branches werden nicht gepusht, und es gibt keine Pull Requests. Gemergt wird lokal nach `main`. Gepusht wird nur, wenn der Nutzer es ausdrücklich verlangt.
   - **Branches löschen:** Ein Branch wird erst gelöscht, wenn er vollständig nach `main` gemergt ist (alle seine Commits sind in `main` enthalten) oder wenn der Nutzer es ausdrücklich sagt.
@@ -64,7 +64,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 
 ## Übersicht
 
-Stand 2026-11-22: Tickets 01 bis 21 und 23 erledigt, Ticket 22 wartet auf die Abnahme von Hand ([Prüfliste](../abnahme.md)). Offene Punkte, Entscheide und bekannte Grenzen: [offene-punkte.md](../offene-punkte.md).
+Stand 2026-11-23: Codium 1 ist abgeschlossen, Tickets 01 bis 23 erledigt. Die Abnahme von Hand macht der Nutzer im Alltag ([Prüfliste](../abnahme.md)); Abweichungen werden neue Tickets. Offen sind die später dazugekommenen Tickets 24 bis 26. Offene Punkte, Entscheide und bekannte Grenzen: [offene-punkte.md](../offene-punkte.md).
 
 | Nr. | Ticket | Typ | Blockiert durch | Etappe | Stand |
 |---|---|---|---|---|---|
@@ -89,7 +89,7 @@ Stand 2026-11-22: Tickets 01 bis 21 und 23 erledigt, Ticket 22 wartet auf die Ab
 | 19 | [Git-Log mit Graph](19-git-log.md) | AFK | 17 | 5 | erledigt |
 | 20 | [Datenbank: Verbindungen und Baum](20-datenbank-verbindungen.md) | AFK | 03 | 6 | erledigt |
 | 21 | [Datenbank: Tabelleninhalt und Bearbeiten](21-datenbank-tabellen.md) | AFK | 05, 20 | 6 | erledigt |
-| 22 | [README und Abnahme auf einem frischen Rechner](22-abschluss.md) | HITL | alle | – | offen |
+| 22 | [README und Abnahme auf einem frischen Rechner](22-abschluss.md) | HITL | alle | – | erledigt |
 | 23 | [Markdown-Vorschau](23-markdown-vorschau.md) | AFK | 05 | 1 | erledigt |
 | 24 | [Logo und App-Symbol](24-logo.md) | HITL | – | – | offen |
 | 25 | [Oberfläche näher an IntelliJ: runde Formen, Branch-Dropdown mit Symbolen](25-intellij-oberflaeche.md) | HITL | – | – | offen |
@@ -133,12 +133,12 @@ flowchart LR
   T21 --> T22
   T05 --> T23[23 Markdown-Vorschau]
   T23 --> T22
-  T24[24 Logo] --> T22
-  T25[25 IntelliJ-Oberfläche] --> T22
-  T26[26 Zweimal Shift] --> T22
+  T24[24 Logo]
+  T25[25 IntelliJ-Oberfläche]
+  T26[26 Zweimal Shift]
 ```
 
-**Reihenfolge:** nach Etappen, also 01 bis 10 und 23 (gleich nach 05, weil Markdown-Dateien im Alltag schon jetzt wichtig sind), dann 11, dann 12 bis 14, dann 15 bis 18, dann 19, dann 20 und 21, zuletzt 22. Ticket 24 (Logo) kam nach Codium 1 dazu und sollte vor der Abnahme in 22 erledigt sein, damit der geprüfte Installer das Logo trägt. Ebenso Ticket 25 (Oberfläche näher an IntelliJ), damit die Abnahme schon das neue Aussehen prüft. Ticket 26 (zweimal Shift für die Dateisuche) ebenso.
+**Reihenfolge:** nach Etappen, also 01 bis 10 und 23 (gleich nach 05, weil Markdown-Dateien im Alltag schon jetzt wichtig sind), dann 11, dann 12 bis 14, dann 15 bis 18, dann 19, dann 20 und 21, zuletzt 22. Die Tickets 24 (Logo), 25 (Oberfläche näher an IntelliJ) und 26 (zweimal Shift für die Dateisuche) kamen nach Codium 1 dazu; sie hängen nicht voneinander ab.
 
 **Parallel möglich**, wenn es schneller gehen soll:
 - 06, 07, 08, 09 und 23 nach 05

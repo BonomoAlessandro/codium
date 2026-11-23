@@ -5,7 +5,7 @@ Blockiert durch: –
 User Stories: 24 (dunkel im Stil des neuen IntelliJ), 94–96 (Branch-Menü)
 Spezifikation: „Oberfläche“, „Git“ (Branch-Menü)
 
-Dieses Ticket kam nach Codium 1 dazu, auf Wunsch des Nutzers: Codium soll sich in der Oberfläche stärker an IntelliJ orientieren. Wie Ticket 24 sollte es vor der Abnahme in Ticket 22 erledigt sein.
+Dieses Ticket kam nach Codium 1 dazu, auf Wunsch des Nutzers: Codium soll sich in der Oberfläche stärker an IntelliJ orientieren.
 
 Typ HITL, weil das Aussehen Geschmackssache ist: Der Agent legt zuerst eine Skizze vor, der Nutzer gibt sie frei oder gibt Rückmeldung, erst dann wird eingebaut. So wurde schon die Symbolleiste entschieden (Präzisierung 37 der Spezifikation).
 

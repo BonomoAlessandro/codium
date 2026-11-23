@@ -5,7 +5,7 @@ Blockiert durch: –
 User Stories: keine eigene; betrifft das Erscheinungsbild der ganzen App (Spezifikation „Lösung“, „Oberfläche“ und „Auslieferung“)
 Spezifikation: „Oberfläche“ (Design), „Auslieferung und Abhängigkeiten“
 
-Dieses Ticket kam nach Codium 1 dazu. Heute zeigen Installer, `Codium.exe`, Taskleiste und Fenster das Standardsymbol von Electron. Es sollte vor der Abnahme in Ticket 22 erledigt sein, damit der geprüfte Installer schon das Logo trägt.
+Dieses Ticket kam nach Codium 1 dazu. Heute zeigen Installer, `Codium.exe`, Taskleiste und Fenster das Standardsymbol von Electron.
 
 Typ HITL, weil die Wahl des Logos beim Nutzer liegt: Der Agent legt Entwürfe vor, der Nutzer wählt aus oder gibt Rückmeldung, erst dann wird eingebaut.
 

@@ -1,6 +1,6 @@
 # 22 – README und Abnahme auf einem frischen Rechner
 
-Status: `ready-for-human` · Typ: HITL
+Status: `erledigt` (2026-11-23) · Typ: HITL
 Blockiert durch: alle anderen Tickets
 User Stories: 179–181, sowie alle als Abnahme
 Spezifikation: „Auslieferung und Abhängigkeiten“, „Weitere Hinweise“
@@ -41,3 +41,7 @@ Spezifikation: „Auslieferung und Abhängigkeiten“, „Weitere Hinweise“
 - `docs/abnahme.md` per Skript aus den Abschnitten „Abnahme von Hand“ erzeugt (96 Punkte aus den Tickets 01 bis 21 und 23, nach Bereichen, mit Herkunft) und um die Prüfung auf dem frischen Rechner ergänzt.
 - Installer gebaut: `releaseCodium Setup 0.1.0.exe` (rund 189 MB, nicht signiert, noch mit dem Standard-Symbol von Electron); die Prüfungen am Paket bestehen.
 - Offen ist die Abnahme von Hand durch den Nutzer.
+
+## Entscheidung (Nutzer, 2026-11-23)
+
+Der Nutzer schliesst das Ticket ab, ohne die Prüfliste vorher gesammelt durchzuklicken. Er prüft Codium im Alltag und erfasst Abweichungen als neue Tickets. Die Punkte unter „Abnahme von Hand“ oben und in `docs/abnahme.md` bleiben deshalb unabgehakt; sie dienen weiter als Prüfliste.
