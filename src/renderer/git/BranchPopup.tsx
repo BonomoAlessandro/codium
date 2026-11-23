@@ -290,7 +290,7 @@ export function BranchPopup({ api, state, actions, anchor, onClose }: BranchPopu
           }}
         />
       </label>
-      <div ref={listRef} className="branch-dropdown-list" role="listbox" aria-label="Branches">
+      <div ref={listRef} className="branch-dropdown-list" role="listbox" aria-label="Branches" onMouseLeave={cancelHover}>
         {error && <p className="branch-dropdown-empty">{error}</p>}
         {!error && branches && selectable.length === 0 && <p className="branch-dropdown-empty">No matching branches</p>}
         {rows.map((row, i) => {

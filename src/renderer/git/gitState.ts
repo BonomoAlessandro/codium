@@ -26,11 +26,12 @@ export function useGitState(api: CodiumApi): GitState | null {
   return state;
 }
 
-/** Text der Kopfzeile: Branch bzw. kurzer Hash, dazu ↑n ↓m gegenüber dem Upstream. */
-export function branchLabel(state: GitState): { name: string; sync: string } {
-  const name = state.branch ?? state.detached ?? 'No commits';
-  const sync = [state.ahead > 0 ? `↑${state.ahead}` : '', state.behind > 0 ? `↓${state.behind}` : ''].filter(Boolean).join(' ');
-  return { name, sync };
+/**
+ * Text der Kopfzeile: Branch bzw. kurzer Hash. Voraus und zurück zeigt die Kopfzeile als farbige Pfeile (BranchSync,
+ * Ticket 25).
+ */
+export function branchLabel(state: GitState): { name: string } {
+  return { name: state.branch ?? state.detached ?? 'No commits' };
 }
 
 /** Hinweis, wenn Git fehlt (Ticket 09). */
