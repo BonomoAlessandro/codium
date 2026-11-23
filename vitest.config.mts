@@ -11,6 +11,8 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     exclude: ['test/slow/**', 'test/ui/**', '**/node_modules/**'],
     environment: 'node',
+    // Schlussprüfung nach dem letzten Test: verwaiste Prozesse aus diesem Checkout und Temp-Ordner dieses Laufs.
+    globalSetup: ['test/support/finalCheck.ts'],
     // Viele Tests starten echte Prozesse (Git, ripgrep) oder warten auf die Dateiüberwachung. Unter voller Last
     // (bis zu einer Testdatei je Prozessorkern gleichzeitig) brauchen sie einige Sekunden, und ihre inneren Wartezeiten
     // reichen bis 10 s. Das Standardlimit von 5 s riss das, obwohl die Tests korrekt arbeiteten; ein echter Hänger

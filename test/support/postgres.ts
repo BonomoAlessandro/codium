@@ -13,6 +13,7 @@ import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
 import { listProcesses } from './processes.ts';
 import { serverProcesses, type ServerIdentity } from './postgresReaper.ts';
+import { tempPrefix } from './testRun.ts';
 
 export const PG_USER = 'codium';
 export const PG_PASSWORD = 'geheim-und-lang';
@@ -48,7 +49,7 @@ async function freePort(): Promise<number> {
 export async function startPostgres(): Promise<TestPostgres> {
   const port = await freePort();
   // Der echte (lange) Pfad: PostgreSQL nennt ihn so in der Befehlszeile, auch wenn TEMP ein Kurzname ist (Review).
-  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'codium-pg-')));
+  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), tempPrefix('pg'))));
   const dataDir = path.join(base, 'data');
   // Der Wächter läuft schon während der Vorbereitung: Endet der Testprozess mittendrin, räumt er trotzdem auf.
   const reaper = startReaper({ dataDir, base });

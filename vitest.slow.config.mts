@@ -10,6 +10,8 @@ export default defineConfig({
   test: {
     include: ['test/slow/**/*.test.ts'],
     environment: 'node',
+    // Schlussprüfung nach dem letzten Test: verwaiste Prozesse aus diesem Checkout und Temp-Ordner dieses Laufs.
+    globalSetup: ['test/support/finalCheck.ts'],
     testTimeout: 120_000,
     hookTimeout: 120_000,
   },

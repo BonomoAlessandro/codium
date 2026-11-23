@@ -50,6 +50,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
   - Der Test-Zwischenspeicher ist ein von Git ausgenommener Ordner im Projekt (eingeführt in Ticket 01) und darf zwischen Läufen bestehen bleiben.
 - **Datenbank:** Nur gegen PostgreSQL aus embedded-postgres testen, immer auf einem freien Zufallsport, nie 5432, Host und Port ausdrücklich gesetzt, Server nach den Tests gestoppt. Nie gegen echte Datenbanken.
 - **Aufräumen:** Tests hinterlassen keine Prozesse (Shells, Sprachserver, Gradle-Daemons, PostgreSQL) und keine Temp-Ordner, ausser dem Test-Zwischenspeicher.
+  - Als Netz dient die Schlussprüfung je Testlauf (Ticket 27, `test/support/finalCheck.ts`): Sie beendet verwaiste Prozesse aus diesem Checkout und entfernt Temp-Ordner des Laufs, jeweils mit Meldung. Eine solche Meldung heisst, dass ein Test nicht selbst aufgeräumt hat.
 - **Testläufe** (eingeführt in Ticket 01): Ein Ticket fügt seine Tests dem passenden Lauf hinzu; alle Läufe bleiben grün.
   - `npm test`: schnell, bei jedem Ticket
   - `npm run test:slow`: Sprachserver, Terminal, Datenbank, Netz

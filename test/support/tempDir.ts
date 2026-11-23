@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach } from 'vitest';
+import { tempPrefix } from './testRun';
 
 const beforeRemoval: Array<() => void | Promise<void>> = [];
 
@@ -25,7 +26,8 @@ export function useTempDirs(): (prefix?: string) => string {
     for (const work of beforeRemoval) await work();
     for (const dir of created.splice(0)) removeDir(dir);
   });
-  return (prefix = 'codium-test-') => {
+  // Der Name trägt die Kennung des Testlaufs; bleibt ein Ordner liegen, entfernt ihn die Schlussprüfung (finalCheck.ts).
+  return (prefix = tempPrefix('test')) => {
     // realpath: Unter Windows kann os.tmpdir() einen kurzen 8.3-Namen liefern (ALESSA~1); Pfadvergleiche in
     // den Tests sollen mit der langen Form arbeiten, die auch Git und Node zurückgeben.
     const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
