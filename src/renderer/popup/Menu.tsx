@@ -50,6 +50,17 @@ export function closeOpenMenus(): boolean {
   return wasOpen;
 }
 
+/**
+ * Meldet ein anderes Popup (etwa das Branch-Dropdown) wie ein Menü an, damit Tastenkürzel der App es zuerst schliessen.
+ * Liefert die Abmeldung.
+ */
+export function registerOpenMenu(close: () => void): () => void {
+  openMenus.add(close);
+  return () => {
+    openMenus.delete(close);
+  };
+}
+
 interface MenuProps {
   /** Name des Menüs für Screenreader. */
   label: string;
@@ -63,6 +74,13 @@ interface MenuProps {
    * daneben schliesst Pfeil links das Menü.
    */
   placement?: 'below' | 'beside';
+  /**
+   * Rechts daneben: das Popup, zu dem das Element gehört. Reicht rechts der Platz nicht, geht das Menü links neben dieses
+   * Popup statt darüber; passt auch das nicht, liegt es am rechten Rand unter der eigenen Zeile.
+   */
+  container?: HTMLElement;
+  /** Den Fokus übernehmen (Standard). Ein beim Überfahren geöffnetes Untermenü lässt ihn, wo er ist. */
+  takeFocus?: boolean;
   /** Breite der Symbolspalte in Pixeln, etwa 20 für die Farbkürzel der Projekte; sonst 16. */
   iconWidth?: number;
   /** Das Menü schliesst sich (Escape, Klick daneben, Fenster verliert den Fokus, Eintrag gewählt). */
@@ -78,7 +96,17 @@ function isSelectable(entry: MenuEntry): entry is Selectable {
  * Das Menü hält den Fokus, solange es offen ist; danach gibt `onClose` ihn zurück. Ein gewählter Eintrag läuft erst,
  * nachdem sich das Menü geschlossen hat.
  */
-export function Menu({ label, entries, anchor, highlightFirst = false, placement = 'below', iconWidth, onClose }: MenuProps) {
+export function Menu({
+  label,
+  entries,
+  anchor,
+  highlightFirst = false,
+  placement = 'below',
+  container,
+  takeFocus = true,
+  iconWidth,
+  onClose,
+}: MenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -111,8 +139,8 @@ export function Menu({ label, entries, anchor, highlightFirst = false, placement
     const point = anchor instanceof HTMLElement ? null : anchor;
     const r = anchor instanceof HTMLElement ? anchor.getBoundingClientRect() : null;
     if (r && placement === 'beside') {
-      placeBeside(el, r);
-      el.focus({ preventScroll: true });
+      placeBeside(el, r, container?.getBoundingClientRect());
+      if (takeFocus) el.focus({ preventScroll: true });
       return;
     }
     const left = point ? point.x : (r?.left ?? 0);
@@ -122,7 +150,7 @@ export function Menu({ label, entries, anchor, highlightFirst = false, placement
     el.style.left = `${clamp(left, MARGIN, window.innerWidth - el.offsetWidth - MARGIN)}px`;
     el.style.top = `${clamp(top, MARGIN, window.innerHeight - el.offsetHeight - MARGIN)}px`;
     el.focus({ preventScroll: true });
-  }, [anchor, placement]);
+  }, [anchor, placement, container, takeFocus]);
 
   // Klick daneben, Fokusverlust und Grössenänderung schliessen das Menü.
   useEffect(() => {
@@ -346,12 +374,27 @@ function MenuPanel({
   );
 }
 
-/** Rechts neben einem Eintrag, die erste Zeile auf seiner Höhe; reicht der Platz nicht, links davon. */
-function placeBeside(el: HTMLElement, besides: DOMRect): void {
+/**
+ * Rechts neben einem Eintrag, die erste Zeile auf seiner Höhe. Reicht der Platz nicht, links davon bzw. links neben das
+ * ganze Popup `container`; passt auch das nicht, am rechten Rand unter (oder über) der eigenen Zeile, damit sie sichtbar
+ * bleibt.
+ */
+function placeBeside(el: HTMLElement, besides: DOMRect, container?: DOMRect): void {
+  const width = el.offsetWidth;
+  const height = el.offsetHeight;
+  const maxLeft = window.innerWidth - width - MARGIN;
+  const maxTop = window.innerHeight - height - MARGIN;
   let left = besides.right - 2;
-  if (left + el.offsetWidth > window.innerWidth - MARGIN) left = besides.left - el.offsetWidth + 2;
-  el.style.left = `${clamp(left, MARGIN, window.innerWidth - el.offsetWidth - MARGIN)}px`;
-  el.style.top = `${clamp(besides.top - 7, MARGIN, window.innerHeight - el.offsetHeight - MARGIN)}px`;
+  let top = besides.top - 7;
+  if (left > maxLeft) {
+    left = (container ?? besides).left - width + 2;
+    if (container && left < MARGIN) {
+      left = maxLeft;
+      top = besides.bottom + 2 <= maxTop ? besides.bottom + 2 : besides.top - height - 2;
+    }
+  }
+  el.style.left = `${clamp(left, MARGIN, maxLeft)}px`;
+  el.style.top = `${clamp(top, MARGIN, maxTop)}px`;
 }
 
 function clamp(value: number, min: number, max: number): number {

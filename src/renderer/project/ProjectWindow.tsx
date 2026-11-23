@@ -604,6 +604,7 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
         e.preventDefault();
         e.stopPropagation();
         if (e.repeat || !gitStateRef.current?.repository) return;
+        closeOpenMenus();
         if (command === 'vcs.pull') void gitRemoteRef.current.pull();
         else void gitRemoteRef.current.push();
         return;
@@ -865,15 +866,21 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
           anchor={branchAnchor}
           onClose={(reason) => {
             setBranchAnchor(null);
-            if (reason === 'escape') branchAnchor.focus({ preventScroll: true });
+            // Nach Escape und vor einer Aktion sofort an den Knopf: Dialoge (etwa „New Branch…“) merken ihn sich so als
+            // Ziel für den Fokus danach, und was den Fokus selbst nimmt (etwa „Commit…“), nimmt ihn danach.
+            if (reason !== 'outside') {
+              branchAnchor.focus({ preventScroll: true });
+              return;
+            }
             // Nach einem Klick daneben behält ein angeklicktes Element (etwa der Editor) den Fokus; sonst der Knopf. Geprüft
             // beim Loslassen, also nach dem Fokuswechsel des Klicks (ein Timer liefe in verborgenen Fenstern gedrosselt).
-            if (reason === 'outside') {
-              const restore = () => {
-                if (document.activeElement === null || document.activeElement === document.body) branchAnchor.focus({ preventScroll: true });
-              };
-              window.addEventListener('pointerup', restore, { once: true, capture: true });
-            }
+            const restore = () => {
+              window.removeEventListener('pointerup', restore, true);
+              window.removeEventListener('pointercancel', restore, true);
+              if (document.activeElement === null || document.activeElement === document.body) branchAnchor.focus({ preventScroll: true });
+            };
+            window.addEventListener('pointerup', restore, true);
+            window.addEventListener('pointercancel', restore, true);
           }}
         />
       )}
