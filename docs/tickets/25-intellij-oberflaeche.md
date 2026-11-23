@@ -59,6 +59,8 @@ Zu den übrigen Fragen der Skizze hat der Nutzer nichts anderes gesagt; die Punk
 
 Radien laut Skizze: `--radius-xs` 3 px, `--radius-s` 4 px, `--radius-m` 6 px, `--radius-l` 8 px, `--radius-xl` 10 px, `--radius-island` 10 px; dazu `--island-gap` 6 px und `--list-inset` 6 px.
 
+**Freigabe des eingebauten Stands (2026-11-23):** Der Nutzer hat die Fotos des Ergebnisses im Testmodus gesehen (Gesamtansicht, Branch-Dropdown, Menüs, Dialog, Git-Log, Markdown-Vorschau, Datenbank, Suchfenster). Rückmeldung, wörtlich: „die bilder sehen gut aus“
+
 ## Akzeptanzkriterien
 
 - [x] Die Vorschauseite liegt vor, und der Nutzer hat den Vorschlag freigegeben, mit Wahl der Variante für die Flächen (im Abschnitt „Entscheidung“ des Tickets festgehalten, mit der Rückmeldung).
