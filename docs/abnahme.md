@@ -1,7 +1,8 @@
 # Abnahme von Hand
 
 Alle Punkte „Abnahme von Hand“ der Tickets 01 bis 21 und 23, nach Bereichen geordnet (Ticket 22). In Klammern das
-Ticket, aus dem der Punkt stammt; dort steht der Zusammenhang. Abweichungen werden als neue Tickets erfasst.
+Ticket, aus dem der Punkt stammt; dort steht der Zusammenhang. Abweichungen werden als neue Tickets erfasst. Die Punkte
+der Tickets, die nach Codium 1 dazukamen, stehen im Abschnitt „Nach Codium 1“.
 
 Geprüft wird die installierte App (`release\Codium Setup <version>.exe`), ausser ein Punkt nennt ausdrücklich
 `npm start` oder `npm run dev`. Am Schluss steht die Prüfung auf einem frischen Rechner bzw. Windows-Benutzer.
@@ -143,6 +144,10 @@ Geprüft wird die installierte App (`release\Codium Setup <version>.exe`), ausse
 - [ ] Verbindung zu einer echten PostgreSQL-Datenbank mit SSL. (20)
 - [ ] Nach einem Neustart verbindet Codium ohne erneute Passworteingabe; mit „Ask for password every time“ wird gefragt. (20)
 - [ ] Eine grosse Tabelle (über 100'000 Zeilen) öffnet schnell, Blättern und Sortieren sind flüssig. (21)
+
+## Nach Codium 1
+
+- [ ] Zweimal Shift öffnet „Go to File“ und fühlt sich an wie in IntelliJ: weder zu träge noch löst es beim normalen Tippen (Grossbuchstaben, Shift + Klick, Alt + Shift) versehentlich aus. (26)
 
 ## Frischer Rechner bzw. Windows-Benutzer (22)
 

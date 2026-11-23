@@ -9,7 +9,7 @@
 // Im Code-Bereich liegen die Datei-Tabs mit Monaco (editor/EditorArea.tsx). „Datei öffnen“ aus dem Dateibaum öffnet
 // dort einen Tab; der aktive Tab geht an den Dateibaum („Select Opened File“) und an die Statusleiste.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { CodiumError, ErrorCode } from '../../shared/types';
 import { BranchPopup, type BranchActions } from '../git/BranchPopup';
 import { GitToolWindow } from '../git/GitToolWindow';
@@ -38,7 +38,16 @@ import {
   type ToolWindowSide,
 } from '../../shared/types';
 import { TOOL_WINDOW_ICONS } from '../icons';
-import { bindingForKey, commandForKey, shortcutLabel, type KeyCommand, type ToolWindowCommand } from '../keymap';
+import { DoubleShiftDetector } from '../doubleShift';
+import {
+  DOUBLE_SHIFT,
+  bindingForKey,
+  commandForKey,
+  commandForShortcut,
+  shortcutLabels,
+  type KeyCommand,
+  type ToolWindowCommand,
+} from '../keymap';
 import type { Notify } from '../Notices';
 import { isDialogOpen, useAsk, useAskText } from '../popup/Dialogs';
 import { closeOpenMenus } from '../popup/Menu';
@@ -99,6 +108,15 @@ const INITIAL_SEARCH: SearchOptions = {
 
 /** Welches Suchfenster über dem Editor offen ist. */
 type SearchPopup = 'gotoFile' | 'recentFiles' | 'findInFiles' | 'gotoClass' | 'gotoSymbol' | null;
+
+/** Die Befehle, die ein Suchfenster öffnen (Tickets 08 und 13). */
+const SEARCH_POPUPS: Partial<Record<KeyCommand, Exclude<SearchPopup, null>>> = {
+  'file.gotoFile': 'gotoFile',
+  'file.recent': 'recentFiles',
+  'find.inFiles': 'findInFiles',
+  'symbol.gotoClass': 'gotoClass',
+  'symbol.gotoSymbol': 'gotoSymbol',
+};
 
 /** Layout, falls der Kern keines liefert (das Fenster schliesst sich gerade): alle Seiten zu. */
 const CLOSED_LAYOUT: ToolWindowLayout = {
@@ -535,12 +553,22 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
     [change, moveFocusOutOf, shownLayout, stopDrag],
   );
 
+  /** Erkennt zweimal Shift (Ticket 26); bleibt über alle Darstellungen des Fensters dieselbe. */
+  const [doubleShift] = useState(() => new DoubleShiftDetector());
+
   // Die zentrale Tastenbelegung (keymap.ts), in der Capture-Phase vor allen anderen Belegungen (Monaco, später das
   // Terminal). Während einer Rückfrage ruhen die Kürzel. Werkzeugfenster regelt das Fenster selbst, alles andere der
   // Code-Bereich; was er nicht nimmt, geht unverändert weiter. Ein offenes Menü schliesst ein Werkzeugfenster-Kürzel
   // zuerst, sonst nähme es weiter Tasten an.
   useEffect(() => {
+    /** Öffnet ein Suchfenster über dem Editor; ist es schon offen, bleibt es samt Eingabe. */
+    const openPopup = (which: Exclude<SearchPopup, null>) => {
+      closeOpenMenus();
+      stopDrag();
+      setPopup(which);
+    };
     const onKeyDown = (e: KeyboardEvent) => {
+      doubleShift.handle(e);
       const command = commandForKey(e);
       if (!command || isDialogOpen()) return;
       // Im Terminal gehören alle Tasten der Shell, ausser den Kürzeln für Werkzeugfenster und Einstellungen (Ticket 11).
@@ -579,22 +607,11 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
         else void gitRemoteRef.current.push();
         return;
       }
-      if (command === 'symbol.gotoClass' || command === 'symbol.gotoSymbol') {
+      const searchPopup = SEARCH_POPUPS[command];
+      if (searchPopup) {
         e.preventDefault();
         e.stopPropagation();
-        if (e.repeat) return;
-        closeOpenMenus();
-        stopDrag();
-        setPopup(command === 'symbol.gotoClass' ? 'gotoClass' : 'gotoSymbol');
-        return;
-      }
-      if (command === 'file.gotoFile' || command === 'file.recent' || command === 'find.inFiles') {
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.repeat) return;
-        closeOpenMenus();
-        stopDrag();
-        setPopup(command === 'file.gotoFile' ? 'gotoFile' : command === 'file.recent' ? 'recentFiles' : 'findInFiles');
+        if (!e.repeat) openPopup(searchPopup);
         return;
       }
       if (!command.startsWith('toolWindow.')) {
@@ -624,9 +641,33 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
         change(hideSide(current, side), true);
       }
     };
+    // Zweimal Shift (Ticket 26) löst beim zweiten Loslassen aus, im ganzen Fenster, auch im Editor und im Terminal
+    // (Shift allein schickt der Shell nichts), aber nicht während einer Rückfrage. Was es öffnet, steht in der
+    // zentralen Belegung. Maustasten und Fokusverlust brechen die Zählung ab; `pointerdown` kommt auch, wo eine Seite
+    // `mousedown` unterdrückt, `mousedown` auch für eine weitere Taste, während schon eine gedrückt ist.
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (!doubleShift.handle(e) || isDialogOpen()) return;
+      const command = commandForShortcut(DOUBLE_SHIFT);
+      const searchPopup = command && SEARCH_POPUPS[command];
+      if (searchPopup) openPopup(searchPopup);
+    };
+    const onMouseDown = () => doubleShift.handle({ type: 'mousedown' });
+    const onBlur = (e: FocusEvent) => {
+      if (e.target === window) doubleShift.handle({ type: 'blur' });
+    };
     window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [change, moveFocusOutOf, showAndFocus, shownLayout, stopDrag]);
+    window.addEventListener('keyup', onKeyUp, true);
+    window.addEventListener('pointerdown', onMouseDown, true);
+    window.addEventListener('mousedown', onMouseDown, true);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('keyup', onKeyUp, true);
+      window.removeEventListener('pointerdown', onMouseDown, true);
+      window.removeEventListener('mousedown', onMouseDown, true);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, [change, doubleShift, moveFocusOutOf, showAndFocus, shownLayout, stopDrag]);
 
   // Ziehen an einer Trennlinie: begrenzt auf Mindest- und Höchstgrösse, gespeichert beim Loslassen. Bewegung und
   // Loslassen kommen über das Fenster, damit das Ziehen auch endet, wenn die Trennlinie dabei verschwindet.
@@ -962,8 +1003,9 @@ function Stripe({ side, groups, layout, available, onToggle }: StripeProps) {
   );
 }
 
-/** Kürzel, die der leere Code-Bereich als Hinweis zeigt, wie IntelliJ. */
+/** Kürzel, die der leere Code-Bereich als Hinweis zeigt, wie IntelliJ; mit allen Kürzeln eines Befehls. */
 const CODE_HINTS = [
+  { label: 'Go to File', command: 'file.gotoFile' },
   { label: 'Project View', command: 'toolWindow.project' },
   { label: 'Commit', command: 'toolWindow.commit' },
   { label: 'Terminal', command: 'toolWindow.terminal' },
@@ -980,7 +1022,12 @@ function CodeHints() {
           <div key={hint.command} className="code-empty-hint">
             <dt>{hint.label}</dt>
             <dd>
-              <kbd>{shortcutLabel(hint.command)}</kbd>
+              {shortcutLabels(hint.command).map((shortcut, i) => (
+                <Fragment key={shortcut}>
+                  {i > 0 && ', '}
+                  <kbd>{shortcut}</kbd>
+                </Fragment>
+              ))}
             </dd>
           </div>
         ))}

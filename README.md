@@ -42,7 +42,7 @@ Wie in IntelliJ, auch auf der Schweizer Tastatur (Buchstaben nach dem getippten 
 |---|---|
 | Werkzeugfenster | Alt + 1 Project, Alt + 0 Commit, Alt + F12 Terminal, Alt + 9 Git, Alt + 3 Find |
 | Allgemein | Ctrl + Alt + S Einstellungen, Ctrl + S alles speichern, Ctrl + F4 Tab schliessen, Ctrl + Tab / Ctrl + Shift + Tab zuletzt benutzte Tabs |
-| Suchen | Ctrl + Shift + N Datei, Ctrl + E zuletzt geöffnete Dateien, Ctrl + Shift + F im Projekt, Ctrl + N Klasse, Ctrl + Alt + Shift + N Symbol |
+| Suchen | Ctrl + Shift + N oder zweimal Shift Datei, Ctrl + E zuletzt geöffnete Dateien, Ctrl + Shift + F im Projekt, Ctrl + N Klasse, Ctrl + Alt + Shift + N Symbol |
 | Editor | Ctrl + F Suchen, Ctrl + R Ersetzen, Ctrl + G Zu Zeile, Ctrl + D Zeile verdoppeln, Ctrl + Y Zeile löschen, Ctrl + / Kommentar, Ctrl + W / Ctrl + Shift + W Auswahl erweitern/verkleinern, Alt + Shift + ↑/↓ Zeile verschieben, Ctrl + Z / Ctrl + Shift + Z, Ctrl + Mausrad Schriftgrösse |
 | Navigation | Ctrl + Linksklick oder Ctrl + B Definition, Ctrl + Alt + B Implementierungen, Ctrl + Q Dokumentation, Alt + F7 Verwendungen, Ctrl + Alt + ← / → (und die Seitentasten der Maus) Zurück/Vor |
 | Git | Ctrl + K Commit, Ctrl + Shift + K Push, Ctrl + T Pull |

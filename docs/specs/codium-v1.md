@@ -368,7 +368,7 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
   - IntelliJ-Belegung für alle Funktionen dieser Version; die vollständige Liste steht in den User Stories, Git- und Fensterkürzel siehe Präzisierungen.
   - Eine zentrale Tastenbelegung der Oberfläche gibt den App-Kürzeln Vorrang vor Monaco.
   - Monacos eigene Belegungen, die kollidieren, werden entfernt oder überschrieben: Ctrl + K als Auftakt für Zweierkürzel, Ctrl + Shift + K (Zeile löschen), Alt + F12 (Definition einblenden), Ctrl + Y (Wiederholen), Ctrl + D, Ctrl + W, Ctrl + R, Ctrl + G, Ctrl + E und Ctrl + B.
-  - **Im Terminal** gehören alle Tasten der Shell, ausser den Kürzeln für Werkzeugfenster und Einstellungen: Alt + 1, Alt + 0, Alt + 3, Alt + 9, Alt + F12, Ctrl + Alt + S. Esc bleibt bei der Shell.
+  - **Im Terminal** gehören alle Tasten der Shell, ausser den Kürzeln für Werkzeugfenster und Einstellungen: Alt + 1, Alt + 0, Alt + 3, Alt + 9, Alt + F12, Ctrl + Alt + S. Esc bleibt bei der Shell. Zweimal Shift öffnet auch dort die Dateisuche; Shift allein schickt der Shell nichts (Ticket 26).
 - **Oberflächensprache:** Englisch, ohne Sprachumschaltung (auch die Sprachangabe der Seite). README und Code-Kommentare bleiben deutsch.
 
 ### Editor, Tabs und Speichern
@@ -430,7 +430,7 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
   - Ein Umbenennen in Codium benachrichtigt die Sprachserver über die Dateiänderung, passt aber keine Verweise an.
   - Bei einer versionierten Datei merkt der Git-Dienst die Umbenennung im Index vor (wie „git mv“), damit Änderungsansicht und Commit sie als Umbenennung führen.
 - **Dateiliste:** Grundlage für die Dateisuche nach Namen ist die Liste aller Dateien des Projekts über ripgrep, inklusive versteckter Dateien (ohne `.git`), mit Rücksicht auf `.gitignore` auch ausserhalb eines Git-Repositorys. Die Dateiüberwachung hält die Liste aktuell.
-- **Dateisuche nach Namen** (Ctrl + Shift + N): unscharfer Vergleich (Buchstabenfolge, Bevorzugung von Wortanfängen und CamelCase, wie in IntelliJ). Ignorierte Dateien fehlen standardmässig; ein Schalter „include ignored“ nimmt sie dazu, damit auch Dateien wie `.env` auffindbar sind.
+- **Dateisuche nach Namen** (Ctrl + Shift + N oder, wie „Search Everywhere“ in IntelliJ, zweimal kurz Shift allein; Ticket 26): unscharfer Vergleich (Buchstabenfolge, Bevorzugung von Wortanfängen und CamelCase, wie in IntelliJ). Ignorierte Dateien fehlen standardmässig; ein Schalter „include ignored“ nimmt sie dazu, damit auch Dateien wie `.env` auffindbar sind.
 - **Zuletzt geöffnete Dateien** (Ctrl + E) führt die Oberfläche pro Projekt; die Liste wird im Projekt-Zustand gesichert.
 - **Projektsuche** (Ctrl + Shift + F):
   - Über ripgrep, das mit Codium ausgeliefert wird.
@@ -787,7 +787,7 @@ Wo die Oberfläche eigene Logik ohne DOM hat (etwa Markdown in HTML samt Quellze
   - in der Markdown-Vorschau: Folgen relativer Links und Anker, Bilder aus dem Netz, Bearbeiten in der Vorschau, Scrollen von der Vorschau zurück in den Editor, Export nach HTML oder PDF
   - Ziehen und Ablegen im Dateibaum
   - Kopieren und Einfügen von Dateien zwischen dem Explorer und Codium oder zwischen zwei Codium-Fenstern (siehe Präzisierung 38)
-  - Überall suchen (zweimal Shift), Ersetzen im ganzen Projekt, Aktionen suchen
+  - Überall suchen (ein Fenster für Dateien, Klassen, Symbole und Aktionen; zweimal Shift öffnet nur die Dateisuche, Ticket 26), Ersetzen im ganzen Projekt, Aktionen suchen
   - Umstellen der Kodierung einer Datei
 - **Datenbank:**
   - SQL-Konsole

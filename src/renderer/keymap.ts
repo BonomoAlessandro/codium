@@ -5,7 +5,9 @@
 // - Buchstaben zählen nach dem getippten Zeichen (auf der Schweizer Tastatur ist Ctrl + Z die Taste mit „Z“, nicht
 //   die Lage von „Z“ auf der amerikanischen), Ziffern und andere Tasten nach ihrer Lage (Alt + 1 ist überall gleich).
 // - Kürzel mit `scope: 'editor'` wirken nur mit dem Fokus im Editor, die anderen im ganzen Fenster.
-// - `global: true` wirkt auch im Terminal (Ticket 11): nur Werkzeugfenster und Einstellungen.
+// - `global: true` wirkt auch im Terminal (Ticket 11): nur Werkzeugfenster und Einstellungen, dazu zweimal Shift.
+// - „Double Shift“ (Ticket 26) ist kein Tastendruck, den `shortcutOf` liefert: Das Projektfenster erkennt es mit
+//   doubleShift.ts und führt den Befehl aus, der hier dafür eingetragen ist. Ein Befehl kann so zwei Kürzel haben.
 // - Ein Kürzel ohne Handler (die Funktion kommt mit einem späteren Ticket) wird im Editor trotzdem abgefangen, damit
 //   Monacos eigene Belegung (etwa Ctrl + K als Auftakt für Zweierkürzel) nicht wirkt.
 
@@ -50,9 +52,12 @@ export interface KeyBinding {
   command: KeyCommand;
   /** Wirkt nur mit dem Fokus im Editor. */
   scope: 'window' | 'editor';
-  /** Wirkt überall, auch im Terminal (Werkzeugfenster und Einstellungen, siehe Spezifikation). */
+  /** Wirkt überall, auch im Terminal (Werkzeugfenster, Einstellungen und zweimal Shift, siehe Spezifikation). */
   global: boolean;
 }
+
+/** Zweimal kurz Shift allein, wie in IntelliJ (Ticket 26); erkannt in doubleShift.ts. */
+export const DOUBLE_SHIFT = 'Double Shift';
 
 const binding = (shortcut: string, command: KeyCommand, scope: KeyBinding['scope'], global = false): KeyBinding => ({
   shortcut,
@@ -90,6 +95,8 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   binding('Ctrl+Shift+Z', 'editor.redo', 'editor'),
   // Suchen (Ticket 08).
   binding('Ctrl+Shift+N', 'file.gotoFile', 'window'),
+  // Zweimal Shift (Ticket 26), auch im Terminal: Shift allein schickt der Shell nichts.
+  binding(DOUBLE_SHIFT, 'file.gotoFile', 'window', true),
   binding('Ctrl+E', 'file.recent', 'window'),
   binding('Ctrl+Shift+F', 'find.inFiles', 'window'),
   // Sprachfunktionen (Ticket 12): Definition, Implementierungen, Dokumentation, Verwendungen.
@@ -166,9 +173,19 @@ export function commandForKey(event: KeyLike): KeyCommand | undefined {
   return bindingForKey(event)?.command;
 }
 
-/** Das Kürzel eines Befehls zur Anzeige (Tooltip, Hinweise, Menüs), falls er eines hat. */
+/** Der Befehl zu einem Kürzel in der Schreibweise der Tabelle, etwa `DOUBLE_SHIFT`. */
+export function commandForShortcut(shortcut: string): KeyCommand | undefined {
+  return KEY_BINDINGS.find((b) => b.shortcut === shortcut)?.command;
+}
+
+/** Das (erste) Kürzel eines Befehls zur Anzeige (Tooltip, Hinweise, Menüs), falls er eines hat. */
 export function shortcutLabel(command: KeyCommand): string | undefined {
   return KEY_BINDINGS.find((b) => b.command === command)?.shortcut;
+}
+
+/** Alle Kürzel eines Befehls zur Anzeige, in der Reihenfolge der Tabelle (etwa Ctrl+Shift+N und Double Shift). */
+export function shortcutLabels(command: KeyCommand): string[] {
+  return KEY_BINDINGS.filter((b) => b.command === command).map((b) => b.shortcut);
 }
 
 /** Die Kürzel, die im Terminal als IDE-Kürzel wirken (Ticket 11); alle anderen Tasten gehören der Shell. */

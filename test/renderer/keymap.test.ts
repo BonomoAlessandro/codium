@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DOUBLE_SHIFT,
   KEY_BINDINGS,
   MONACO_CONFLICTS,
+  bindingForKey,
   commandForKey,
+  commandForShortcut,
   globalShortcuts,
   shortcutLabel,
+  shortcutLabels,
   shortcutOf,
   type KeyLike,
 } from '../../src/renderer/keymap';
@@ -38,7 +42,9 @@ describe('Tastenkürzel', () => {
   it('hat keine doppelt belegten Kürzel und fängt alle kollidierenden Monaco-Belegungen ab', () => {
     const shortcuts = KEY_BINDINGS.map((b) => b.shortcut);
     expect(new Set(shortcuts).size).toBe(shortcuts.length);
-    const commands = KEY_BINDINGS.map((b) => b.command);
+    expect(shortcuts).toContain(DOUBLE_SHIFT);
+    // Kein Befehl hat zwei Kürzel, ausser „Go to File“ mit zweimal Shift (Ticket 26).
+    const commands = KEY_BINDINGS.filter((b) => b.shortcut !== DOUBLE_SHIFT).map((b) => b.command);
     expect(new Set(commands).size).toBe(commands.length);
     // Die Liste aus der Spezifikation: Jede dieser Belegungen von Monaco wird von der zentralen Belegung überschrieben.
     expect([...MONACO_CONFLICTS].sort()).toEqual(
@@ -47,8 +53,20 @@ describe('Tastenkürzel', () => {
     for (const shortcut of MONACO_CONFLICTS) expect(shortcuts, shortcut).toContain(shortcut);
   });
 
-  it('liefert für das Terminal nur die Kürzel der Werkzeugfenster und Einstellungen', () => {
-    expect(globalShortcuts().sort()).toEqual(['Alt+0', 'Alt+1', 'Alt+3', 'Alt+9', 'Alt+F12', 'Ctrl+Alt+S'].sort());
+  it('liefert für das Terminal nur die Kürzel der Werkzeugfenster und Einstellungen, dazu zweimal Shift', () => {
+    expect(globalShortcuts().sort()).toEqual(['Alt+0', 'Alt+1', 'Alt+3', 'Alt+9', 'Alt+F12', 'Ctrl+Alt+S', DOUBLE_SHIFT].sort());
+  });
+
+  it('belegt zweimal Shift mit „Go to File“, neben Ctrl + Shift + N (Ticket 26)', () => {
+    expect(DOUBLE_SHIFT).toBe('Double Shift');
+    expect(commandForShortcut(DOUBLE_SHIFT)).toBe('file.gotoFile');
+    expect(commandForKey(press('KeyN', { ctrlKey: true, shiftKey: true, key: 'N' }))).toBe('file.gotoFile');
+    // Angezeigt werden beide; das erste bleibt Ctrl + Shift + N.
+    expect(shortcutLabels('file.gotoFile')).toEqual(['Ctrl+Shift+N', DOUBLE_SHIFT]);
+    expect(shortcutLabel('file.gotoFile')).toBe('Ctrl+Shift+N');
+    // Kein einzelner Tastendruck trifft das Kürzel; erkannt wird es in doubleShift.ts.
+    expect(shortcutOf(press('ShiftLeft', { shiftKey: true, key: 'Shift' }))).toBeNull();
+    expect(bindingForKey(press('ShiftRight', { shiftKey: true, key: 'Shift' }))).toBeUndefined();
   });
 
   it('belegt die Bearbeitungs-Kürzel von IntelliJ, Buchstaben nach dem getippten Zeichen', () => {
