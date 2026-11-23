@@ -3,12 +3,12 @@
 import { describe, expect, it } from 'vitest';
 import { DOUBLE_SHIFT_INTERVAL_MS, DoubleShiftDetector, type DoubleShiftInput, type KeyEventLike } from '../../src/renderer/doubleShift';
 
-type Mods = Partial<Pick<KeyEventLike, 'ctrlKey' | 'altKey' | 'metaKey' | 'repeat'>>;
+type Mods = Partial<Pick<KeyEventLike, 'ctrlKey' | 'altKey' | 'metaKey' | 'repeat' | 'isComposing'>>;
 
 /** Ein Tastaturereignis wie im Browser; Shift links, wenn nichts anderes angegeben ist. */
 function key(type: 'keydown' | 'keyup', at: number, code = 'ShiftLeft', mods: Mods = {}): KeyEventLike {
   const key = /^Shift/.test(code) ? 'Shift' : /^Control/.test(code) ? 'Control' : /^Alt/.test(code) ? 'Alt' : /^Meta/.test(code) ? 'Meta' : code.replace(/^Key/, '');
-  return { type, key, code, repeat: false, ctrlKey: false, altKey: false, metaKey: false, timeStamp: at, ...mods };
+  return { type, key, code, repeat: false, isComposing: false, ctrlKey: false, altKey: false, metaKey: false, timeStamp: at, ...mods };
 }
 
 const down = (at: number, code?: string, mods?: Mods) => key('keydown', at, code, mods);
@@ -79,6 +79,18 @@ describe('Zweimal Shift', () => {
   it('löst nicht aus, wenn dazwischen eine Maustaste gedrückt wird (Shift + Klick)', () => {
     expect(firings([...tap(0), { type: 'mousedown' }, ...tap(150)])).toEqual([]);
     expect(firings([...tap(0), down(150), { type: 'mousedown' }, up(220)])).toEqual([]);
+  });
+
+  it('löst nicht aus, wenn dazwischen das Mausrad dreht (Shift + Mausrad scrollt quer)', () => {
+    expect(firings([...tap(0), { type: 'wheel' }, ...tap(150)])).toEqual([]);
+    expect(firings([...tap(0), down(150), { type: 'wheel' }, up(220)])).toEqual([]);
+  });
+
+  it('löst während einer Eingabe über einen IME nicht aus', () => {
+    // Während der Eingabe meldet der Browser die Tasten als „Process“ oder mit `isComposing`.
+    expect(firings([...tap(0, 'ShiftLeft', { isComposing: true }), ...tap(150, 'ShiftLeft', { isComposing: true })])).toEqual([]);
+    expect(firings([...tap(0), { ...down(150), key: 'Process' }, up(220)])).toEqual([]);
+    expect(firings([...tap(0), down(80, 'KeyA', { isComposing: true }), ...tap(150)])).toEqual([]);
   });
 
   it('löst nicht aus, wenn Shift nur gehalten wird (Tastenwiederholung)', () => {

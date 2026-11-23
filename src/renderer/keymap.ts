@@ -7,7 +7,8 @@
 // - Kürzel mit `scope: 'editor'` wirken nur mit dem Fokus im Editor, die anderen im ganzen Fenster.
 // - `global: true` wirkt auch im Terminal (Ticket 11): nur Werkzeugfenster und Einstellungen, dazu zweimal Shift.
 // - „Double Shift“ (Ticket 26) ist kein Tastendruck, den `shortcutOf` liefert: Das Projektfenster erkennt es mit
-//   doubleShift.ts und führt den Befehl aus, der hier dafür eingetragen ist. Ein Befehl kann so zwei Kürzel haben.
+//   doubleShift.ts, überall im Fenster, und öffnet das Suchfenster des Befehls, der hier dafür eingetragen ist; andere
+//   Befehle als Suchfenster sind dafür nicht vorgesehen. Ein Befehl kann so zwei Kürzel haben.
 // - Ein Kürzel ohne Handler (die Funktion kommt mit einem späteren Ticket) wird im Editor trotzdem abgefangen, damit
 //   Monacos eigene Belegung (etwa Ctrl + K als Auftakt für Zweierkürzel) nicht wirkt.
 
@@ -95,7 +96,8 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   binding('Ctrl+Shift+Z', 'editor.redo', 'editor'),
   // Suchen (Ticket 08).
   binding('Ctrl+Shift+N', 'file.gotoFile', 'window'),
-  // Zweimal Shift (Ticket 26), auch im Terminal: Shift allein schickt der Shell nichts.
+  // Zweimal Shift (Ticket 26), auch im Terminal: Shift allein schickt der Shell nichts. `scope` und `global` dienen
+  // hier nur der Anzeige (etwa `globalShortcuts`); das Projektfenster wertet sie für zweimal Shift nicht aus.
   binding(DOUBLE_SHIFT, 'file.gotoFile', 'window', true),
   binding('Ctrl+E', 'file.recent', 'window'),
   binding('Ctrl+Shift+F', 'find.inFiles', 'window'),

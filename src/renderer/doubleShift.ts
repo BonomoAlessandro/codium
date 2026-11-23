@@ -7,8 +7,9 @@
 // - Ausgelöst wird beim zweiten Loslassen, wie in IntelliJ. So bricht ein Grossbuchstabe oder ein Klick mit Shift auch
 //   nach dem zweiten Drücken noch ab.
 // - Jede andere gedrückte Taste, ein mitgedrückter Modifikator (Ctrl, Alt, Windows; Alt + Shift wechselt die
-//   Tastatursprache), eine Maustaste, Tastenwiederholung und Fokusverlust brechen ab. Das Loslassen einer anderen
-//   Taste stört nicht: Beim schnellen Tippen kommt es oft erst nach dem nächsten Drücken.
+//   Tastatursprache), eine Maustaste, das Mausrad (Shift + Mausrad scrollt quer), Tastenwiederholung, eine laufende
+//   Eingabe über einen IME und Fokusverlust brechen ab. Das Loslassen einer anderen Taste stört nicht: Beim schnellen
+//   Tippen kommt es oft erst nach dem nächsten Drücken.
 // - Nach dem Auslösen beginnt die Zählung neu; dreimal Shift löst nur einmal aus.
 
 /** Höchster Abstand zwischen den beiden Tastendrücken (Richtwert im Ticket: 300–400 ms). */
@@ -20,6 +21,8 @@ export interface KeyEventLike {
   key: string;
   code: string;
   repeat: boolean;
+  /** Teil einer laufenden Eingabe über einen IME (etwa Japanisch); dann meldet die Taste oft `key === 'Process'`. */
+  isComposing: boolean;
   ctrlKey: boolean;
   altKey: boolean;
   metaKey: boolean;
@@ -27,8 +30,8 @@ export interface KeyEventLike {
   timeStamp: number;
 }
 
-/** Was die Erkennung sieht: Tasten (gedrückt oder losgelassen), Maustasten und Fokusverlust des Fensters. */
-export type DoubleShiftInput = KeyEventLike | { type: 'mousedown' } | { type: 'blur' };
+/** Was die Erkennung sieht: Tasten (gedrückt oder losgelassen), Maustasten, Mausrad und Fokusverlust des Fensters. */
+export type DoubleShiftInput = KeyEventLike | { type: 'mousedown' | 'wheel' | 'blur' };
 
 type State =
   | { phase: 'idle' }
@@ -57,9 +60,11 @@ export class DoubleShiftDetector {
 }
 
 function step(state: State, input: DoubleShiftInput): { state: State; fire: boolean } {
-  // Maustaste oder Fokusverlust: neu beginnen.
+  // Maustaste, Mausrad oder Fokusverlust: neu beginnen.
   if (!('key' in input)) return { state: IDLE, fire: false };
   const event = input;
+  // Eingabe über einen IME: Die Tasten gehören dem IME.
+  if (event.isComposing || event.key === 'Process') return { state: IDLE, fire: false };
   const time = event.timeStamp;
   const clean = !event.ctrlKey && !event.altKey && !event.metaKey;
   if (event.type === 'keydown') {

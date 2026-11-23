@@ -65,6 +65,9 @@ function doubleShift(page: Page, first = 'Shift', second = 'Shift'): Promise<voi
   return keys(page, ['down', first], ['up', first], ['down', second], ['up', second]);
 }
 
+/** Für Abfragen, bei denen die App arbeiten muss (Dateiliste, Öffnen, Fokus); unter Last reicht 1 s nicht. */
+const APP = { timeout: 10_000 };
+
 /** Länger warten als das Zeitfenster, damit ein falsches Auslösen sichtbar würde. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 600));
 
@@ -94,9 +97,9 @@ describe('Zweimal Shift', () => {
   /** Öffnet eine Datei im Editor und setzt den Fokus ans Ende ihres Texts. */
   async function editFile(page: Page, name: string): Promise<void> {
     await item(page, name).dblclick();
-    await expect.poll(() => activeTab(page)).toBe(name);
+    await expect.poll(() => activeTab(page), APP).toBe(name);
     await page.locator('.editor-host .view-lines').click();
-    await expect.poll(() => focusInside(page, '.editor-host')).toBe(true);
+    await expect.poll(() => focusInside(page, '.editor-host'), APP).toBe(true);
     await page.keyboard.press('Control+End');
   }
 
@@ -120,7 +123,7 @@ describe('Zweimal Shift', () => {
       await settle();
       expect(await gotoFile(page).count()).toBe(0);
       await page.keyboard.press('Escape');
-      await expect.poll(() => settings.count()).toBe(0);
+      await expect.poll(() => settings.count(), APP).toBe(0);
 
       await editFile(page, 'notes.txt');
       await doubleShift(page, 'ShiftLeft', 'ShiftRight');
@@ -128,9 +131,9 @@ describe('Zweimal Shift', () => {
       await popup.waitFor();
       const input = popup.getByRole('textbox');
       expect(await input.inputValue()).toBe('');
-      await expect.poll(() => focusInside(page, '[role="dialog"][aria-label="Go to File"]')).toBe(true);
+      await expect.poll(() => focusInside(page, '[role="dialog"][aria-label="Go to File"]'), APP).toBe(true);
       await page.keyboard.type('UsrSrv');
-      await expect.poll(() => popup.getByRole('option').first().getAttribute('aria-label')).toBe('UserService.java');
+      await expect.poll(() => popup.getByRole('option').first().getAttribute('aria-label'), APP).toBe('UserService.java');
 
       // Nochmals zweimal Shift: Die Suche bleibt offen, die Eingabe bleibt.
       await doubleShift(page);
@@ -139,9 +142,9 @@ describe('Zweimal Shift', () => {
       expect(await input.inputValue()).toBe('UsrSrv');
 
       await page.keyboard.press('Enter');
-      await expect.poll(() => activeTab(page)).toBe('UserService.java');
+      await expect.poll(() => activeTab(page), APP).toBe('UserService.java');
       expect(await popup.count()).toBe(0);
-      await expect.poll(() => focusInside(page, '.editor-host')).toBe(true);
+      await expect.poll(() => focusInside(page, '.editor-host'), APP).toBe(true);
     } finally {
       await codium.close();
     }
@@ -171,14 +174,14 @@ describe('Zweimal Shift', () => {
       );
       await settle();
       expect(await gotoFile(page).count()).toBe(0);
-      await expect.poll(() => editorText(page)).toBe('hello\nABC');
+      await expect.poll(() => editorText(page), APP).toBe('hello\nABC');
       expect(await focusInside(page, '.editor-host')).toBe(true);
 
       // Gegenprobe mit denselben Abständen: zweimal Shift allein öffnet die Suche.
       await doubleShift(page);
       await gotoFile(page).waitFor();
       await page.keyboard.press('Escape');
-      await expect.poll(() => gotoFile(page).count()).toBe(0);
+      await expect.poll(() => gotoFile(page).count(), APP).toBe(0);
       expect(await editorText(page)).toBe('hello\nABC');
     } finally {
       await codium.close();
@@ -189,7 +192,7 @@ describe('Zweimal Shift', () => {
     const { codium, page } = await launch({ 'notes.txt': 'hello\n' });
     try {
       await page.keyboard.press('Alt+F12');
-      await expect.poll(() => focusInside(page, '.terminal-view')).toBe(true);
+      await expect.poll(() => focusInside(page, '.terminal-view'), APP).toBe(true);
       await expect.poll(() => terminalText(page), { timeout: 15_000 }).toMatch(/>\s*$/m);
       const before = await terminalText(page);
       expect(promptLines(before)).toHaveLength(1);
@@ -197,19 +200,23 @@ describe('Zweimal Shift', () => {
       await doubleShift(page);
       const popup = gotoFile(page);
       await popup.waitFor();
-      await expect.poll(() => focusInside(page, '[role="dialog"][aria-label="Go to File"]')).toBe(true);
+      await expect.poll(() => focusInside(page, '[role="dialog"][aria-label="Go to File"]'), APP).toBe(true);
       await page.keyboard.type('notes');
-      await expect.poll(() => popup.getByRole('option').first().getAttribute('aria-label')).toBe('notes.txt');
+      await expect.poll(() => popup.getByRole('option').first().getAttribute('aria-label'), APP).toBe('notes.txt');
       await page.keyboard.press('Enter');
-      await expect.poll(() => activeTab(page)).toBe('notes.txt');
+      await expect.poll(() => activeTab(page), APP).toBe('notes.txt');
       expect(await terminalText(page)).toBe(before);
 
       // Zurück ins Terminal: Die Zeile ist leer, ein Befehl läuft wie getippt, und es gab kein weiteres Enter.
       await page.keyboard.press('Alt+F12');
-      await expect.poll(() => focusInside(page, '.terminal-view')).toBe(true);
+      await expect.poll(() => focusInside(page, '.terminal-view'), APP).toBe(true);
       await page.keyboard.type('echo [%OS%]');
       await page.keyboard.press('Enter');
+      // cmd schreibt Ausgabe und neue Eingabeaufforderung in getrennten Stücken: auf beide warten, dann noch etwas,
+      // damit eine dritte Eingabeaufforderung (ein durchgerutschtes Enter) sichtbar würde.
       await expect.poll(() => terminalText(page), { timeout: 15_000 }).toMatch(/^\[Windows_NT\]\s*$/m);
+      await expect.poll(async () => promptLines(await terminalText(page)).length, { timeout: 15_000 }).toBe(2);
+      await settle();
       const after = await terminalText(page);
       expect(promptLines(after)).toHaveLength(2);
       expect(promptLines(after)[0].trimEnd()).toBe(`${promptLines(before)[0].trimEnd()}echo [%OS%]`);

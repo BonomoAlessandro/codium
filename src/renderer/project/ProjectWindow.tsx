@@ -641,10 +641,11 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
         change(hideSide(current, side), true);
       }
     };
-    // Zweimal Shift (Ticket 26) löst beim zweiten Loslassen aus, im ganzen Fenster, auch im Editor und im Terminal
-    // (Shift allein schickt der Shell nichts), aber nicht während einer Rückfrage. Was es öffnet, steht in der
-    // zentralen Belegung. Maustasten und Fokusverlust brechen die Zählung ab; `pointerdown` kommt auch, wo eine Seite
-    // `mousedown` unterdrückt, `mousedown` auch für eine weitere Taste, während schon eine gedrückt ist.
+    // Zweimal Shift (Ticket 26) löst beim zweiten Loslassen aus, immer im ganzen Fenster, auch im Editor und im
+    // Terminal (Shift allein schickt der Shell nichts), aber nicht während einer Rückfrage. Welches Suchfenster es
+    // öffnet, steht in der zentralen Belegung; vorgesehen sind nur Befehle aus SEARCH_POPUPS, `scope` und `global` des
+    // Eintrags gelten hier nicht. Maustasten, Mausrad und Fokusverlust brechen die Zählung ab; `pointerdown` kommt auch,
+    // wo eine Seite `mousedown` unterdrückt, `mousedown` auch für eine weitere Taste, während schon eine gedrückt ist.
     const onKeyUp = (e: KeyboardEvent) => {
       if (!doubleShift.handle(e) || isDialogOpen()) return;
       const command = commandForShortcut(DOUBLE_SHIFT);
@@ -652,19 +653,23 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
       if (searchPopup) openPopup(searchPopup);
     };
     const onMouseDown = () => doubleShift.handle({ type: 'mousedown' });
+    const onWheel = () => doubleShift.handle({ type: 'wheel' });
     const onBlur = (e: FocusEvent) => {
       if (e.target === window) doubleShift.handle({ type: 'blur' });
     };
+    const passive = { capture: true, passive: true };
     window.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('keyup', onKeyUp, true);
     window.addEventListener('pointerdown', onMouseDown, true);
     window.addEventListener('mousedown', onMouseDown, true);
+    window.addEventListener('wheel', onWheel, passive);
     window.addEventListener('blur', onBlur);
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('keyup', onKeyUp, true);
       window.removeEventListener('pointerdown', onMouseDown, true);
       window.removeEventListener('mousedown', onMouseDown, true);
+      window.removeEventListener('wheel', onWheel, passive);
       window.removeEventListener('blur', onBlur);
     };
   }, [change, doubleShift, moveFocusOutOf, showAndFocus, shownLayout, stopDrag]);
