@@ -5,7 +5,7 @@
 import { spawn } from 'node:child_process';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { killProcesses, listProcesses, listProcessesAsync, stillRunning, strayProcesses, type ProcessIdentity } from '../support/processes';
+import { killProcesses, listProcesses, listProcessesAsync, otherTestRuns, stillRunning, strayProcesses, type ProcessIdentity } from '../support/processes';
 
 const CHECKOUT = path.resolve(__dirname, '..', '..');
 const MARKER = path.join(CHECKOUT, 'node_modules', 'typescript-language-server', 'lib', 'cli.mjs');
@@ -38,6 +38,8 @@ describe('Schlussprüfung an der echten Prozesstabelle (Ticket 27)', () => {
       expect(stray).toContain(orphanPid);
       expect(stray).not.toContain(child.pid);
       expect(stray).not.toContain(process.pid);
+      // Der eigene Lauf (Arbeitsprozess, Vitest, npm) zählt nicht als gleichzeitiger anderer Lauf (Läufe laufen allein).
+      expect(otherTestRuns(table, CHECKOUT, process.pid)).toEqual([]);
     } finally {
       child.kill();
       if (orphan && stillRunning(orphan, listProcesses(['node.exe']))) killProcesses([orphan.pid]);

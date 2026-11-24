@@ -2,13 +2,14 @@
 // verwaiste Prozesse aus diesem Checkout (Codium-Testinstanzen und ihre Hilfsprozesse, PostgreSQL aus
 // embedded-postgres, Sprachserver, jdtls und Gradle-Daemons des Test-Zwischenspeichers) und entfernt liegengebliebene
 // Temp-Ordner dieses Laufs, jeweils mit deutlicher Meldung. Prozesse mit lebendem Elternprozess, Prozesse aus anderen
-// Ordnern und das installierte Codium fasst sie nie an (Auswahl in processes.ts).
+// Ordnern und das installierte Codium fasst sie nie an (Auswahl in processes.ts). Läuft gleichzeitig ein anderer
+// Testlauf in diesem Checkout, meldet sie verwaiste Prozesse nur (`planStrayCleanup`).
 
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { killProcesses, listProcesses, strayProcesses, withDescendants, type ProcessInfo } from './processes';
+import { killProcesses, listProcesses, planStrayCleanup, type ProcessInfo } from './processes';
 import { RUN_ENV } from './testRun';
 
 const CHECKOUT = path.resolve(__dirname, '..', '..');
@@ -55,14 +56,16 @@ function removeWithRetries(dir: string): Error | undefined {
 
 export function finalCheck(run: string): void {
   if (process.platform !== 'win32') return;
-  const table = listProcesses();
-  const stray = strayProcesses(table, CHECKOUT);
-  if (stray.length > 0) {
-    const victims = withDescendants(table, stray);
+  const plan = planStrayCleanup(listProcesses(), CHECKOUT, process.pid);
+  if (plan.kill.length > 0) {
+    console.warn(`\nSchlussprüfung: verwaiste Prozesse aus diesem Checkout (Elternprozess beendet), samt Nachkommen; sie werden beendet:\n${plan.kill.map(describe).join('\n')}`);
+    killProcesses(plan.kill.map((p) => p.pid));
+  }
+  if (plan.reportOnly.length > 0) {
+    const others = plan.otherRuns.map((p) => `PID ${p.pid}`).join(', ');
     console.warn(
-      `\nSchlussprüfung: ${stray.length} verwaiste Prozesse aus diesem Checkout (Elternprozess beendet); beendet werden sie samt ${victims.length - stray.length} Nachkommen:\n${victims.map(describe).join('\n')}`,
+      `\nSchlussprüfung: verwaiste Prozesse aus diesem Checkout, samt Nachkommen; nicht beendet, weil gleichzeitig ein anderer Testlauf in diesem Checkout läuft (${others}):\n${plan.reportOnly.map(describe).join('\n')}`,
     );
-    killProcesses(victims.map((p) => p.pid));
   }
 
   const dirs = leftoverTempDirs(os.tmpdir(), run);

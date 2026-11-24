@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { descendantsIn } from '../../src/main/core/processTree';
 import { leftoverTempDirs } from '../support/finalCheck';
 import { serverProcesses } from '../support/postgresReaper';
-import { fromCheckout, isOrphan, programOf, strayProcesses, type ProcessInfo } from '../support/processes';
+import { fromCheckout, isOrphan, otherTestRuns, planStrayCleanup, programOf, strayProcesses, type ProcessInfo } from '../support/processes';
 import { useTempDirs } from '../support/tempDir';
 
 function proc(pid: number, ppid: number, created: number, extra: Partial<ProcessInfo> = {}): ProcessInfo {
@@ -168,6 +168,36 @@ describe('Schlussprüfung: verwaiste Prozesse aus diesem Checkout', () => {
     // Die Befehlszeile nennt den Checkout nur als Argument: nicht aus dem Checkout.
     expect(fromCheckout(proc(1, 0, 0, { name: 'postgres.exe', cmd: `"C:\\PG\\postgres.exe" -D ${root}\\data` }), root)).toBe(false);
     expect(fromCheckout(proc(1, 0, 0, { cmd: '' }), root)).toBe(false);
+  });
+});
+
+describe('Schlussprüfung bei gleichzeitigen Testläufen im selben Checkout (Review)', () => {
+  const root = 'C:\\workspace\\custom\\codium';
+  const node = 'C:\\Program Files\\nodejs\\node.exe';
+  // Der eigene Lauf: npm, darunter Vitest (hier läuft die Schlussprüfung), darunter ein Arbeitsprozess.
+  const npm = proc(10, 4, 100, { name: 'node.exe', exe: node, cmd: `"${node}" npm-cli.js test` });
+  const ownRun = proc(11, 10, 110, { name: 'node.exe', exe: node, cmd: `"node" "${root}\\node_modules\\.bin\\\\..\\vitest\\vitest.mjs" run` });
+  const ownWorker = proc(12, 11, 120, { name: 'node.exe', exe: node, cmd: `"${node}" ${root}\\node_modules\\vitest\\dist\\workers\\forks.js` });
+  // Ein verwaister Gradle-Daemon aus dem Test-Zwischenspeicher.
+  const daemon = proc(20, 999, 200, { name: 'java.exe', exe: 'C:\\Java\\jdk-21\\bin\\java.exe', cmd: `java -cp ${root}\\.test-cache\\gradle\\x.jar GradleDaemon` });
+  const otherRun = proc(30, 4, 300, { name: 'node.exe', exe: node, cmd: `"node" "${root}/node_modules/vitest/vitest.mjs" run --config vitest.slow.config.mts` });
+  const otherCheckout = proc(40, 4, 400, { name: 'node.exe', exe: node, cmd: `"node" "C:\\workspace\\custom\\codium-2\\node_modules\\vitest\\vitest.mjs" run` });
+
+  it('erkennt andere Läufe dieses Checkouts, nicht den eigenen samt Vorfahren, keine Arbeitsprozesse, keine anderen Checkouts', () => {
+    expect(otherTestRuns([npm, ownRun, ownWorker, otherRun, otherCheckout], root, ownRun.pid).map((p) => p.pid)).toEqual([30]);
+    // Auch wenn die Schlussprüfung in einem Kindprozess des Laufs liefe, zählt der eigene Lauf nicht.
+    expect(otherTestRuns([npm, ownRun, ownWorker], root, ownWorker.pid)).toEqual([]);
+  });
+
+  it('beendet verwaiste Prozesse nur, wenn kein anderer Lauf dieses Checkouts läuft, und meldet sie sonst', () => {
+    const alone = planStrayCleanup([npm, ownRun, ownWorker, daemon, otherCheckout], root, ownRun.pid);
+    expect(alone.kill.map((p) => p.pid)).toEqual([20]);
+    expect(alone.reportOnly).toEqual([]);
+
+    const together = planStrayCleanup([npm, ownRun, ownWorker, daemon, otherRun], root, ownRun.pid);
+    expect(together.kill).toEqual([]);
+    expect(together.reportOnly.map((p) => p.pid)).toEqual([20]);
+    expect(together.otherRuns.map((p) => p.pid)).toEqual([30]);
   });
 });
 

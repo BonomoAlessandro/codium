@@ -127,6 +127,47 @@ export function strayProcesses(table: readonly ProcessInfo[], checkoutRoot: stri
   return table.filter((p) => fromCheckout(p, checkoutRoot) && isOrphan(p, table));
 }
 
+/** Der Prozess selbst und seine Vorfahren in der Tabelle (bis die Kette abreisst oder sich wiederholt). */
+function selfAndAncestors(table: readonly ProcessInfo[], pid: number): Set<number> {
+  const chain = new Set<number>();
+  for (let current = table.find((p) => p.pid === pid); current && !chain.has(current.pid); current = table.find((p) => p.pid === current!.ppid)) {
+    chain.add(current.pid);
+  }
+  chain.add(pid);
+  return chain;
+}
+
+/**
+ * Andere Testläufe (Vitest) in diesem Checkout als der, zu dem `ownPid` gehört: Prozesse, die `vitest.mjs` aus dem
+ * Checkout starten. Die Arbeitsprozesse eines Laufs starten andere Dateien und zählen nicht.
+ */
+export function otherTestRuns(table: readonly ProcessInfo[], checkoutRoot: string, ownPid: number): ProcessInfo[] {
+  const root = `${normalized(checkoutRoot)}\\`;
+  const own = selfAndAncestors(table, ownPid);
+  return table.filter((p) => {
+    if (own.has(p.pid)) return false;
+    const cmd = p.cmd.replace(/\//g, '\\').toLowerCase();
+    return cmd.includes(`${root}node_modules\\`) && /\\vitest\\vitest\.mjs\b/.test(cmd);
+  });
+}
+
+/**
+ * Was die Schlussprüfung mit verwaisten Prozessen aus diesem Checkout tut: Sie beendet sie samt Nachkommen. Läuft
+ * gleichzeitig ein anderer Testlauf in diesem Checkout, meldet sie sie nur; ein Gradle-Daemon etwa, den sie für verwaist
+ * hält, könnte gerade von jenem Lauf wieder benutzt werden (Review).
+ */
+export function planStrayCleanup(
+  table: readonly ProcessInfo[],
+  checkoutRoot: string,
+  ownPid: number,
+): { kill: ProcessInfo[]; reportOnly: ProcessInfo[]; otherRuns: ProcessInfo[] } {
+  const stray = strayProcesses(table, checkoutRoot);
+  const otherRuns = otherTestRuns(table, checkoutRoot, ownPid);
+  if (stray.length === 0) return { kill: [], reportOnly: [], otherRuns };
+  const victims = withDescendants(table, stray);
+  return otherRuns.length > 0 ? { kill: [], reportOnly: victims, otherRuns } : { kill: victims, reportOnly: [], otherRuns };
+}
+
 /** Die Prozesse samt ihren Nachkommen (siehe `descendantsIn`), jeder einmal. */
 export function withDescendants<T extends ProcessEntry>(table: readonly T[], roots: readonly T[]): T[] {
   const all = [...roots, ...descendantsIn(table, roots)];
