@@ -44,6 +44,9 @@ function handle(message: { id?: number; method?: string }): void {
   send({ id: message.id, result: message.method === 'textDocument/diagnostic' ? { kind: 'full', items: [] } : null });
 }
 
+// Schliesst Codium die Verbindung, endet der Server wie ein echter.
+process.stdin.on('end', () => process.exit(0));
+
 let buffer = Buffer.alloc(0);
 process.stdin.on('data', (chunk: Buffer) => {
   buffer = Buffer.concat([buffer, chunk]);

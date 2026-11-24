@@ -30,6 +30,9 @@ describe('Neustart eines Sprachservers (Ticket 27)', () => {
     fs.writeFileSync(path.join(project, 'tsconfig.json'), '{}');
     const log = path.join(root, 'server.log');
     const test = createTestCore(path.join(root, 'data'), {
+      // Beim Abbau fragt der Dienst für typescript-language-server erst die Kindprozesse ab (PowerShell, unter Last
+      // mehrere Sekunden) und beendet dann den Server; der läuft im Projektordner. Wie die langsamen TypeScript-Tests.
+      cleanupTimeoutMs: 10_000,
       typescript: {
         nativeTsc: path.join(root, 'nicht-benutzt.exe'),
         languageServerCli: FAKE_SERVER,
