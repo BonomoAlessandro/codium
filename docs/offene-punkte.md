@@ -77,15 +77,16 @@ Stand 2026-11-24, nach Ticket 27. Gelegentlich rot, einzeln jeweils grün:
 Behoben am 2026-11-24 (Ticket 27, Ursachen und Messungen dort):
 
 - UI „öffnet eine JDK-Klasse …“: Codium sprang auf Zeile 1, wenn jdtls kurz nach dem Import die ganze Klassendatei als
-  Ziel lieferte; der Sprach-Dienst fragt dann neu, bis er den Namen bekommt. Dazu ein Wettlauf im Test, der jede
+  Ziel lieferte; der Sprach-Dienst fragt bei der Definition dann bis zu 4 s lang neu. Dazu ein Wettlauf im Test, der jede
   Sekunde neu klickte.
 - Langsam „startet nach einem Absturz neu …“: Codium schickte einem neu startenden Server Anfragen und
   Dateiänderungen vor `initialized`; der native TypeScript-Server stürzte daran ab, und Codium gab ihn zu früh auf.
+  Jetzt geht vor `initialized` nichts mehr hinaus; Dateiänderungen aus dieser Zeit kommen danach.
 - Schnell „lässt einen gelöschten Projektordner los …“: Ein Git-Aufruf mit dem Projektordner als Arbeitsordner
   verhinderte das Löschen (EPERM); der Test läuft ohne Git. Die Wiederholungen vom 2026-11-23 (unten dem Virenscanner
   zugeschrieben) fingen vermutlich denselben Git-Aufruf ab.
 - UI Markdown-Vorschau mit Mermaid: Der Virenscanner hielt die frisch gebaute `mermaid.js` beim ersten Lesen über 10 s
-  fest; der UI-Lauf liest `dist/` jetzt vor den Tests einmal.
+  fest; der UI-Lauf liest `dist/` jetzt vor den Tests einmal, und der Test wartet auf das Laden bis 60 s.
 
 Schneller Lauf, behoben am 2026-11-23: Klonen, Abbrechen einer Suche und die Dateiüberwachung bei übergelaufenem Puffer
 waren unter voller Last gelegentlich rot. Ursachen: das Standardlimit von Vitest (5 s) war kürzer als die inneren
