@@ -9,11 +9,27 @@ import { describe, expect, it } from 'vitest';
 import { defaultLayout } from '../../src/main/core/schema';
 import { WM_ACTIVATE } from '../../src/main/testMode';
 import { codiumTestEnv, ELECTRON_PATH, launchCodium, prepareAppState, prepareProjectState, PROJECT_ROOT } from '../support/launchApp';
-import { extendedWindowStyle, WS_EX_NOACTIVATE } from '../support/nativeWindow';
+import { extendedWindowStyle, onSomeScreen, windowsOfProcess, WS_EX_NOACTIVATE } from '../support/nativeWindow';
 import { killProcesses, listProcesses, listProcessesAsync, stillRunning, withDescendants, type ProcessInfo } from '../support/processes';
 import { useTempDirs } from '../support/tempDir';
 
 const GUARD_STARTER = path.join(__dirname, '..', 'support', 'guardStarter.ts');
+
+/**
+ * Ersatz für den tsserver eines Projekts mit TypeScript 5 (Test des Wächters): Er startet einen abgekoppelten
+ * Hilfsprozess, wie es ein Gradle-Daemon ist, und bleibt selbst stehen. Den Hilfsprozess nimmt kein Job-Objekt mit, wenn
+ * Codium endet; beenden kann ihn nur der Wächter. Seine Nummer kommt in keepers.txt daneben.
+ */
+const KEEPER_TSSERVER = [
+  "const { spawn } = require('child_process');",
+  "const fs = require('fs');",
+  "const path = require('path');",
+  "const keeper = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore', windowsHide: true, env: process.env });",
+  "fs.appendFileSync(path.join(__dirname, 'keepers.txt'), keeper.pid + String.fromCharCode(10));",
+  'keeper.unref();',
+  'setInterval(() => {}, 1000);',
+  '',
+].join('\n');
 
 describe('App im Testmodus', () => {
   const tempDir = useTempDirs();
@@ -111,10 +127,21 @@ describe('App im Testmodus', () => {
   });
 
   it('beendet sich samt Kindprozessen binnen Sekunden, wenn der startende Prozess endet (Wächter, Ticket 27)', async () => {
-    // Eine TypeScript-Datei im Editor und das Terminal offen: Beim Start kommen der Sprachserver und eine Shell dazu.
+    // Das Terminal offen (cmd) und ein Projekt mit TypeScript 5: Codium startet typescript-language-server, und der den
+    // tsserver des Projekts, hier den Ersatz mit einem abgekoppelten Hilfsprozess. Electron selbst und die Prozesse, die
+    // es mit Node startet, enden ohnehin mit ihm (Job-Objekte von Node); der Hilfsprozess nicht. Er zeigt, dass der
+    // Wächter die Nachkommen beendet (ohne `killDescendants` bliebe er stehen).
     const alpha = path.join(tempDir(), 'Alpha');
-    fs.mkdirSync(alpha, { recursive: true });
+    const typescript = path.join(alpha, 'node_modules', 'typescript');
+    fs.mkdirSync(path.join(typescript, 'lib'), { recursive: true });
+    fs.writeFileSync(path.join(typescript, 'package.json'), JSON.stringify({ name: 'typescript', version: '5.9.3' }));
+    fs.writeFileSync(path.join(typescript, 'lib', 'tsserver.js'), KEEPER_TSSERVER);
+    fs.writeFileSync(path.join(alpha, 'tsconfig.json'), '{}');
     fs.writeFileSync(path.join(alpha, 'index.ts'), 'export const answer: number = 42;\n');
+    const keepers = () => {
+      const file = path.join(typescript, 'lib', 'keepers.txt');
+      return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split(/\r?\n/).filter((l) => l !== '').map(Number) : [];
+    };
     const dataRoot = tempDir();
     prepareAppState(dataRoot, { openProjects: [alpha], recentProjects: [alpha] });
     prepareProjectState(dataRoot, alpha, {
@@ -143,15 +170,26 @@ describe('App im Testmodus', () => {
             const table = await listProcessesAsync();
             const app = table.find((p) => p.pid === appPid);
             tree = app ? withDescendants(table, [app]) : [];
+            const started = keepers();
             return {
               shell: tree.some((p) => p.name.toLowerCase() === 'cmd.exe'),
-              // Ohne eigenes TypeScript im Projekt der native Server von TypeScript 7 (`tsc.exe --lsp`).
-              languageServer: tree.some((p) => p.name.toLowerCase() === 'tsc.exe' && p.cmd.includes('--lsp')),
+              languageServer: tree.some((p) => p.cmd.includes('typescript-language-server')),
+              keeper: started.length > 0 && started.every((pid) => tree.some((p) => p.pid === pid)),
             };
           },
           { timeout: 60_000, interval: 1000 },
         )
-        .toEqual({ shell: true, languageServer: true });
+        .toEqual({ shell: true, languageServer: true, keeper: true });
+
+      // Diese Instanz läuft ohne Playwright und damit ohne die Prüfung in `close()`: dieselben Schutzversprechen hier,
+      // nur gelesen. Ihre Fenster sind nicht aktivierbar, liegen auf keinem Bildschirm und sind nicht im Vordergrund.
+      const { windows, screen } = windowsOfProcess(appPid);
+      expect(windows.length).toBeGreaterThan(0);
+      for (const w of windows) {
+        expect(w.exStyle & WS_EX_NOACTIVATE, `Fenster ${w.hwnd}`).toBe(WS_EX_NOACTIVATE);
+        expect(onSomeScreen(w, screen), `Fenster ${w.hwnd} bei ${w.left},${w.top}`).toBe(false);
+        expect(w.foreground, `Fenster ${w.hwnd}`).toBe(false);
+      }
 
       const exited = new Promise<void>((resolve) => starter.once('exit', () => resolve()));
       starter.kill();

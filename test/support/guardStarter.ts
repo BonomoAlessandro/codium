@@ -4,7 +4,10 @@
 // Node startet die Datei direkt (siehe processes.ts).
 
 import { spawn } from 'node:child_process';
+import * as fs from 'node:fs';
 import * as net from 'node:net';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 interface Request {
   electron: string;
@@ -19,6 +22,9 @@ process.stdin.on('end', () => {
   const { electron, root, env } = JSON.parse(input) as Request;
   // Nie ohne Testmodus (Spielregeln); die Umgebung baut die Starthilfe, hier nur die Gegenprobe.
   if (env.CODIUM_TEST_HIDDEN !== '1' || !env.CODIUM_TEST_DATA_DIR || !env.CODIUM_TEST_GUARD_PIPE) process.exit(2);
+  // Der Datenordner liegt im Temp-Ordner, wie es die Starthilfe verlangt (assertTestModeEnv).
+  const real = (dir: string) => fs.realpathSync.native(path.resolve(dir)).toLowerCase();
+  if (!fs.existsSync(env.CODIUM_TEST_DATA_DIR) || !real(env.CODIUM_TEST_DATA_DIR).startsWith(real(os.tmpdir()) + path.sep)) process.exit(2);
   const server = net.createServer((socket) => {
     socket.on('error', () => {});
     socket.resume();
