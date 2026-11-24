@@ -523,7 +523,10 @@ export class LanguageService {
 
   private async pullDiagnostics(file: string): Promise<void> {
     const doc = this.documents.get(key(file));
-    const connection = doc ? this.servers[doc.server].connection : null;
+    const server = doc ? this.servers[doc.server] : null;
+    // Ein Server, der gerade (neu) startet, bekommt nichts vor `initialized` (Spezifikation von LSP); der native
+    // TypeScript-Server stürzte daran ab (Ticket 27). `start` holt die Fehler danach ohnehin.
+    const connection = server?.initialized && server.connection?.running ? server.connection : null;
     if (!connection || !doc) return;
     const version = doc.version;
     const report = await connection
@@ -555,7 +558,9 @@ export class LanguageService {
   // ---------- Dateiänderungen ----------
 
   private notifyWatched(changes: Array<{ path: string; type: number }>): void {
+    // Nur Server nach `initialized` (siehe `pullDiagnostics`); ein startender liest die Dateien ohnehin frisch.
     const connections = Object.values(this.servers)
+      .filter((s) => s.initialized)
       .map((s) => s.connection)
       .filter((c): c is LspConnection => c?.running === true);
     if (connections.length === 0 || changes.length === 0) return;
