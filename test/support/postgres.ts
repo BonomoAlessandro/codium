@@ -66,7 +66,11 @@ export async function startPostgres(): Promise<TestPostgres> {
     // Wie embedded-postgres, aber ohne dessen `start`/`stop` (siehe oben). Ein direktes Kind des Testprozesses: Endet
     // dieser hart, beendet Windows den Hauptprozess mit ihm (Job-Objekt von Node), den Rest der Wächter.
     server = spawn(POSTGRES_BINARY, ['-D', dataDir, '-p', String(port)], { stdio: 'ignore', windowsHide: true });
-    await untilAccepting(server, port);
+    // Der Wächter merkt sich den Server gleich (den Hauptprozess, an dem er die Hilfsprozesse später erkennt) und nach
+    // dem Start noch einmal samt Hilfsprozessen.
+    reaper.watch();
+    await untilAccepting(server, port, dataDir);
+    reaper.watch();
     const setup = new pg.Client({ host: '127.0.0.1', port, user: PG_USER, password: PG_PASSWORD, database: 'postgres' });
     await setup.connect();
     try {
@@ -81,7 +85,6 @@ export async function startPostgres(): Promise<TestPostgres> {
     await reaper.finish();
     throw err;
   }
-  reaper.watch();
   // Alle Prozesse des Servers mit Startzeit, auch die Hilfsprozesse, die ihren Hauptprozess überleben können.
   const known = serverProcesses(listProcesses(['postgres.exe']), { dataDir }).map(({ pid, created }) => ({ pid, created }));
   return {
@@ -98,23 +101,35 @@ export async function startPostgres(): Promise<TestPostgres> {
   };
 }
 
-/** Wartet, bis der Server Verbindungen annimmt; scheitert, wenn er vorher endet oder nach 60 s. */
-async function untilAccepting(server: ChildProcess, port: number): Promise<void> {
-  let exited = false;
-  server.once('exit', () => (exited = true));
+/**
+ * Wartet, bis der eigene Server Verbindungen annimmt. Alle Test-Server haben dieselben Zugangsdaten; unter dem Port
+ * könnte auch ein anderer antworten. Deshalb zählt die Antwort nur, wenn der Server den eigenen Datenordner nennt und der
+ * eigene Prozess noch läuft (Review). Scheitert sofort, wenn sich der Server nicht starten lässt oder endet, sonst nach
+ * 60 s.
+ */
+async function untilAccepting(server: ChildProcess, port: number, dataDir: string): Promise<void> {
+  let failure: Error | null = null;
+  server.once('error', (err) => (failure = new Error(`PostgreSQL lässt sich nicht starten: ${err.message}`)));
+  server.once('exit', (code) => (failure ??= new Error(`PostgreSQL endete beim Start (Exit-Code ${code}).`)));
+  const own = (dir: string) => path.resolve(dir).replace(/\//g, '\\').toLowerCase();
   const deadline = Date.now() + 60_000;
+  let last = '';
   for (;;) {
-    if (exited) throw new Error('PostgreSQL endete beim Start.');
+    if (failure) throw failure;
     const probe = new pg.Client({ host: '127.0.0.1', port, user: PG_USER, password: PG_PASSWORD, database: 'postgres' });
     try {
       await probe.connect();
+      const answer = await probe.query<{ dir: string }>("SELECT current_setting('data_directory') AS dir");
       await probe.end();
-      return;
+      if (server.exitCode === null && server.signalCode === null && own(answer.rows[0].dir) === own(dataDir)) return;
+      last = `Unter Port ${port} antwortet ein anderer Server (${answer.rows[0].dir}).`;
     } catch (err) {
       await probe.end().catch(() => {});
-      if (Date.now() > deadline) throw new Error(`PostgreSQL nimmt keine Verbindungen an: ${(err as Error).message}`);
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      last = (err as Error).message;
     }
+    if (failure) throw failure;
+    if (Date.now() > deadline) throw new Error(`PostgreSQL nimmt keine Verbindungen an: ${last}`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
 }
 
