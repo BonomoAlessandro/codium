@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { gradleJavaRange, gradleJdkFor, javaRuntimes, wrapperGradleVersion, writableConfiguration } from '../../src/main/core/language/javaServer';
+import { askUntilPrecise, hasCoarseClassFileTarget } from '../../src/main/core/language/languageService';
 import type { CommandArgs, CommandName, CommandResult, JdkInfo } from '../../src/shared/types';
 import { createTestCore, type TestCore } from '../support/core';
 import { useTempDirs } from '../support/tempDir';
@@ -105,5 +106,53 @@ describe('Laufzeiten und Gradle', () => {
     fs.mkdirSync(path.join(nested, 'backend', 'gradle', 'wrapper'), { recursive: true });
     fs.writeFileSync(path.join(nested, 'backend', 'gradle', 'wrapper', 'gradle-wrapper.properties'), 'distributionUrl=https\\://x/gradle-8.5-bin.zip\n');
     expect(gradleJdkFor(nested, jdks)?.major).toBe(21);
+  });
+});
+
+describe('Grobe Ziele in Klassendateien (Ticket 27)', () => {
+  const STRING = 'jdt://contents/java.base/java.lang/String.java?=hello/x%3Cjava.lang%28String.class';
+  const range = (startLine: number, startCharacter: number, endLine: number, endCharacter: number) => ({
+    start: { line: startLine, character: startCharacter },
+    end: { line: endLine, character: endCharacter },
+  });
+
+  it('erkennt die ganze Klassendatei als grobes Ziel, den Namen und Ziele in Projektdateien nicht', () => {
+    // So antwortet jdtls kurz nach dem Import für String: die ganze Datei statt des Namens auf Zeile 142.
+    expect(hasCoarseClassFileTarget([{ uri: STRING, range: range(0, 0, 4917, 0) }])).toBe(true);
+    expect(hasCoarseClassFileTarget({ targetUri: STRING, targetSelectionRange: range(3, 0, 9, 1) })).toBe(true);
+    expect(hasCoarseClassFileTarget([{ uri: STRING, range: range(141, 19, 141, 25) }])).toBe(false);
+    // Eine Deklaration über mehrere Zeilen in einer Projektdatei ist kein Grund, neu zu fragen.
+    expect(hasCoarseClassFileTarget([{ uri: 'file:///C:/p/Main.java', range: range(2, 0, 8, 1) }])).toBe(false);
+    expect(hasCoarseClassFileTarget(null)).toBe(false);
+    expect(hasCoarseClassFileTarget([])).toBe(false);
+  });
+
+  it('fragt neu, bis die Antwort genau ist, und behält sonst nach den Versuchen die letzte', async () => {
+    const answers = ['grob', 'grob', 'genau', 'später'];
+    let asked = 0;
+    const ask = async () => answers[asked++];
+    expect(await askUntilPrecise(ask, (a) => a === 'grob', { attempts: 10, delayMs: 1 })).toBe('genau');
+    expect(asked).toBe(3);
+
+    asked = 0;
+    expect(await askUntilPrecise(async () => (asked++, 'grob'), (a) => a === 'grob', { attempts: 4, delayMs: 1 })).toBe('grob');
+    expect(asked).toBe(4);
+
+    // Ein genaues Ziel gleich beim ersten Mal: keine weitere Frage.
+    asked = 0;
+    expect(await askUntilPrecise(async () => (asked++, 'genau'), (a) => a === 'grob', { attempts: 4, delayMs: 1 })).toBe('genau');
+    expect(asked).toBe(1);
+  });
+
+  it('hört auf zu fragen, sobald der Server endet oder das Projekt schliesst', async () => {
+    let asked = 0;
+    let stopped = false;
+    const ask = async () => {
+      asked++;
+      if (asked === 2) stopped = true;
+      return 'grob';
+    };
+    expect(await askUntilPrecise(ask, () => true, { attempts: 10, delayMs: 1, stop: () => stopped })).toBe('grob');
+    expect(asked).toBe(2);
   });
 });

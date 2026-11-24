@@ -35,17 +35,27 @@ async function wordAt(page: Page, text: string, lineText: RegExp): Promise<{ x: 
       const pattern = new RegExp(source as string);
       const line = [...document.querySelectorAll<HTMLElement>('.editor-host .view-line')].find((l) => pattern.test(l.innerText.replace(/ /g, ' ')));
       if (!line) return null;
+      // Monaco teilt lange Abschnitte gleicher Farbe nach 50 Zeichen in mehrere Textknoten, etwa „…, CharSeq“ und
+      // „uence,“, solange die Färbung des Sprachservers fehlt. Gesucht wird deshalb im Text der ganzen Zeile.
+      const nodes: Text[] = [];
       const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
-      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-        const index = (node.textContent ?? '').indexOf(w as string);
-        if (index < 0) continue;
-        const range = document.createRange();
-        range.setStart(node, index);
-        range.setEnd(node, index + (w as string).length);
-        const r = range.getBoundingClientRect();
-        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-      }
-      return null;
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node as Text);
+      const full = nodes.map((n) => n.data).join('');
+      const index = full.indexOf(w as string);
+      if (index < 0) return null;
+      const at = (offset: number): [Text, number] => {
+        let rest = offset;
+        for (const node of nodes) {
+          if (rest <= node.data.length) return [node, rest];
+          rest -= node.data.length;
+        }
+        return [nodes[nodes.length - 1], nodes[nodes.length - 1].data.length];
+      };
+      const range = document.createRange();
+      range.setStart(...at(index));
+      range.setEnd(...at(index + (w as string).length));
+      const r = range.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
     },
     [text, lineText.source] as const,
   );
@@ -63,18 +73,43 @@ async function ctrlClick(page: Page, text: string, lineText: RegExp): Promise<vo
   await page.keyboard.up('Control');
 }
 
-/** Klickt, bis der erwartete Tab aktiv ist (jdtls importiert beim ersten Mal noch). */
-async function jumpTo(page: Page, from: string, word: string, line: RegExp, tab: string): Promise<void> {
-  await expect
-    .poll(
-      async () => {
-        if ((await activeTab(page)) === from) await ctrlClick(page, word, line).catch(() => {});
-        await page.waitForTimeout(1000);
-        return activeTab(page);
-      },
-      { timeout: 240_000, interval: 1000 },
-    )
-    .toBe(tab);
+/** Ob jdtls noch importiert („Importing Java project…“ unter den laufenden Arbeiten der Statusleiste). */
+async function importing(page: Page): Promise<boolean> {
+  return ((await page.locator('.status-progress').getAttribute('title')) ?? '').includes('Importing Java project');
+}
+
+/**
+ * Ein Ctrl + Linksklick, dann warten, bis der erwartete Tab aktiv ist; ein weiterer Klick erst nach einer Minute ohne
+ * Sprung. Früher klickte der Test jede Sekunde neu: Kam ein Sprung gerade während eines solchen Klicks an, traf der Klick
+ * ein Wort in der eben geöffneten Datei, und der Cursor stand danach mitten im Javadoc (Ticket 27).
+ */
+async function jumpTo(page: Page, word: string, line: RegExp, tab: string): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    await ctrlClick(page, word, line);
+    try {
+      await expect.poll(() => activeTab(page), { timeout: 60_000, interval: 500 }).toBe(tab);
+      return;
+    } catch (err) {
+      if (attempt === 3) throw err;
+    }
+  }
+}
+
+/** Die Zeile mit dem Cursor (nach der Statusleiste) und ihr Text ab dem Cursor. */
+async function atCursor(page: Page): Promise<{ line: string; rest: string } | null> {
+  const [lineNumber, column] = (await page.getByLabel('Line and column', { exact: true }).innerText()).split(':').map(Number);
+  return page.evaluate(
+    ([wanted, col]) => {
+      // Zeilennummer und Zeile stehen in Monaco auf derselben Höhe.
+      const number = [...document.querySelectorAll<HTMLElement>('.editor-host .line-numbers')].find((n) => n.textContent?.trim() === String(wanted));
+      const top = number?.parentElement?.style.top;
+      const view = [...document.querySelectorAll<HTMLElement>('.editor-host .view-line')].find((l) => top !== undefined && l.style.top === top);
+      if (!view) return null;
+      const text = view.innerText.replace(/ /g, ' ');
+      return { line: text, rest: text.slice(col - 1) };
+    },
+    [lineNumber, column] as const,
+  );
 }
 
 describe.skipIf(!ready)('Java im Editor', () => {
@@ -107,8 +142,15 @@ describe.skipIf(!ready)('Java im Editor', () => {
       await item(page, 'Main.java').dblclick();
       await page.locator('.editor-host .view-lines').waitFor();
 
-      await jumpTo(page, 'Main.java', 'String', /String\[\] args/, 'String.class');
-      await expect.poll(() => page.locator('.editor-host .view-lines').innerText().then((t) => t.replace(/ /g, ' '))).toContain('public final class String');
+      // Klicks während des Imports beantwortet jdtls erst danach; so lange wartet der Test.
+      await expect.poll(() => importing(page), { timeout: 240_000, interval: 1000 }).toBe(false);
+
+      await jumpTo(page, 'String', /String\[\] args/, 'String.class');
+      // Der Cursor steht auf dem Namen in der Deklaration, nicht auf Zeile 1 (Ticket 27): Kurz nach dem Import liefert
+      // jdtls die ganze Datei als Ziel; der Sprach-Dienst fragt dann neu, bis er den Namen bekommt.
+      await expect
+        .poll(() => atCursor(page), { timeout: 15_000 })
+        .toMatchObject({ line: expect.stringContaining('public final class String'), rest: expect.stringMatching(/^String\b/) });
       // Schreibgeschützt: Tippen ändert nichts.
       const before = await page.locator('.editor-host .view-lines').innerText();
       await page.locator('.editor-host .view-lines').click();
@@ -116,7 +158,10 @@ describe.skipIf(!ready)('Java im Editor', () => {
       expect(await page.locator('.editor-host .view-lines').innerText()).toBe(before);
 
       // Auch in der Klassendatei: Ctrl + Linksklick auf ein anderes JDK-Interface.
-      await jumpTo(page, 'String.class', 'CharSequence', /implements .*CharSequence/, 'CharSequence.class');
+      await jumpTo(page, 'CharSequence', /implements .*CharSequence/, 'CharSequence.class');
+      await expect
+        .poll(() => atCursor(page), { timeout: 15_000 })
+        .toMatchObject({ line: expect.stringContaining('interface CharSequence'), rest: expect.stringMatching(/^CharSequence\b/) });
     } finally {
       await codium.close();
     }

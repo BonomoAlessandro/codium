@@ -450,10 +450,15 @@ export class LanguageService {
     const at = this.position(params);
     const connection = await this.connectionFor(at.file);
     if (!connection) return [];
-    const result = await connection.request<unknown>(method, { textDocument: { uri: uriOf(at.file) }, position: at.position, ...extra }).catch(() => null);
-    const list = Array.isArray(result) ? result : result ? [result] : [];
+    const ask = () => connection.request<unknown>(method, { textDocument: { uri: uriOf(at.file) }, position: at.position, ...extra }).catch(() => null);
+    // Ein grobes Ziel in einer Klassendatei (siehe `hasCoarseClassFileTarget`) wird kurz darauf genau: noch einmal fragen.
+    const result = await askUntilPrecise(ask, hasCoarseClassFileTarget, {
+      attempts: COARSE_TARGET_ATTEMPTS,
+      delayMs: COARSE_TARGET_DELAY_MS,
+      stop: () => this.disposed || !connection.running,
+    });
     const out: CodeLocation[] = [];
-    for (const item of list as Array<{ uri?: string; range?: TextRange; targetUri?: string; targetSelectionRange?: TextRange; targetRange?: TextRange }>) {
+    for (const item of locationItems(result)) {
       const uri = item.targetUri ?? item.uri;
       const range = item.targetSelectionRange ?? item.range ?? item.targetRange;
       if (!uri || !range || (!uri.startsWith('file:') && !isJdtUri(uri))) continue;
@@ -851,6 +856,14 @@ const SYMBOL_WAIT_MS = 5000;
 /** So viele Vorschläge gehen nach dem Filtern höchstens an die Oberfläche. */
 const COMPLETION_LIMIT = 1000;
 
+/**
+ * Ein grobes Ziel in einer Klassendatei (siehe `hasCoarseClassFileTarget`) fragt der Dienst so oft und in diesem Abstand
+ * neu, zusammen etwa 15 s. Gemessen lieferte jdtls weniger als eine Sekunde nach der groben Antwort den Namen; der Rest
+ * ist Reserve für einen belasteten Rechner.
+ */
+const COARSE_TARGET_ATTEMPTS = 31;
+const COARSE_TARGET_DELAY_MS = 500;
+
 /** Ob ein Vorschlag zum getippten Wortanfang passt: dessen Buchstaben in dieser Reihenfolge, ohne Gross/Klein. */
 export function matchesPrefix(text: string, prefix: string): boolean {
   if (prefix === '') return true;
@@ -964,6 +977,49 @@ function isCount(value: unknown): value is number {
 /** Klassendateien liefert jdtls als `jdt://contents/…`; sie sind keine Pfade (Ticket 14). */
 export function isJdtUri(value: string): boolean {
   return value.startsWith('jdt:');
+}
+
+/** Ein Ziel, wie die Server es liefern: `Location` oder `LocationLink`. */
+interface LocationItem {
+  uri?: string;
+  range?: TextRange;
+  targetUri?: string;
+  targetSelectionRange?: TextRange;
+  targetRange?: TextRange;
+}
+
+/** Die Ziele einer Antwort auf definition oder implementation: eines, eine Liste oder keines. */
+function locationItems(result: unknown): LocationItem[] {
+  const list = Array.isArray(result) ? result : result ? [result] : [];
+  return list.filter((item): item is LocationItem => typeof item === 'object' && item !== null);
+}
+
+/**
+ * Ob ein Ziel in einer Klassendatei (`jdt://…`) nur grob ist: ein Bereich über mehrere Zeilen statt des Namens. jdtls
+ * liefert kurz nach dem Import, solange die Quellen des JDK im Projekt noch nicht eingebunden sind, die ganze Datei als
+ * Bereich (etwa 0:0 bis 4917:0 für String); Monaco nimmt dessen Anfang, und der Sprung landete auf Zeile 1 statt auf der
+ * Deklaration (Ticket 27). Ein Name steht immer auf einer Zeile.
+ */
+export function hasCoarseClassFileTarget(result: unknown): boolean {
+  return locationItems(result).some((item) => {
+    const uri = item.targetUri ?? item.uri;
+    const range = item.targetSelectionRange ?? item.range ?? item.targetRange;
+    return typeof uri === 'string' && isJdtUri(uri) && range !== undefined && range.end.line > range.start.line;
+  });
+}
+
+/**
+ * Fragt neu, solange die Antwort grob ist, höchstens `attempts` Mal insgesamt und mit `delayMs` Pause dazwischen. Bleibt
+ * sie grob (etwa eine Bibliothek ganz ohne Quellen), gilt die letzte Antwort.
+ */
+export async function askUntilPrecise<T>(ask: () => Promise<T>, coarse: (answer: T) => boolean, options: { attempts: number; delayMs: number; stop?: () => boolean }): Promise<T> {
+  let answer = await ask();
+  for (let attempt = 1; attempt < options.attempts && coarse(answer) && !options.stop?.(); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+    if (options.stop?.()) break;
+    answer = await ask();
+  }
+  return answer;
 }
 
 function serverIdOf(file: string): ServerId | null {

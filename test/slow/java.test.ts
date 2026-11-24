@@ -174,7 +174,13 @@ describe.skipIf(skip !== null)('Java-Sprachserver (jdtls)', () => {
     const string = await call(test, windowId, 'language.definition', { path: at(main), ...pos(MAIN, 'String[]', 1) });
     expect(string[0]).toMatchObject({ readOnly: true });
     expect(string[0].path).toMatch(/^jdt:\/\/contents\/java\.base\/java\.lang\/String\.(class|java)/);
-    expect((await call(test, windowId, 'language.readTarget', { path: string[0].path })).text).toMatch(/public final class String/);
+    const stringSource = (await call(test, windowId, 'language.readTarget', { path: string[0].path })).text;
+    expect(stringSource).toMatch(/public final class String/);
+    // Das Ziel ist der Name in der Deklaration, nicht die ganze Datei, wie jdtls sie kurz nach dem Import liefert (Ticket 27).
+    const { start, end } = string[0].range;
+    expect(end.line).toBe(start.line);
+    expect(stringSource.split(/\r?\n/)[start.line].slice(start.character, end.character)).toBe('String');
+    expect(stringSource.split(/\r?\n/)[start.line]).toMatch(/class String\b/);
     // Ctrl + Linksklick auch innerhalb dieses Tabs: eine Anfrage in der Klassendatei wird beantwortet.
     expect(await call(test, windowId, 'language.hover', { path: string[0].path, line: string[0].range.start.line, character: string[0].range.start.character + 1 })).not.toBeNull();
 
