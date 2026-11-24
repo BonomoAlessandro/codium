@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FolderQueries } from '../../src/main/core/folderQueries';
 import { lexicalProjectKey, normalizeProjectPath } from '../../src/main/core/projectPath';
 import { useTempDirs } from '../support/tempDir';
+import { tempPrefix } from '../support/testRun';
 import { neverAnsweringPipe, unusedDriveLetter, type NeverAnsweringPipe } from '../support/unreachable';
 
 describe('Abfragen auf Projektordnern', () => {
@@ -39,7 +40,7 @@ describe('Abfragen auf Projektordnern', () => {
 
   it('vergleicht vorhandene Ordner über ihren echten Pfad, zeigt aber die angegebene Schreibweise', async () => {
     // os.tmpdir() liefert unter Windows oft einen Kurznamen wie C:\Users\ALESSA~1\...; mkdtemp übernimmt ihn.
-    const raw = fs.mkdtempSync(path.join(os.tmpdir(), 'codium-pfad-'));
+    const raw = fs.mkdtempSync(path.join(os.tmpdir(), tempPrefix('pfad')));
     try {
       const real = fs.realpathSync.native(raw);
       const project = path.join(real, 'Projekt');

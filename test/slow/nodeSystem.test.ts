@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { NodeSystem } from '../../src/main/system/nodeSystem';
 import { readTestMode } from '../../src/main/testMode';
+import { tempPrefix } from '../support/testRun';
 
 describe('Port „System“ (echt)', () => {
   it('findet Git im PATH und einen vorhandenen Benutzerordner', () => {
@@ -36,7 +37,7 @@ describe('Port „System“ (echt)', () => {
 
   it('liest Ordner und Dateien, ohne bei fehlenden zu werfen', () => {
     const system = new NodeSystem();
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codium-system-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), tempPrefix('system')));
     try {
       fs.mkdirSync(path.join(dir, 'jdk-25'));
       fs.writeFileSync(path.join(dir, 'jdk-25', 'release'), 'JAVA_VERSION="25"\n', 'utf8');
