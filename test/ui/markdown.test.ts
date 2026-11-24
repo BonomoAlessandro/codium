@@ -137,6 +137,11 @@ describe('Markdown-Vorschau', () => {
       // Ebenso das <img src="x" onerror=…> weiter unten: Es gibt das Bild nicht, also der Alternativtext.
       await expect.poll(() => doc.locator('.md-image-alt').allInnerTexts()).toEqual(['Outside', 'x']);
 
+      // Mermaid lädt erst jetzt (5 MB). Das erste Lesen der frisch gebauten Datei hielt der Virenscanner gemessen 8 bis
+      // 19 s fest; der UI-Lauf liest sie deshalb vorab (warmBuild.ts), einmal kam die Wartezeit trotzdem hier an (nach
+      // einem Standby des Rechners). Das ist reine Dauer, deshalb für das Laden bis 60 s (Ticket 27). Getrennt davon das
+      // Zeichnen: Bleibt es aus, obwohl Mermaid geladen ist, liegt es nicht am Laden.
+      await expect.poll(() => page.evaluate(() => 'codiumMermaid' in globalThis), { timeout: 60_000 }).toBe(true);
       // Mermaid als SVG; das fehlerhafte Diagramm zeigt seine Meldung, der Rest bleibt.
       await expect.poll(() => doc.locator('.md-mermaid > svg').count(), { timeout: 15_000 }).toBe(2);
       expect(await doc.locator('.md-mermaid svg image, .md-mermaid svg img, .md-mermaid svg foreignObject').count()).toBe(0);
