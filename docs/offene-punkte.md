@@ -60,13 +60,32 @@ erklären die Hintergründe.
 
 ## Wackelige Tests (beobachten)
 
-Unter Last (voller Lauf aller Testsuiten) gelegentlich rot, einzeln jeweils grün:
+Stand 2026-11-24, nach Ticket 27. Gelegentlich rot, einzeln jeweils grün:
 
+- Langsam: „Gradle 8: Import mit dem Wrapper …“. Einmal im vollen Lauf (2026-11-23) nach erfolgreichem Import 240 s
+  ohne Definition; das Protokoll des Gradle-Daemons war unauffällig, einzeln 5 von 5 grün. Eine Zeitüberschreitung
+  nennt jetzt die Meldungen an App.java und das Ende des Protokolls von jdtls; beim nächsten Mal dort nachsehen
+  (Vermutung: jdtls nahm App.java als Datei ausserhalb des Projekts).
+- UI: „speichert Eingaben der letzten Sekunde vor „Exit““. Einmal hing im zweiten Start der Doppelklick 30 s in
+  Playwright („performing dblclick action“); die Eingabe kam bei der App nicht an. Einzeln 8 von 8 grün, in Codium
+  keine Ursache gefunden.
 - UI: „TypeScript: Ctrl + Klick auf die Deklaration zeigt die Verwendungen“ (Auswahl erscheint nicht innert 30 s);
   auch einzeln etwa 1 von 4 Mal direkt nach einem vollen Lauf, danach mit Diagnose 16 Mal grün.
 - UI: einzelne Zeitüberschreitungen im Dateibaum, im Terminal und im zeitbasierten Hinweis-Test (layout).
-- Langsam: „Gradle 8: Import mit dem Wrapper“ und einmal 4 Terminal-Tests.
-- Langsam: einmal ein Absturz des Test-Workers in `terminal.test.ts` (0xC0000005, node-pty).
+- Langsam: einmal 4 Terminal-Tests; einmal ein Absturz des Test-Workers in `terminal.test.ts` (0xC0000005, node-pty).
+
+Behoben am 2026-11-24 (Ticket 27, Ursachen und Messungen dort):
+
+- UI „öffnet eine JDK-Klasse …“: Codium sprang auf Zeile 1, wenn jdtls kurz nach dem Import die ganze Klassendatei als
+  Ziel lieferte; der Sprach-Dienst fragt dann neu, bis er den Namen bekommt. Dazu ein Wettlauf im Test, der jede
+  Sekunde neu klickte.
+- Langsam „startet nach einem Absturz neu …“: Codium schickte einem neu startenden Server Anfragen und
+  Dateiänderungen vor `initialized`; der native TypeScript-Server stürzte daran ab, und Codium gab ihn zu früh auf.
+- Schnell „lässt einen gelöschten Projektordner los …“: Ein Git-Aufruf mit dem Projektordner als Arbeitsordner
+  verhinderte das Löschen (EPERM); der Test läuft ohne Git. Die Wiederholungen vom 2026-11-23 (unten dem Virenscanner
+  zugeschrieben) fingen vermutlich denselben Git-Aufruf ab.
+- UI Markdown-Vorschau mit Mermaid: Der Virenscanner hielt die frisch gebaute `mermaid.js` beim ersten Lesen über 10 s
+  fest; der UI-Lauf liest `dist/` jetzt vor den Tests einmal.
 
 Schneller Lauf, behoben am 2026-11-23: Klonen, Abbrechen einer Suche und die Dateiüberwachung bei übergelaufenem Puffer
 waren unter voller Last gelegentlich rot. Ursachen: das Standardlimit von Vitest (5 s) war kürzer als die inneren
@@ -78,5 +97,6 @@ das Verhältnis zu einer Vergleichsarbeit statt eines festen Zeitbudgets, das L�
 wiederholt kurz bei einer Sperre durch den Virenscanner (EPERM), und `expect.poll` wartet im schnellen Lauf bis 10 s
 statt 1 s. Danach 6 volle Läufe in Folge grün, auch bei doppelter Laufzeit.
 
-Das Testgerüst räumt inzwischen liegengebliebene App-Instanzen (nach Zeitüberschreitungen) und verwaiste
-PostgreSQL-Hilfsprozesse selbst auf; beides war zuvor eine Ursache für Ausreisser.
+Aufräumen (Ticket 27): Eine Codium-Testinstanz beendet sich samt Kindprozessen, wenn ihr Testprozess endet (Wächter);
+ein Test-PostgreSQL räumt mit eigenem Wächter auf, auch Hilfsprozesse ohne Hauptprozess; und eine Schlussprüfung je
+Testlauf beendet verwaiste Prozesse aus dem Checkout und entfernt liegengebliebene Temp-Ordner, jeweils mit Meldung.
