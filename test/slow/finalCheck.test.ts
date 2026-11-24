@@ -5,7 +5,7 @@
 import { spawn } from 'node:child_process';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { killProcesses, listProcesses, listProcessesAsync, strayProcesses } from '../support/processes';
+import { killProcesses, listProcesses, listProcessesAsync, stillRunning, strayProcesses, type ProcessIdentity } from '../support/processes';
 
 const CHECKOUT = path.resolve(__dirname, '..', '..');
 const MARKER = path.join(CHECKOUT, 'node_modules', 'typescript-language-server', 'lib', 'cli.mjs');
@@ -26,17 +26,21 @@ describe('Schlussprüfung an der echten Prozesstabelle (Ticket 27)', () => {
       starter.once('exit', () => (Number(out.trim()) > 0 ? resolve(Number(out.trim())) : reject(new Error(`Keine Prozessnummer: ${out}`))));
     });
     const child = spawn(process.execPath, IDLE, { windowsHide: true, stdio: 'ignore' });
+    // Den Waisen mit Startzeit merken: Am Ende wird er nur beendet, wenn unter seiner Nummer noch er läuft (Review).
+    let orphan: ProcessIdentity | undefined;
     try {
       await expect
         .poll(async () => (await listProcessesAsync(['node.exe'])).some((p) => p.pid === child.pid), { timeout: 10_000 })
         .toBe(true);
-      const stray = strayProcesses(listProcesses(), CHECKOUT).map((p) => p.pid);
+      const table = listProcesses();
+      orphan = table.find((p) => p.pid === orphanPid);
+      const stray = strayProcesses(table, CHECKOUT).map((p) => p.pid);
       expect(stray).toContain(orphanPid);
       expect(stray).not.toContain(child.pid);
       expect(stray).not.toContain(process.pid);
     } finally {
       child.kill();
-      killProcesses([orphanPid]);
+      if (orphan && stillRunning(orphan, listProcesses(['node.exe']))) killProcesses([orphan.pid]);
     }
   });
 });

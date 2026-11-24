@@ -107,12 +107,14 @@ export async function descendantsOf(pid: number): Promise<number[]> {
 
 /**
  * Beendet alle Nachkommen eines Prozesses hart, ihn selbst nicht, und wartet darauf. Einzeln nach Nummer statt mit
- * `taskkill /T` (siehe `descendantsIn`); die Abfrage der Prozesstabelle bleibt aussen vor.
+ * `taskkill /T` (siehe `descendantsIn`); die Abfrage der Prozesstabelle bleibt aussen vor. Gehört die Nummer nicht dem
+ * eigenen Prozess, kann sie während der Abfrage (einige Sekunden) frei und neu vergeben werden: `stillOurs` sagt nach der
+ * Abfrage, ob der gemeinte Prozess noch läuft (etwa über den Handle eines Kindprozesses); sonst wird nichts beendet.
  */
-export async function killDescendants(pid: number): Promise<void> {
+export async function killDescendants(pid: number, stillOurs: () => boolean = () => true): Promise<void> {
   const { table, queryPid } = await processTable();
   const root = table.find((p) => p.pid === pid);
-  if (!root) return;
+  if (!root || !stillOurs()) return;
   const victims = descendantsIn(
     table.filter((p) => p.pid !== queryPid),
     [root],

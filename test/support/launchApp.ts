@@ -30,7 +30,8 @@ beforeTempDirRemoval(async () => {
 
 async function stopApp(app: ElectronApplication): Promise<void> {
   running.delete(app);
-  const pid = app.process().pid;
+  const child = app.process();
+  const pid = child.pid;
   let timer: NodeJS.Timeout | undefined;
   const closed = await Promise.race([
     app.close().then(
@@ -40,13 +41,12 @@ async function stopApp(app: ElectronApplication): Promise<void> {
     new Promise<boolean>((resolve) => (timer = setTimeout(() => resolve(false), 15_000))),
   ]);
   clearTimeout(timer);
-  if (!closed && pid !== undefined) {
-    await killDescendants(pid);
-    try {
-      process.kill(pid);
-    } catch {
-      // Inzwischen beendet.
-    }
+  // Solange Node den Ausgang nicht gesehen hat, hält es den Handle offen, und Windows vergibt die Nummer nicht neu. Endet
+  // Codium während der Abfrage der Prozesstabelle doch noch, wird nichts über die blosse Nummer beendet (Review).
+  const alive = () => child.exitCode === null && child.signalCode === null;
+  if (!closed && pid !== undefined && alive()) {
+    await killDescendants(pid, alive);
+    if (alive()) child.kill();
   }
 }
 
