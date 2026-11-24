@@ -1,13 +1,14 @@
-# 31 – Branch-Anzeige breiter, Branches im Dropdown in Ordnern
+# 31 – Branch-Anzeige breiter, Branches im Dropdown in Ordnern, zuletzt benutzte Branches
 
 Status: `ready-for-agent` · Typ: AFK
 Blockiert durch: –
 User Stories: 94–96 (Branch-Menü)
 Spezifikation: „Oberfläche“ (Kopfzeile), „Git“ (Branch-Menü)
 
-Dieses Ticket kam nach Ticket 30 dazu, auf Wunsch des Nutzers. Es geht um zwei Verbesserungen am Branch-Menü in der Kopfzeile:
+Dieses Ticket kam nach Ticket 30 dazu, auf Wunsch des Nutzers. Es geht um drei Verbesserungen am Branch-Menü in der Kopfzeile:
 - Der Name des aktuellen Branches darf mehr Platz einnehmen.
 - Im Dropdown stehen Branches mit Präfix wie `feature/…` oder `bugfix/…` in Ordnern, wie in IntelliJ.
+- Ein Bereich „Recent“ zeigt die zuletzt benutzten Branches.
 
 ## Heutiger Stand
 
@@ -19,6 +20,7 @@ Dieses Ticket kam nach Ticket 30 dazu, auf Wunsch des Nutzers. Es geht um zwei V
   - `BranchPopup.tsx` ist 380 px breit und listet unter „Local“ und „Remote“ alle Branches flach und alphabetisch.
   - Bei vielen Branches mit Präfixen (`feature/…`, `bugfix/…`, `release/…`) wird die Liste lang und unübersichtlich.
   - IntelliJ gruppiert solche Branches in Ordner, die sich auf- und zuklappen lassen.
+  - Einen Bereich mit zuletzt benutzten Branches gibt es nicht. Wer zwischen wenigen Branches hin und her wechselt, muss sie jedes Mal suchen. IntelliJ zeigt sie oben unter „Recent“.
 
 ## Was gebaut wird
 
@@ -61,6 +63,29 @@ Dieses Ticket kam nach Ticket 30 dazu, auf Wunsch des Nutzers. Es geht um zwei V
   - `BranchPopup.tsx` zeichnet nur.
 - **Spezifikation:** Die Abschnitte „Oberfläche“ (Kopfzeile) und „Git“ (Branch-Menü) nachführen.
 
+### Zuletzt benutzte Branches („Recent“)
+
+- **Bereich:**
+  - Ein Bereich „Recent“ zwischen den Aktionen und „Local“ zeigt die letzten 5 benutzten Branches, der neueste zuerst.
+  - Benutzt heisst ausgecheckt.
+  - Der aktuelle Branch zählt nicht mit; er steht ja schon in der Titelzeile des Dropdowns.
+- **Nur, was noch existiert:**
+  - Gezeigt werden nur lokale Branches, die es noch gibt. Gelöschte fallen weg, und dafür rückt der nächstältere nach, bis 5 erreicht sind.
+  - Gibt es keinen, fehlt der Bereich samt Überschrift.
+- **Woher:**
+  - Vorschlag: aus dem Reflog von `HEAD` (`checkout: moving from … to …`). So zählen auch Wechsel im Terminal oder in anderen Werkzeugen, und Codium muss nichts speichern.
+  - Losgelöste Stände (detached HEAD) und Commits zählen nicht.
+  - Der Agent prüft, ob das Lesen auch bei einem langen Reflog schnell bleibt, etwa durch Begrenzen der gelesenen Einträge.
+  - Entscheidet er sich für einen eigenen Verlauf im Projekt-Zustand, begründet er es im Ticket.
+- **Zeilen:**
+  - Die Zeilen zeigen den vollen Namen, ohne Ordner.
+  - Sie verhalten sich wie die übrigen Branchzeilen: Untermenü, Checkout, Etiketten und die Pfeile für voraus und zurück.
+- **Suchen:**
+  - Das Suchfeld filtert auch diesen Bereich.
+  - Hat er keine Treffer, verschwindet er.
+  - Ein Branch darf in „Recent“ und unter „Local“ zugleich stehen.
+- **Spezifikation:** Beim Branch-Menü nachführen.
+
 ## Ausserhalb des Umfangs
 
 - Ein Schalter zum Abschalten der Ordner („Group by Prefix“ in IntelliJ).
@@ -84,6 +109,17 @@ Dieses Ticket kam nach Ticket 30 dazu, auf Wunsch des Nutzers. Es geht um zwei V
 - [ ] Ein Playwright-Test prüft die Tastatur: Pfeile und Enter auf Ordnern, Pfeil links springt zum Ordner, Pfeil rechts auf einer Branchzeile öffnet das Untermenü.
 - [ ] Ein Playwright-Test prüft das Suchen: `feat` zeigt nur die Treffer in einem offenen Ordner „feature“.
 - [ ] Ein Playwright-Test prüft die Breite: Ein Branchname, der länger ist als 280 px und kürzer als 560 px, steht ungekürzt im Branch-Knopf. Ein noch längerer wird gekürzt. Der Projektname bleibt bei höchstens 280 px.
+- [ ] Einheitstests für „Recent“:
+  - höchstens 5;
+  - der neueste zuerst;
+  - ohne aktuellen Branch;
+  - ohne gelöschte Branches, dafür rücken ältere nach;
+  - ohne losgelöste Stände;
+  - doppelte Wechsel ergeben nur einen Eintrag.
+- [ ] Ein Playwright-Test prüft „Recent“:
+  - Nach den Wechseln `main` → `feature/a` → `bugfix/c` → `main` stehen unter „Recent“ `bugfix/c` und `feature/a`, in dieser Reihenfolge.
+  - Ein gelöschter Branch erscheint dort nicht mehr.
+  - Der Checkout über eine Zeile in „Recent“ gelingt.
 - [ ] Die bestehenden Tests zum Branch-Menü bleiben grün oder sind sinngemäss angepasst.
 - [ ] `npm run typecheck`, `npm test` und `npm run test:ui` sind grün.
 
@@ -91,6 +127,7 @@ Dieses Ticket kam nach Ticket 30 dazu, auf Wunsch des Nutzers. Es geht um zwei V
 
 - [ ] Lange Branchnamen sind in der Kopfzeile ganz lesbar.
 - [ ] Im Dropdown finden sich Branches in den Ordnern `feature`, `bugfix` usw. so schnell wie in IntelliJ.
+- [ ] Unter „Recent“ stehen die Branches, zwischen denen ich zuletzt gewechselt habe.
 
 ## Hinweise
 
