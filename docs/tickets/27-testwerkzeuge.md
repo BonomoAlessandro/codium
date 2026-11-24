@@ -110,7 +110,15 @@ Ein zweiter Agent hat den Branch am 2026-11-24 gegen Ticket, Spezifikation und S
 
 Nicht eingearbeitet: nichts. Bewusst so gelassen sind nur die Entscheidungen oben (kein Neufragen bei Implementierungen, keine Sperrdatei, kein Abbruch der überzähligen Anfrage bei jdtls).
 
-- **Testläufe nach dem Review** (2026-11-24, nacheinander allein auf dem Rechner):
+
+**Nachprüfung** (am selben Tag; nichts blockierte). Eingearbeitet:
+
+- **Test-PostgreSQL:** Der Start zählt eine Antwort nur, wenn der Server den eigenen Datenordner nennt (`current_setting('data_directory')`) und der eigene Prozess noch läuft; alle Test-Server haben dieselben Zugangsdaten. Lässt sich `postgres.exe` nicht starten oder endet es, bricht der Start sofort ab. Der Wächter merkt sich den Server gleich nach dem Start und nach der Bereitschaft noch einmal. `@embedded-postgres/windows-x64` ist in den devDependencies deklariert (installierte Version; im Lockfile nur `packages[""].devDependencies` nachgeführt, `npm ci` und die Installation von Electron liefen durch, alle `resolved` auf registry.npmjs.org).
+- **Wächter-Test:** Das Sicherheitsnetz beendet auch die Hilfsprozesse aus `keepers.txt`, die nie im Prozessbaum auftauchten, nur wenn sie nach Beginn des Tests gestartet wurden.
+- **README:** Andere Läufe erkennt die Schlussprüfung nur an der Schreibweise des Pfads (8.3-Name, `subst`, Junction zählen nicht), und ein offener Vitest im Watch-Modus unterdrückt das Beenden.
+- **Puffer ohne Grenze:** bewusst so. Er besteht nur zwischen dem Start eines Servers und `initialized` (Sekunden), verfällt mit dem Server und geht als eine einzige Meldung hinaus; ohne ihn wären dieselben Änderungen einzeln hinausgegangen.
+
+- **Prüfläufe nach dem ersten Einarbeiten** (2026-11-24; durch die volle Serie unten ersetzt):
 
   | Lauf | Ergebnis | Dauer |
   |---|---|---|
@@ -122,3 +130,15 @@ Nicht eingearbeitet: nichts. Bewusst so gelassen sind nur die Entscheidungen obe
   | TS-Neustart-Test einzeln, 3× | je grün | je 6 s |
 
   Nach jedem Lauf: keine Prozesse aus dem Checkout, keine `codium-*`-Ordner, keine Meldung der Schlussprüfung, keine Verletzung des Testmodus. Die zwei roten UI-Läufe davor: Im ersten hing „fängt Monacos kollidierende Kürzel ab“ 19 min; laut Ereignisprotokoll war der Rechner von 11:29 bis 11:53 im modernen Standby (Leerlauf, geweckt durch eine Tastatureingabe), der Lauf begann um 11:31. Im zweiten blieb das Mermaid-SVG 15 s aus; daraufhin trennt der Test das Laden (bis 60 s) vom Zeichnen (siehe die Zeile zu Mermaid oben). Danach war der Lauf grün.
+
+- **Volle Serie nach der Nachprüfung** (2026-11-24, nacheinander allein auf dem Rechner; Akzeptanzkriterium 6 für den Stand nach dem Review):
+
+  | Lauf | Ergebnis | Dauer |
+  |---|---|---|
+  | `npm run typecheck` | grün | 2 s |
+  | `npm test` 1, 2, 3 | je 437 von 437 grün (50 Dateien) | 85 s, 93 s, 94 s |
+  | `npm run test:slow` 1, 2, 3 | je 40 von 40 grün (9 Dateien), nichts übersprungen | 164 s, 111 s, 166 s |
+  | `npm run test:ui` 1, 2, 3 | je 89 von 89 grün (25 Dateien) | 486 s, 504 s, 516 s |
+  | `npm run test:packaged` | 21 von 21 Prüfungen bestanden | 213 s |
+
+  Nach jedem Lauf: keine Prozesse aus dem Checkout, keine `codium-*`-Ordner, keine Meldung der Schlussprüfung, keine Verletzung des Testmodus. Laut Ereignisprotokoll (nur gelesen) war der Rechner während der ganzen Serie (12:38 bis 13:20) nie im Standby, und nach keinem Lauf lief ein fremder Build. Das Vorlesen meldete `mermaid.js` mit 6,5 s, 16,6 s und 9,2 s.
