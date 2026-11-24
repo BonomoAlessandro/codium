@@ -779,7 +779,11 @@ describe('Datei-Dienst', () => {
       const watchers = () => process.getActiveResourcesInfo().filter((r) => r === 'FSEventWrap').length;
       await sleep(50);
       const before = watchers();
-      const { test, windowId, project, at } = await openAlpha({ 'a.txt': '' });
+      // Ohne Git: Jedes Ereignis der Überwachung stösst ein Neueinlesen des Git-Zustands an, und Git läuft mit dem
+      // Projektordner als Arbeitsordner. Solange es läuft, verweigert Windows das Löschen des Ordners mit EPERM; unter
+      // Last dauert der Aufruf länger, daher war der Test in vollen Läufen oft rot (Ticket 27). Geprüft wird hier nur
+      // die Überwachung.
+      const { test, windowId, project, at } = await openAlpha({ 'a.txt': '' }, { system: { programs: {} } });
       await call(test, windowId, 'files.list', { path: project });
       await untilWatching(test, windowId, project);
 
@@ -801,7 +805,8 @@ describe('Datei-Dienst', () => {
       const watchers = () => process.getActiveResourcesInfo().filter((r) => r === 'FSEventWrap').length;
       await sleep(50);
       const before = watchers();
-      const { test, windowId, project, at } = await openAlpha();
+      // Ohne Git: Ein laufender Git-Aufruf hielte den Projektordner als Arbeitsordner, bis er endet (siehe oben).
+      const { test, windowId, project, at } = await openAlpha({}, { system: { programs: {} } });
       await untilWatching(test, windowId, project);
       expect(watchers()).toBe(before + 1);
 
@@ -810,8 +815,8 @@ describe('Datei-Dienst', () => {
       const disposal = test.core.closeProjectCore(windowId);
       // Der Ordner ist sofort freigegeben, noch bevor der Abbau fertig ist. Ein überwachter Ordner bliebe unter
       // Windows stehen, bis die Überwachung ihn loslässt. Kurze Wiederholungen fangen nur ab, dass der Virenscanner die
-      // eben geschriebene Datei noch Millisekunden offen hält (EPERM); eine Überwachung, die den Ordner festhielte,
-      // liesse ihn auch nach diesen Wiederholungen nicht los.
+      // eben geschriebene Datei noch Millisekunden offen hält; eine Überwachung, die den Ordner festhielte, liesse ihn
+      // auch nach diesen Wiederholungen nicht los.
       fs.rmSync(project, { recursive: true, maxRetries: 10, retryDelay: 20 });
       expect(fs.existsSync(project)).toBe(false);
       await disposal;
