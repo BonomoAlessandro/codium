@@ -67,7 +67,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 
 ## Übersicht
 
-Stand 2026-11-24: Codium 1 ist abgeschlossen, Tickets 01 bis 23 erledigt. Die Abnahme von Hand macht der Nutzer im Alltag ([Prüfliste](../abnahme.md)); Abweichungen werden neue Tickets. Auch die später dazugekommenen Tickets 24 bis 27 sind erledigt; offen ist Ticket 28 (Scrollbalken im Code-Bereich). Offene Punkte, Entscheide und bekannte Grenzen: [offene-punkte.md](../offene-punkte.md).
+Stand 2026-11-24: Codium 1 ist abgeschlossen, Tickets 01 bis 23 erledigt. Die Abnahme von Hand macht der Nutzer im Alltag ([Prüfliste](../abnahme.md)); Abweichungen werden neue Tickets. Auch die später dazugekommenen Tickets 24 bis 27 sind erledigt; offen sind Ticket 28 (Scrollbalken im Code-Bereich) und Ticket 29 (Dateibaum: Zuklappen und Git-Farben). Offene Punkte, Entscheide und bekannte Grenzen: [offene-punkte.md](../offene-punkte.md).
 
 | Nr. | Ticket | Typ | Blockiert durch | Etappe | Stand |
 |---|---|---|---|---|---|
@@ -99,6 +99,7 @@ Stand 2026-11-24: Codium 1 ist abgeschlossen, Tickets 01 bis 23 erledigt. Die Ab
 | 26 | [Zweimal Shift: Dateien suchen](26-doppelt-shift.md) | AFK | – | – | erledigt |
 | 27 | [Testwerkzeuge: Fokus, Aufräumen, wackelige Tests](27-testwerkzeuge.md) | AFK | – | – | erledigt |
 | 28 | [Scrollbalken im Code-Bereich wie in IntelliJ](28-scrollbalken.md) | HITL | – | – | offen |
+| 29 | [Dateibaum: Zuklappen schliesst Unterordner, Git-Farben wie in IntelliJ](29-dateibaum-zuklappen-und-farben.md) | HITL | – | – | offen |
 
 ```mermaid
 flowchart LR
@@ -143,9 +144,10 @@ flowchart LR
   T26[26 Zweimal Shift]
   T27[27 Testwerkzeuge]
   T28[28 Scrollbalken]
+  T29[29 Dateibaum und Git-Farben]
 ```
 
-**Reihenfolge:** nach Etappen, also 01 bis 10 und 23 (gleich nach 05, weil Markdown-Dateien im Alltag schon jetzt wichtig sind), dann 11, dann 12 bis 14, dann 15 bis 18, dann 19, dann 20 und 21, zuletzt 22. Die Tickets 24 (Logo), 25 (Oberfläche näher an IntelliJ) und 26 (zweimal Shift für die Dateisuche) kamen nach Codium 1 dazu; sie hängen nicht voneinander ab. Ticket 27 (Testwerkzeuge) kam danach aus den Erfahrungen mit ihren Testläufen dazu. Ticket 28 (Scrollbalken im Code-Bereich wie in IntelliJ) kam danach auf Wunsch des Nutzers dazu und setzt Ticket 25 fort.
+**Reihenfolge:** nach Etappen, also 01 bis 10 und 23 (gleich nach 05, weil Markdown-Dateien im Alltag schon jetzt wichtig sind), dann 11, dann 12 bis 14, dann 15 bis 18, dann 19, dann 20 und 21, zuletzt 22. Die Tickets 24 (Logo), 25 (Oberfläche näher an IntelliJ) und 26 (zweimal Shift für die Dateisuche) kamen nach Codium 1 dazu; sie hängen nicht voneinander ab. Ticket 27 (Testwerkzeuge) kam danach aus den Erfahrungen mit ihren Testläufen dazu. Ticket 28 (Scrollbalken im Code-Bereich wie in IntelliJ) kam danach auf Wunsch des Nutzers dazu und setzt Ticket 25 fort. Ticket 29 (Dateibaum: Zuklappen schliesst Unterordner, Git-Farben wie in IntelliJ) kam gleich danach dazu; beide hängen nicht voneinander ab.
 
 **Parallel möglich**, wenn es schneller gehen soll:
 - 06, 07, 08, 09 und 23 nach 05
