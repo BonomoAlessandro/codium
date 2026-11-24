@@ -42,14 +42,32 @@ function pos(text: string, needle: string, offset = 0): { line: number; characte
   return { line, character: before.length - before.lastIndexOf('\n') - 1 };
 }
 
-async function until<T>(get: () => T | Promise<T>, ok: (v: T) => boolean, what: string, ms = 240_000): Promise<T> {
+async function until<T>(get: () => T | Promise<T>, ok: (v: T) => boolean, what: string, ms = 240_000, explain?: () => string): Promise<T> {
   const end = Date.now() + ms;
   for (;;) {
     const value = await get();
     if (ok(value)) return value;
-    if (Date.now() > end) throw new Error(`Zeitüberschreitung: ${what} (zuletzt ${JSON.stringify(value)?.slice(0, 300)})`);
+    if (Date.now() > end) {
+      throw new Error(`Zeitüberschreitung: ${what} (zuletzt ${JSON.stringify(value)?.slice(0, 300)})${explain ? `\n${explain()}` : ''}`);
+    }
     await new Promise((r) => setTimeout(r, 500));
   }
+}
+
+/**
+ * Das Ende der Protokolle von jdtls im Datenordner eines Tests, für die Meldung einer Zeitüberschreitung: Danach ist der
+ * Temp-Ordner fort (Ticket 27, Gradle 8 blieb einmal ohne Definition).
+ */
+function jdtlsLog(dataDir: string): string {
+  const root = path.join(dataDir, 'jdtls');
+  const dirs = fs.existsSync(root) ? fs.readdirSync(root) : [];
+  if (dirs.length === 0) return 'Protokoll von jdtls: keines';
+  return dirs
+    .map((dir) => {
+      const file = path.join(root, dir, 'workspace', '.metadata', '.log');
+      return fs.existsSync(file) ? `Protokoll von jdtls (${file}), Ende:\n${fs.readFileSync(file, 'utf8').slice(-8000)}` : `Protokoll von jdtls: ${file} fehlt`;
+    })
+    .join('\n');
 }
 
 /** Prozesse, deren Befehlszeile den Text enthält (Windows). */
@@ -113,7 +131,7 @@ describe.skipIf(skip !== null)('Java-Sprachserver (jdtls)', () => {
     const windowId = test.ports.windows.windowTitled(`${name} – Codium`);
     const language = () => test.core.projectCore(windowId)!.language;
     // Mit Baudatei startet jdtls gleich; der Import dauert beim ersten Mal (Downloads).
-    await until(() => language().javaReady, (r) => r, 'jdtls bereit');
+    await until(() => language().javaReady, (r) => r, 'jdtls bereit', 240_000, () => jdtlsLog(test.dataDir));
     const at = (...p: string[]) => path.join(project, ...p);
     const open = async (relative: string) => {
       await call(test, windowId, 'language.didOpen', { path: at(relative), text: files[relative], version: 1 });
@@ -283,12 +301,15 @@ describe.skipIf(skip !== null)('Java-Sprachserver (jdtls)', () => {
       'src/main/java/demo/Lib.java': lib,
       'src/main/java/demo/App.java': app,
     };
-    const { test, windowId, language, at, open } = await openJava('Gradled', files);
+    const { test, windowId, language, at, open, diagnostics } = await openJava('Gradled', files);
     await open('src/main/java/demo/App.java');
     const definition = await until(
       () => call(test, windowId, 'language.definition', { path: at('src/main/java/demo/App.java'), ...pos(app, 'answer', 1) }),
       (r) => r.length > 0,
       'Definition',
+      240_000,
+      // Hält jdtls App.java für eine Datei ausserhalb des Projekts, meldet es das als Warnung an der Datei.
+      () => `Meldungen an App.java: ${JSON.stringify(diagnostics('src/main/java/demo/App.java'))}\n${jdtlsLog(test.dataDir)}`,
     );
     expect(definition[0].path).toBe(at('src/main/java/demo/Lib.java'));
     // Gradle 8.14 läuft bis Java 24: Der Daemon nimmt das JDK 21, nicht das JDK 25 von jdtls.
