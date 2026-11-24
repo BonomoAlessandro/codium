@@ -70,12 +70,21 @@ export function stillRunning(p: ProcessIdentity, table: readonly ProcessIdentity
 }
 
 /**
- * Ob der Elternprozess eines Prozesses nicht mehr läuft. Trägt inzwischen ein jüngerer Prozess die Nummer des
- * Elternprozesses, ist der echte fort.
+ * So viel jünger als das Kind muss ein Prozess mit der Elternnummer sein, damit er sicher ein anderer ist als der
+ * echte Elternprozess. Kleinere Abstände können von einem Sprung der Systemuhr kommen (Startzeiten sind Uhrzeiten).
+ */
+export const PARENT_REUSE_MARGIN_MS = 60_000;
+
+/**
+ * Ob der Elternprozess eines Prozesses nicht mehr läuft: Seine Nummer fehlt in der Tabelle, oder sie gehört einem
+ * Prozess, der deutlich nach dem Kind gestartet wurde (neu vergeben). Im Zweifel nicht verwaist: bei unbekannter
+ * Startzeit (0) und bei kleinen Abständen, die auch ein Sprung der Systemuhr erklärt (siehe `PARENT_REUSE_MARGIN_MS`).
  */
 export function isOrphan(p: ProcessEntry, table: readonly ProcessEntry[]): boolean {
   const parent = table.find((q) => q.pid === p.ppid);
-  return parent === undefined || parent.created > p.created;
+  if (parent === undefined) return true;
+  if (!p.created || !parent.created) return false;
+  return parent.created > p.created + PARENT_REUSE_MARGIN_MS;
 }
 
 function normalized(file: string): string {

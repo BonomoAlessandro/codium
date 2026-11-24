@@ -53,7 +53,8 @@ export interface ProcessEntry {
  * Die Nachkommen der Wurzeln in einer Prozesstabelle, ohne die Wurzeln selbst. Ein Prozess zählt nur als Kind, wenn
  * er nach seinem Elternprozess gestartet wurde: Windows vergibt Prozessnummern neu, und ein älterer Prozess kann noch
  * die Nummer eines längst beendeten Elternprozesses tragen, die inzwischen ein anderer Prozess hat. `taskkill /T`
- * übersieht das und beendet dann auch ihn.
+ * übersieht das und beendet dann auch ihn. Ist eine der Startzeiten unbekannt (0), zählt er nicht: Die Auswahl dient
+ * dem Beenden, im Zweifel bleibt ein Prozess stehen.
  */
 export function descendantsIn<T extends ProcessEntry>(table: readonly T[], roots: readonly T[]): T[] {
   const children = new Map<number, T[]>();
@@ -64,7 +65,7 @@ export function descendantsIn<T extends ProcessEntry>(table: readonly T[], roots
   while (queue.length > 0) {
     const parent = queue.shift()!;
     for (const child of children.get(parent.pid) ?? []) {
-      if (seen.has(child.pid) || child.created < parent.created) continue;
+      if (seen.has(child.pid) || !child.created || !parent.created || child.created < parent.created) continue;
       seen.add(child.pid);
       result.push(child);
       queue.push(child);

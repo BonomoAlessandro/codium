@@ -25,6 +25,13 @@ describe('Nachkommen in einer Prozesstabelle', () => {
     expect(descendantsIn(table, [table[0]]).map((p) => p.pid)).toEqual([22]);
   });
 
+  it('nimmt keinen Prozess mit unbekannter Startzeit als Kind, und keine Kinder einer Wurzel ohne Startzeit (Review)', () => {
+    const root = proc(40, 1, 100);
+    expect(descendantsIn([root, proc(41, 40, 0)], [root])).toEqual([]);
+    const unknownRoot = proc(50, 1, 0);
+    expect(descendantsIn([unknownRoot, proc(51, 50, 200)], [unknownRoot])).toEqual([]);
+  });
+
   it('läuft bei Kreisen in den Elternnummern nicht endlos', () => {
     const table = [proc(30, 31, 100), proc(31, 30, 100)];
     expect(descendantsIn(table, [table[0]]).map((p) => p.pid)).toEqual([31]);
@@ -126,11 +133,23 @@ describe('Schlussprüfung: verwaiste Prozesse aus diesem Checkout', () => {
     expect(pick(installedJava, installedHelper, otherCheckout, globalTsServer, editor, javaOtherTool)).toEqual([]);
   });
 
-  it('erkennt einen fortgegangenen Elternprozess auch, wenn ein jüngerer Prozess seine Nummer trägt', () => {
-    const youngerWithSameNumber = proc(70, 4, 5000, { name: 'svchost.exe', exe: 'C:\\Windows\\System32\\svchost.exe' });
+  it('erkennt einen fortgegangenen Elternprozess auch, wenn ein deutlich jüngerer Prozess seine Nummer trägt', () => {
+    const youngerWithSameNumber = proc(70, 4, 1000 + 10 * 60_000, { name: 'svchost.exe', exe: 'C:\\Windows\\System32\\svchost.exe' });
     const app = proc(100, 70, 1000, { name: 'electron.exe', exe: electron });
     expect(isOrphan(app, [youngerWithSameNumber, app])).toBe(true);
     expect(pick(youngerWithSameNumber, app)).toEqual([100]);
+  });
+
+  it('hält im Zweifel nichts für verwaist: unbekannte Startzeiten, ein Sprung der Systemuhr (Review)', () => {
+    const parent = proc(70, 4, 5000, { name: 'node.exe' });
+    // Das Kind scheint wenige Sekunden älter als sein Elternprozess: Das erklärt auch eine zurückgestellte Uhr.
+    const afterClockJump = proc(100, 70, 2000, { name: 'electron.exe', exe: electron });
+    expect(isOrphan(afterClockJump, [parent, afterClockJump])).toBe(false);
+    expect(isOrphan(proc(101, 70, 0, { exe: electron }), [parent])).toBe(false);
+    expect(isOrphan(proc(102, 70, 2000, { exe: electron }), [proc(70, 4, 0)])).toBe(false);
+    expect(pick(parent, afterClockJump)).toEqual([]);
+    // Fehlt die Elternnummer ganz in der Tabelle, ist der Elternprozess sicher fort, auch bei unbekannter Startzeit.
+    expect(isOrphan(proc(103, 999, 0, { exe: electron }), [parent])).toBe(true);
   });
 
   it('vergleicht Pfade ohne Gross-/Kleinschreibung und mit beiden Trennzeichen, aber nicht als blossen Namensanfang', () => {
