@@ -2,14 +2,19 @@
 // einem Temp-Ordner. Nach `stop` läuft kein PostgreSQL-Prozess dieses Servers mehr, ebenso wenn der Testprozess vorher
 // endet (Wächter, postgresReaper.ts, Ticket 27). Auch der Test des Wächters lädt die Datei direkt mit Node (siehe
 // processes.ts).
+//
+// embedded-postgres legt nur den Datenordner an (initdb). Starten und beenden tut die Testhilfe selbst: Das `stop` von
+// embedded-postgres beendet den Server mit `taskkill /T` über die blosse Prozessnummer, das träfe auch ältere Prozesse
+// mit veralteter Elternnummer (Review von Ticket 27). Beendet wird über den Wächter, nach Nummer und Startzeit.
 
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import EmbeddedPostgres from 'embedded-postgres';
+import { postgres as POSTGRES_BINARY } from '@embedded-postgres/windows-x64';
 import pg from 'pg';
 import { listProcesses } from './processes.ts';
 import { serverProcesses, type ServerIdentity } from './postgresReaper.ts';
@@ -53,17 +58,26 @@ export async function startPostgres(): Promise<TestPostgres> {
   const dataDir = path.join(base, 'data');
   // Der Wächter läuft schon während der Vorbereitung: Endet der Testprozess mittendrin, räumt er trotzdem auf.
   const reaper = startReaper({ dataDir, base });
-  const server = new EmbeddedPostgres({ databaseDir: dataDir, user: PG_USER, password: PG_PASSWORD, port, persistent: false, onLog: () => {}, onError: () => {} });
+  const cluster = new EmbeddedPostgres({ databaseDir: dataDir, user: PG_USER, password: PG_PASSWORD, port, persistent: false, onLog: () => {}, onError: () => {} });
   const admin = new pg.Client({ host: '127.0.0.1', port, user: PG_USER, password: PG_PASSWORD, database: PG_DATABASE });
+  let server: ChildProcess | undefined;
   try {
-    await server.initialise();
-    await server.start();
-    await server.createDatabase(PG_DATABASE);
+    await cluster.initialise();
+    // Wie embedded-postgres, aber ohne dessen `start`/`stop` (siehe oben). Ein direktes Kind des Testprozesses: Endet
+    // dieser hart, beendet Windows den Hauptprozess mit ihm (Job-Objekt von Node), den Rest der Wächter.
+    server = spawn(POSTGRES_BINARY, ['-D', dataDir, '-p', String(port)], { stdio: 'ignore', windowsHide: true });
+    await untilAccepting(server, port);
+    const setup = new pg.Client({ host: '127.0.0.1', port, user: PG_USER, password: PG_PASSWORD, database: 'postgres' });
+    await setup.connect();
+    try {
+      await setup.query(`CREATE DATABASE ${setup.escapeIdentifier(PG_DATABASE)}`);
+    } finally {
+      await setup.end().catch(() => {});
+    }
     await admin.connect();
   } catch (err) {
     // Scheitert die Vorbereitung, darf kein Server liegen bleiben (Review).
     await admin.end().catch(() => {});
-    await server.stop().catch(() => {});
     await reaper.finish();
     throw err;
   }
@@ -77,12 +91,31 @@ export async function startPostgres(): Promise<TestPostgres> {
     sql: (text, values) => admin.query(text, values),
     stop: async () => {
       await admin.end().catch(() => {});
-      // embedded-postgres beendet den Hauptprozess samt Baum mit `taskkill /T /F`; was dabei übrig bleibt (etwa
-      // Hilfsprozesse ohne Hauptprozess) und den Ordner erledigt danach der Wächter.
-      await server.stop().catch(() => {});
+      // Der Wächter beendet alle Prozesse des Servers nach Nummer und Startzeit, den Hauptprozess zuerst, und löscht den
+      // Ordner.
       await reaper.finish();
     },
   };
+}
+
+/** Wartet, bis der Server Verbindungen annimmt; scheitert, wenn er vorher endet oder nach 60 s. */
+async function untilAccepting(server: ChildProcess, port: number): Promise<void> {
+  let exited = false;
+  server.once('exit', () => (exited = true));
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    if (exited) throw new Error('PostgreSQL endete beim Start.');
+    const probe = new pg.Client({ host: '127.0.0.1', port, user: PG_USER, password: PG_PASSWORD, database: 'postgres' });
+    try {
+      await probe.connect();
+      await probe.end();
+      return;
+    } catch (err) {
+      await probe.end().catch(() => {});
+      if (Date.now() > deadline) throw new Error(`PostgreSQL nimmt keine Verbindungen an: ${(err as Error).message}`);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
 }
 
 /** Startet den Wächter eines Servers (postgresReaper.ts). Er hält den Testprozess nicht am Leben. */

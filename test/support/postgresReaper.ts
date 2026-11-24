@@ -55,7 +55,10 @@ function sweep(server: ServerIdentity & { base: string }, known: readonly Proces
   for (let attempt = 0; attempt < 20; attempt++) {
     const left = serverProcesses(listProcesses(['postgres.exe']), server, known);
     if (left.length === 0) break;
-    killProcesses(left.map((p) => p.pid));
+    // Den Hauptprozess zuerst: Solange er läuft, startet er beendete Hilfsprozesse neu (siehe `childrenOfGone`).
+    const helpers = left.filter((p) => p.cmd.includes('--forkchild'));
+    killProcesses(left.filter((p) => !helpers.includes(p)).map((p) => p.pid));
+    killProcesses(helpers.map((p) => p.pid));
     sleep(250);
   }
   for (let attempt = 0; attempt < 20 && fs.existsSync(server.base); attempt++) {
