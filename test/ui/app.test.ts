@@ -138,6 +138,7 @@ describe('App im Testmodus', () => {
     fs.writeFileSync(path.join(typescript, 'lib', 'tsserver.js'), KEEPER_TSSERVER);
     fs.writeFileSync(path.join(alpha, 'tsconfig.json'), '{}');
     fs.writeFileSync(path.join(alpha, 'index.ts'), 'export const answer: number = 42;\n');
+    const testStarted = Date.now();
     const keepers = () => {
       const file = path.join(typescript, 'lib', 'keepers.txt');
       return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split(/\r?\n/).filter((l) => l !== '').map(Number) : [];
@@ -208,9 +209,12 @@ describe('App im Testmodus', () => {
       expect(Date.now() - stoppedAt).toBeLessThan(10_000);
     } finally {
       if (starter.exitCode === null) starter.kill();
-      // Sicherheitsnetz, falls der Wächter versagt: nur Prozesse aus dem Baum dieser Instanz.
+      // Sicherheitsnetz, falls der Wächter versagt: nur Prozesse aus dem Baum dieser Instanz, dazu die Hilfsprozesse aus
+      // keepers.txt, auch wenn sie nie im Baum auftauchten (Review). Für sie zählt die Startzeit: nach Beginn dieses
+      // Tests gestartet, sonst trägt inzwischen ein fremder Prozess die Nummer.
       const table = listProcesses();
-      killProcesses(tree.filter((p) => stillRunning(p, table)).map((p) => p.pid));
+      const strayKeepers = table.filter((p) => keepers().includes(p.pid) && p.created >= testStarted - 5000 && p.cmd.includes('setInterval'));
+      killProcesses([...tree.filter((p) => stillRunning(p, table)), ...strayKeepers].map((p) => p.pid));
     }
   });
 
