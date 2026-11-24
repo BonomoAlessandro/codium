@@ -83,6 +83,21 @@ function normalized(file: string): string {
 }
 
 /**
+ * Das Programm eines Prozesses: der Pfad, den Windows nennt, sonst der erste Teil der Befehlszeile. Für die Kindprozesse
+ * von PostgreSQL nennt Windows keinen Pfad, ihre Befehlszeile beginnt aber mit dem Programm (Ticket 27: ein verwaister
+ * „io_worker“ fiel deshalb durch die Schlussprüfung).
+ */
+export function programOf(p: Pick<ProcessInfo, 'exe' | 'cmd'>): string {
+  if (p.exe) return p.exe;
+  const cmd = p.cmd.trimStart();
+  if (cmd.startsWith('"')) {
+    const end = cmd.indexOf('"', 1);
+    return end > 0 ? cmd.slice(1, end) : '';
+  }
+  return cmd.split(/\s+/)[0] ?? '';
+}
+
+/**
  * Ob ein Prozess aus diesem Checkout stammt: Sein Programm liegt darin (Electron und damit die Codium-Testinstanzen,
  * PostgreSQL aus embedded-postgres, ripgrep, die native TypeScript-Version, die ConPTY von node-pty), oder seine
  * Befehlszeile startet typescript-language-server aus dem Checkout (mit Node, im langsamen Lauf) oder Java mit den
@@ -91,7 +106,8 @@ function normalized(file: string): string {
  */
 export function fromCheckout(p: ProcessInfo, checkoutRoot: string): boolean {
   const root = `${normalized(checkoutRoot)}\\`;
-  if (p.exe && normalized(p.exe).startsWith(root)) return true;
+  const program = programOf(p);
+  if (program && normalized(program).startsWith(root)) return true;
   const cmd = p.cmd.replace(/\//g, '\\').toLowerCase();
   if (cmd.includes(`${root}node_modules\\typescript-language-server\\`)) return true;
   return /^java(w)?\.exe$/i.test(p.name) && (cmd.includes(`${root}.cache\\java-tools\\`) || cmd.includes(`${root}.test-cache\\`));

@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { descendantsIn } from '../../src/main/core/processTree';
 import { leftoverTempDirs } from '../support/finalCheck';
 import { serverProcesses } from '../support/postgresReaper';
-import { fromCheckout, isOrphan, strayProcesses, type ProcessInfo } from '../support/processes';
+import { fromCheckout, isOrphan, programOf, strayProcesses, type ProcessInfo } from '../support/processes';
 import { useTempDirs } from '../support/tempDir';
 
 function proc(pid: number, ppid: number, created: number, extra: Partial<ProcessInfo> = {}): ProcessInfo {
@@ -48,6 +48,26 @@ describe('Prozesse eines Test-PostgreSQL', () => {
     const table = [ioWorker, reused];
     const known = [ioWorker, backend].map(({ pid, created }) => ({ pid, created }));
     expect(serverProcesses(table, { dataDir }, known).map((p) => p.pid)).toEqual([101]);
+  });
+
+  it('findet einen Hilfsprozess, den der gemerkte Hauptprozess kurz vor seinem Ende noch neu gestartet hat (Ticket 27)', () => {
+    // Windows nennt für Kindprozesse von PostgreSQL keinen Pfad; der neue io_worker ist nicht gemerkt.
+    const respawned = proc(110, 100, 1500, { name: 'postgres.exe', cmd: `"${pgExe}" "--forkchild=io_worker" "999"` });
+    const known = [postmaster, ioWorker].map(({ pid, created }) => ({ pid, created }));
+    expect(serverProcesses([respawned], { dataDir }, known).map((p) => p.pid)).toEqual([110]);
+  });
+
+  it('nimmt keine Kinder einer neu vergebenen Nummer des Hauptprozesses und keinen fremden Hauptprozess', () => {
+    const known = [postmaster].map(({ pid, created }) => ({ pid, created }));
+    // Ein anderer Server bekam die Nummer 100 später; sein Hilfsprozess entstand danach.
+    const otherPostmaster = proc(100, 50, 3000, { name: 'postgres.exe', exe: pgExe, cmd: `${pgExe} -D C:\\Temp\\codium-pg-xyz\\data -p 5555` });
+    const otherWorker = proc(111, 100, 3001, { name: 'postgres.exe', cmd: `"${pgExe}" "--forkchild=io_worker" "1"` });
+    // Älter als der gemerkte Hauptprozess: kann nicht sein Kind sein.
+    const older = proc(112, 100, 500, { name: 'postgres.exe', cmd: `"${pgExe}" "--forkchild=io_worker" "2"` });
+    // Ein Hauptprozess (kein Hilfsprozess), dessen Elternnummer zufällig passt.
+    const unrelated = proc(113, 100, 1600, { name: 'postgres.exe', exe: pgExe, cmd: `${pgExe} -D C:\\Temp\\codium-pg-abc\\data -p 6666` });
+    expect(serverProcesses([otherPostmaster, otherWorker], { dataDir }, known)).toEqual([]);
+    expect(serverProcesses([older, unrelated], { dataDir }, known)).toEqual([]);
   });
 
   it('lässt andere Server in Ruhe: einen anderen Datenordner, ein PostgreSQL ausserhalb von embedded-postgres, den Port allein', () => {
@@ -117,6 +137,18 @@ describe('Schlussprüfung: verwaiste Prozesse aus diesem Checkout', () => {
     expect(fromCheckout(proc(1, 0, 0, { exe: 'c:/WORKSPACE/custom/Codium/node_modules/electron/dist/electron.exe' }), root)).toBe(true);
     expect(fromCheckout(proc(1, 0, 0, { exe: 'C:\\workspace\\custom\\codium-alt\\node_modules\\electron\\dist\\electron.exe' }), root)).toBe(false);
     expect(fromCheckout(proc(1, 0, 0, { exe: electron }), `${root}\\`)).toBe(true);
+  });
+
+  it('nimmt das Programm aus der Befehlszeile, wenn Windows keinen Pfad nennt (Kindprozesse von PostgreSQL, Ticket 27)', () => {
+    const pg = 'C:/workspace/custom/codium/node_modules/@embedded-postgres/windows-x64/native/bin/postgres.exe';
+    const worker = proc(120, 999, 1000, { name: 'postgres.exe', cmd: `"${pg}" --forkchild="io_worker" 5848` });
+    expect(programOf(worker)).toBe(pg);
+    expect(fromCheckout(worker, root)).toBe(true);
+    expect(pick(worker)).toEqual([120]);
+    expect(programOf(proc(1, 0, 0, { cmd: `${root}\\node_modules\\x\\rg.exe --files` }))).toBe(`${root}\\node_modules\\x\\rg.exe`);
+    // Die Befehlszeile nennt den Checkout nur als Argument: nicht aus dem Checkout.
+    expect(fromCheckout(proc(1, 0, 0, { name: 'postgres.exe', cmd: `"C:\\PG\\postgres.exe" -D ${root}\\data` }), root)).toBe(false);
+    expect(fromCheckout(proc(1, 0, 0, { cmd: '' }), root)).toBe(false);
   });
 });
 

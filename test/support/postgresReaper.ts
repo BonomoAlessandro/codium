@@ -11,7 +11,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { killProcesses, listProcesses, withDescendants, type ProcessIdentity, type ProcessInfo } from './processes.ts';
+import { killProcesses, listProcesses, programOf, withDescendants, type ProcessIdentity, type ProcessInfo } from './processes.ts';
 
 export interface ServerIdentity {
   /** Datenordner des Servers; ein eigener Temp-Ordner, den kein anderer Server hat. */
@@ -26,9 +26,24 @@ export interface ServerIdentity {
  */
 export function serverProcesses(table: readonly ProcessInfo[], server: ServerIdentity, known: readonly ProcessIdentity[] = []): ProcessInfo[] {
   const dir = server.dataDir.replace(/\//g, '\\').toLowerCase();
-  const roots = table.filter((p) => /[\\/]@embedded-postgres[\\/]/i.test(p.exe) && p.cmd.replace(/\//g, '\\').toLowerCase().includes(dir));
+  const roots = table.filter((p) => /[\\/]@embedded-postgres[\\/]/i.test(programOf(p)) && p.cmd.replace(/\//g, '\\').toLowerCase().includes(dir));
   const remembered = table.filter((p) => known.some((k) => k.pid === p.pid && k.created === p.created));
-  return withDescendants(table, [...roots, ...remembered]);
+  return withDescendants(table, [...roots, ...remembered, ...childrenOfGone(table, known)]);
+}
+
+/**
+ * Hilfsprozesse („--forkchild“) gemerkter Prozesse des Servers, die selbst schon fort sind. Beendet `taskkill /T` die
+ * Hilfsprozesse vor dem Hauptprozess, startet dieser einen „io_worker“ noch neu, bevor er selbst endet; der neue ist
+ * nirgends gemerkt und hat keinen Elternprozess mehr (Ticket 27, nach einem langsamen Lauf gefunden). Trägt inzwischen
+ * ein jüngerer Prozess die Nummer des Gemerkten, gehören ihm die Kinder, die nach ihm entstanden.
+ */
+function childrenOfGone(table: readonly ProcessInfo[], known: readonly ProcessIdentity[]): ProcessInfo[] {
+  const gone = known.filter((k) => !table.some((p) => p.pid === k.pid && p.created === k.created));
+  return table.filter(
+    (p) =>
+      p.cmd.includes('--forkchild') &&
+      gone.some((g) => p.ppid === g.pid && p.created >= g.created && !table.some((q) => q.pid === g.pid && q.created > g.created && q.created <= p.created)),
+  );
 }
 
 function sleep(ms: number): void {
