@@ -75,7 +75,10 @@ Codium bei 0.x ist, steigt die zweite Stelle (0.1.0 → 0.2.0 → 0.3.0); ein Sc
 Version steht danach in `package.json` und `package-lock.json` und gehört committet; scheitert das Bauen, bleibt die
 alte. `npm run test:packaged` zählt nicht hoch. Der Installer installiert für den angemeldeten Benutzer
 (ohne Administratorrechte), der Ordner lässt sich wählen. Codium speichert seine Daten (Fensterlage, Einstellungen,
-Zustand je Projekt samt Datenbank-Verbindungen) unter `%APPDATA%\Codium`, nie im Projektordner. Updates gibt es nicht
+Zustand je Projekt samt Datenbank-Verbindungen) unter `%APPDATA%\Codium`, nie im Projektordner. Dort liegt auch das
+Protokoll der Sprachserver (`logs\language-servers.log`, höchstens 1 MB, das vorige als `language-servers.old.log`):
+Jedes unerwartete Ende eines Sprachservers steht darin mit Exit-Code und dem Ende seiner Fehlerausgabe; „Show Log“ an
+der Meldung nach wiederholten Abstürzen öffnet es. Updates gibt es nicht
 automatisch, und der Installer ist nicht signiert (Windows SmartScreen fragt beim ersten Start nach).
 
 ## Entwicklung

@@ -44,6 +44,11 @@ export function registerFileCommands(register: RegisterProjectCommand): void {
   register('language.resolveCompletion', (project, params) => project.language.resolveCompletion(params));
   register('language.semanticTokens', (project, params) => project.language.semanticTokens(params));
   register('language.symbols', (project, params) => project.language.symbols(params));
+  register('language.restart', (project, params) => {
+    const server = (params as Partial<CommandParams<'language.restart'>> | undefined)?.server;
+    if (server !== 'typescript' && server !== 'java') throw new CommandError('A language server is expected.', ErrorCode.invalidParams);
+    return project.language.restart(server);
+  });
   register('git.state', (project) => project.git.current());
   register('git.refresh', (project) => project.git.refresh());
   register('git.branches', (project) => project.git.branches());

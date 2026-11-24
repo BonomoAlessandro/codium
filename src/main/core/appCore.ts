@@ -33,6 +33,7 @@ import { startClone, type CloneJob } from './clone';
 import { detectShells, shellFor } from './shells';
 import type { BundledJava } from './language/javaServer';
 import type { BundledTypeScript } from './language/typescriptServer';
+import { LanguageServerLog, SERVER_LOG_FILE } from './language/serverLog';
 import { registerEditorCommands } from './editorCommands';
 import { JDTLS_MIN_JAVA, detectJdks, hasJavaMarkers, jdkForLanguageServer, sameJdkPath } from './jdks';
 import { registerFileCommands } from './fileCommands';
@@ -114,6 +115,8 @@ export interface AppCoreOptions {
   mavenUserSettings?: string;
   /** Pfad zum mitgelieferten README (im Paket ausserhalb des App-Archivs), für „Open README“. */
   readmePath?: string;
+  /** Höchstgrösse des Protokolls der Sprachserver (Tests); ohne Angabe 1 MB. */
+  serverLogMaxBytes?: number;
   /** Umgebung für gestartete Programme (Git); ohne Angabe die des Prozesses. Tests schirmen damit die Git-Konfiguration ab. */
   processEnv?: NodeJS.ProcessEnv;
   log?: (message: string) => void;
@@ -147,10 +150,16 @@ export class AppCore {
   private readonly clones = new Map<CloneJob, { windowId: number; target: string }>();
   /** Das gefundene Git (Pfad), `null` ohne Git: Die Git-Funktionen bleiben dann aus (ab Ticket 15). */
   readonly gitPath: string | null;
+  /** Protokoll der Sprachserver im Datenordner, gemeinsam für alle Projektfenster (Ticket 30). */
+  readonly serverLog: LanguageServerLog;
 
   constructor(private readonly options: AppCoreOptions) {
     this.ports = options.ports;
     this.log = options.log ?? ((message) => console.error(message));
+    this.serverLog = new LanguageServerLog(path.join(options.dataDir, SERVER_LOG_FILE), {
+      ...(options.serverLogMaxBytes ? { maxBytes: options.serverLogMaxBytes } : {}),
+      log: this.log,
+    });
     this.folders = new FolderQueries({ timeoutMs: options.folderQueryTimeoutMs });
     this.events = new BufferedEventSink(options.events);
     this.appStateFile = new StateFile(path.join(options.dataDir, APP_STATE_FILE), SCHEMA_VERSION, emptyAppState, {
@@ -511,6 +520,7 @@ export class AppCore {
       if (text === null) throw new CommandError('The README that comes with Codium was not found.', ErrorCode.fileNotFound);
       return { text };
     });
+    this.router.register('app.languageServerLog', async () => ({ text: await this.serverLog.read(), path: this.serverLog.file }));
     this.router.register('editor.flushed', (_ctx, params) => {
       const requestId = (params as { requestId?: unknown } | undefined)?.requestId;
       if (typeof requestId === 'number') this.flushWaiters.get(requestId)?.();
@@ -868,6 +878,7 @@ export class AppCore {
       language: {
         ...(this.options.typescript ? { typescript: this.options.typescript } : {}),
         env: this.options.processEnv,
+        serverLog: this.serverLog,
         ...(this.options.languageClock ? { now: this.options.languageClock } : {}),
         ...(this.options.java
           ? {

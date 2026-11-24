@@ -2,6 +2,7 @@
 // Electron.
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { STDERR_TAIL_BYTES, TailBuffer } from './serverLog';
 
 /** Antwort auf eine Anfrage des Servers an den Client (etwa `workspace/configuration`). */
 export type ServerRequestHandler = (method: string, params: unknown) => unknown;
@@ -13,9 +14,11 @@ export interface LspStartOptions {
   env: NodeJS.ProcessEnv;
   onNotification: (method: string, params: unknown) => void;
   onRequest: ServerRequestHandler;
-  /** Der Server ist beendet (abgestürzt oder nach `exit`). */
-  onExit: (code: number | null) => void;
+  /** Der Server ist beendet (abgestürzt oder nach `exit`); ohne Code mit Signal, ohne beides liess er sich nicht starten. */
+  onExit: (code: number | null, signal: string | null) => void;
   log: (message: string) => void;
+  /** So viel vom Ende von stderr heben wir auf (Ticket 30); ohne Angabe 64 KB. */
+  stderrBytes?: number;
 }
 
 export class LspError extends Error {
@@ -37,8 +40,15 @@ export class LspConnection {
   private readonly pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   private exited = false;
   readonly exit: Promise<void>;
+  /** Das Ende von stderr, für das Protokoll der Sprachserver (Ticket 30). */
+  private readonly stderrTail: TailBuffer;
+  /** Erfüllt, sobald stderr zu ist (alles gelesen); kann nach `exit` kommen. */
+  readonly stderrClosed: Promise<void>;
+  /** Warum sich das Programm nicht starten liess (etwa ENOENT). */
+  private spawnError: string | null = null;
 
   constructor(private readonly options: LspStartOptions) {
+    this.stderrTail = new TailBuffer(options.stderrBytes ?? STDERR_TAIL_BYTES);
     this.child = spawn(options.command, options.args, {
       cwd: options.cwd,
       env: options.env,
@@ -46,7 +56,7 @@ export class LspConnection {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     this.exit = new Promise((resolve) => {
-      const done = (code: number | null) => {
+      const done = (code: number | null, signal: string | null) => {
         if (this.exited) return;
         this.exited = true;
         for (const { reject, timer } of this.pending.values()) {
@@ -54,18 +64,23 @@ export class LspConnection {
           reject(new Error('The language server has stopped.'));
         }
         this.pending.clear();
-        options.onExit(code);
+        options.onExit(code, signal);
         resolve();
       };
-      this.child.on('exit', (code) => done(code));
+      this.child.on('exit', (code, signal) => done(code, signal));
       this.child.on('error', (err) => {
         options.log(`Sprachserver ließ sich nicht starten: ${err.message}`);
-        done(null);
+        this.spawnError = err.message;
+        done(null, null);
       });
     });
+    this.stderrClosed = new Promise((resolve) => {
+      this.child.stderr.once('close', () => resolve());
+      this.child.stderr.once('error', () => resolve());
+    });
     this.child.stdout.on('data', (chunk: Buffer) => this.receive(chunk));
-    // Meldungen auf stderr sind für die Fehlersuche; sie füllen sonst den Puffer und lassen den Server hängen.
-    this.child.stderr.on('data', () => {});
+    // stderr wird immer gelesen (sonst füllt sich der Puffer und der Server hängt); das Ende bleibt fürs Protokoll.
+    this.child.stderr.on('data', (chunk: Buffer) => this.stderrTail.push(chunk));
     this.child.stdin.on('error', () => {});
   }
 
@@ -75,6 +90,16 @@ export class LspConnection {
 
   get running(): boolean {
     return !this.exited;
+  }
+
+  /** Das aufgehobene Ende von stderr. */
+  get stderr(): { text: string; truncated: boolean } {
+    return this.stderrTail.read();
+  }
+
+  /** Warum sich das Programm nicht starten liess; `null`, wenn es lief. */
+  get startError(): string | null {
+    return this.spawnError;
   }
 
   request<T = unknown>(method: string, params: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {

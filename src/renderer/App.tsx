@@ -5,10 +5,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { NoticeAction, WindowInfo } from '../shared/types';
 import { createApi } from './api';
+import { errorText } from './errors';
 import { NoticeList, useNotices } from './Notices';
 import { DialogHost, useAsk } from './popup/Dialogs';
 import { applyProgress, type RunningWork } from './progress';
-import { OPEN_README_EVENT, ProjectWindow } from './project/ProjectWindow';
+import { OPEN_README_EVENT, OPEN_SERVER_LOG_EVENT, ProjectWindow } from './project/ProjectWindow';
 import { useProjectActions, type ProjectActions } from './RecentProjects';
 import { WelcomeScreen } from './WelcomeScreen';
 
@@ -39,14 +40,16 @@ function Root() {
   // Meldungen des Kerns; ihre Knöpfe führt die Oberfläche aus (siehe `NoticeActions` im Vertrag).
   const actionsRef = useRef(actions);
   actionsRef.current = actions;
-  const runAction = useCallback((action: NoticeAction) => runNoticeAction(actionsRef.current, action), []);
+  const runAction = useCallback((action: NoticeAction) => runNoticeAction(actionsRef.current, action, notify), [notify]);
   useEffect(
     () =>
       api.on('app.notice', (notice) =>
         notify({
           level: notice.level,
           text: notice.text,
-          ...(notice.actions ? { actions: notice.actions.map((a) => ({ label: a.label, run: () => runAction(a) })) } : {}),
+          ...(notice.actions
+            ? { actions: notice.actions.map((a) => ({ label: a.label, run: () => runAction(a), ...(a.keepOpen ? { keepOpen: true } : {}) })) }
+            : {}),
         }),
       ),
     [notify, runAction],
@@ -71,7 +74,7 @@ function useRunningWork(): RunningWork[] {
 }
 
 /** Führt den Knopf einer Meldung des Kerns aus. Kommt eine Aktion zur Tabelle dazu, verlangt TypeScript sie hier. */
-function runNoticeAction(actions: ProjectActions, action: NoticeAction): void {
+function runNoticeAction(actions: ProjectActions, action: NoticeAction, notify: ReturnType<typeof useNotices>['notify']): void {
   const kind = action.action;
   switch (kind) {
     case 'recentProjects.remove':
@@ -80,6 +83,13 @@ function runNoticeAction(actions: ProjectActions, action: NoticeAction): void {
     case 'readme.open':
       // Das Projektfenster öffnet das README in einem Tab (siehe ProjectWindow).
       window.dispatchEvent(new CustomEvent(OPEN_README_EVENT));
+      return;
+    case 'languageServers.showLog':
+      // Das Projektfenster öffnet das Protokoll in einem Tab (siehe ProjectWindow).
+      window.dispatchEvent(new CustomEvent(OPEN_SERVER_LOG_EVENT));
+      return;
+    case 'language.restart':
+      void api.request('language.restart', { server: action.params.server }).catch((err: unknown) => notify({ level: 'error', text: errorText(err) }));
       return;
     default:
       assertNever(kind);

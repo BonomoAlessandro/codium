@@ -355,7 +355,7 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
   - Das Werkzeugfenster „Find“ erscheint in der unteren Gruppe der linken Symbolleiste, sobald es Trefferlisten gibt (abgelegte Projektsuche, Verwendungen über Alt + F7), und verschwindet, wenn der Nutzer alle schliesst. Jede Trefferliste ist ein eigener Reiter.
 - **Rückfragen** (Löschen, Rollback, nicht gemergter Branch, offene Änderungen in der Datenbank) sind Dialoge in der Oberfläche, nicht Dialoge von Windows.
 - **Statusleiste:** links Fortschritt laufender Arbeiten, rechts Zeile:Spalte, Zeilenende, Kodierung.
-- **Meldungen:** Hinweise unten rechts, gestapelt. Erfolg und Information verschwinden nach etwa fünf Sekunden, Fehler bleiben, bis sie geschlossen werden. Ein Hinweis kann Knöpfe tragen (etwa „Pull“ nach einem abgelehnten Push, „Open README“ bei fehlenden Voraussetzungen).
+- **Meldungen:** Hinweise unten rechts, gestapelt. Erfolg und Information verschwinden nach etwa fünf Sekunden, Fehler bleiben, bis sie geschlossen werden. Ein Hinweis kann Knöpfe tragen (etwa „Pull“ nach einem abgelehnten Push, „Open README“ bei fehlenden Voraussetzungen, „Show Log“ und „Restart“ nach wiederholten Abstürzen eines Sprachservers). Ein Klick führt den Knopf aus und schliesst den Hinweis; ein Knopf kann ihn stehen lassen, damit ein zweiter Knopf danach noch geht („Show Log“, Ticket 30).
 - **Design:**
   - Nur dunkel, angelehnt an das neue IntelliJ-Design „Dark“.
   - Die bestehenden Design-Variablen werden auf ein einziges dunkles Schema reduziert.
@@ -450,7 +450,8 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
 - **Start:**
   - Pro Projektfenster höchstens ein Server je Sprache.
   - Er startet beim Öffnen des Projekts, wenn das Projekt Kennzeichen der Sprache hat (Java: Maven- oder Gradle-Baudatei; TypeScript/JavaScript: tsconfig, jsconfig oder package.json), sonst beim Öffnen der ersten Datei dieser Sprache.
-  - Stürzt ein Server ab, startet der Sprach-Dienst ihn neu, höchstens dreimal in drei Minuten, danach erscheint ein Fehlerhinweis.
+  - Stürzt ein Server ab, startet der Sprach-Dienst ihn neu, höchstens dreimal in drei Minuten, danach erscheint ein Fehlerhinweis. Er trägt die Knöpfe „Show Log“ (öffnet das Protokoll der Sprachserver, die Meldung bleibt stehen) und „Restart“ (startet den Server neu, ohne das Projekt neu zu öffnen; die Zählung beginnt von vorn). Seit Ticket 30.
+  - **Protokoll der Sprachserver** (Ticket 30): Jede Verbindung hebt die letzten 64 KB dessen auf, was ihr Server auf stderr schreibt. Endet ein Server unerwartet, schreibt der Sprach-Dienst Zeitpunkt, Projekt, Server, Art (`kind`), Programm, Exit-Code bzw. Signal, wie es weitergeht, und das aufgehobene stderr nach `logs\language-servers.log` im Datenordner (im Testmodus im Datenordner des Tests). Würde ein Eintrag das Protokoll über 1 MB bringen, wird es zu `language-servers.old.log`, und ein neues beginnt. Ein normales Beenden durch Codium kommt nicht ins Protokoll.
   - Beim Abbau des Projekt-Kerns beendet der Dienst alle Server samt Kindprozessen.
 - **Laufzeiten:**
   - jdtls braucht seit Oktober 2026 mindestens **Java 25**. Codium startet es mit dem neuesten erkannten JDK ab 25, unabhängig von JAVA_HOME; in den Einstellungen lässt sich ein anderes JDK ab 25 wählen.

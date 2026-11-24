@@ -40,11 +40,21 @@ export interface NoticeActions {
   'recentProjects.remove': { path: string };
   /** Öffnet das mitgelieferte README schreibgeschützt in einem Tab, am Abschnitt „Voraussetzungen“. */
   'readme.open': { section: 'prerequisites' };
+  /** Öffnet das Protokoll der Sprachserver schreibgeschützt in einem Tab, am letzten Eintrag (Ticket 30). */
+  'languageServers.showLog': Record<string, never>;
+  /** Startet einen aufgegebenen Sprachserver des Projekts neu; die Zählung der Abstürze beginnt von vorn (Ticket 30). */
+  'language.restart': { server: LanguageServerId };
 }
 
-/** Ein Knopf an einer Meldung des Kerns. */
+/** Die Sprachserver eines Projekts (höchstens einer je Sprache). */
+export type LanguageServerId = 'typescript' | 'java';
+
+/**
+ * Ein Knopf an einer Meldung des Kerns. Ein Klick schliesst die Meldung, ausser mit `keepOpen` (etwa „Show Log“ neben
+ * „Restart“, Ticket 30: Nach dem Lesen des Protokolls soll der Neustart noch gehen).
+ */
 export type NoticeAction = {
-  [K in keyof NoticeActions]: { label: string; action: K; params: NoticeActions[K] };
+  [K in keyof NoticeActions]: { label: string; action: K; params: NoticeActions[K]; keepOpen?: true };
 }[keyof NoticeActions];
 
 /**
@@ -54,7 +64,7 @@ export type NoticeAction = {
 export interface Notice {
   level: 'info' | 'success' | 'error';
   text: string;
-  /** Knöpfe der Meldung; ein Klick führt die Aktion aus und schliesst die Meldung. */
+  /** Knöpfe der Meldung; ein Klick führt die Aktion aus und schliesst die Meldung (ausser mit `keepOpen`). */
   actions?: NoticeAction[];
 }
 
@@ -736,6 +746,11 @@ export interface Commands {
   /** Das mit Codium mitgelieferte README (Markdown), für „Open README“. */
   'app.readme': { params: void; result: { text: string } };
   /**
+   * Das Protokoll der Sprachserver (Ticket 30): unerwartete Enden mit Exit-Code und dem Ende von stderr, für „Show Log“.
+   * `text` ist leer, solange es keines gibt.
+   */
+  'app.languageServerLog': { params: void; result: { text: string; path: string } };
+  /**
    * Suche nach Namen (Ctrl + Shift + N): die besten Treffer (höchstens 100) unter allen Dateien des Projekts,
    * versteckte eingeschlossen, ohne `.git`; von `.gitignore` ausgenommene nur mit `includeIgnored`.
    */
@@ -881,6 +896,11 @@ export interface Commands {
   'language.symbols': { params: { query: string; kinds: 'types' | 'all' }; result: SymbolMatch[] };
   /** Inhalt eines schreibgeschützten Ziels (siehe `CodeLocation.readOnly`). */
   'language.readTarget': { params: { path: string }; result: { text: string } };
+  /**
+   * Startet den Sprachserver einer Sprache neu, auch nachdem der Dienst ihn nach wiederholten Abstürzen aufgegeben hat
+   * (Knopf „Restart“, Ticket 30). Die Zählung der Abstürze beginnt von vorn.
+   */
+  'language.restart': { params: { server: LanguageServerId }; result: void };
   /** Die gemerkte Ansicht einer Markdown-Datei; `null` ohne gemerkte (dann gilt „Split“). */
   'project.markdownView': { params: { path: string }; result: MarkdownView | null };
   /** Merkt die Ansicht einer Markdown-Datei; sie folgt Umbenennungen in Codium und entfällt beim Löschen. */

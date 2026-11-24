@@ -92,6 +92,8 @@ function focusToolWindow(section: HTMLElement | undefined): void {
 
 /** Ereignis am Fenster: „Open README“ einer Meldung; das Projektfenster öffnet das README in einem Tab. */
 export const OPEN_README_EVENT = 'codium:open-readme';
+/** Ereignis für „Show Log“ an Meldungen über Sprachserver (Ticket 30). */
+export const OPEN_SERVER_LOG_EVENT = 'codium:open-server-log';
 
 /** Die Überschrift im README, an der „Open README“ steht. */
 const PREREQUISITES_HEADING = /^##\s+Voraussetzungen\s*$/;
@@ -364,6 +366,33 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
     };
     window.addEventListener(OPEN_README_EVENT, onOpenReadme);
     return () => window.removeEventListener(OPEN_README_EVENT, onOpenReadme);
+  }, [api, notify]);
+
+  // „Show Log“ (Meldung nach wiederholten Abstürzen eines Sprachservers, Ticket 30): das Protokoll der Sprachserver
+  // schreibgeschützt, am letzten Eintrag.
+  useEffect(() => {
+    const onOpenServerLog = () => {
+      api.request('app.languageServerLog').then(
+        ({ text }) => {
+          const shown = text === '' ? 'No language server has stopped unexpectedly.\n' : text;
+          const lines = shown.split(/\r?\n/);
+          let last = -1;
+          lines.forEach((l, i) => {
+            if (l.startsWith('=== ')) last = i;
+          });
+          editorRef.current?.openDocument({
+            title: 'language-servers.log',
+            text: shown,
+            language: 'plaintext',
+            line: last >= 0 ? last + 1 : 1,
+            origin: 'language server log',
+          });
+        },
+        (err: unknown) => notify({ level: 'error', text: errorText(err) }),
+      );
+    };
+    window.addEventListener(OPEN_SERVER_LOG_EVENT, onOpenServerLog);
+    return () => window.removeEventListener(OPEN_SERVER_LOG_EVENT, onOpenServerLog);
   }, [api, notify]);
 
   const [popup, setPopup] = useState<SearchPopup>(null);

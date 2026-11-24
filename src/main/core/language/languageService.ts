@@ -5,7 +5,9 @@
 // - Höchstens ein Server je Sprache. Er startet beim Öffnen des Projekts, wenn Kennzeichen da sind (TypeScript:
 //   tsconfig.json, jsconfig.json, package.json; Java: Maven- oder Gradle-Baudatei), sonst mit dem ersten passenden
 //   Dokument. Java startet nur mit einem JDK ab 25; ohne gibt es keinen Java-Server (kein Absturz).
-// - Stürzt er ab, startet er neu, höchstens dreimal in drei Minuten; danach erscheint ein Fehlerhinweis.
+// - Stürzt er ab, startet er neu, höchstens dreimal in drei Minuten; danach erscheint ein Fehlerhinweis mit den Knöpfen
+//   „Show Log“ und „Restart“. Jedes unerwartete Ende kommt mit Exit-Code und dem Ende von stderr ins Protokoll der
+//   Sprachserver (Ticket 30, `serverLog.ts`).
 // - Beim Abbau beendet der Dienst alle Server samt Kindprozessen.
 
 import * as fs from 'node:fs';
@@ -20,6 +22,8 @@ import {
   type CommandResult,
   type CompletionEntry,
   type JdkInfo,
+  type LanguageServerId,
+  type NoticeAction,
   type SymbolMatch,
   type CodeLocation, type CommandParams, type LanguageDiagnostic, type TextRange } from '../../../shared/types';
 import { descendantsOf, isAlive, killProcessTree } from '../processTree';
@@ -28,6 +32,7 @@ import type { ProjectCore } from '../projectCore';
 import { CommandError } from '../router';
 import { JAVA_MARKERS, isJavaFile, javaLaunch, type BundledJava } from './javaServer';
 import { LspConnection } from './lspConnection';
+import type { LanguageServerLog } from './serverLog';
 import { TYPESCRIPT_MARKERS, typescriptLanguageId, typescriptLaunch, type BundledTypeScript, type TypeScriptLaunch } from './typescriptServer';
 export type { BundledJava } from './javaServer';
 
@@ -36,6 +41,8 @@ export const MAX_RESTARTS = 3;
 export const RESTART_WINDOW_MS = 3 * 60_000;
 /** So lange nach der letzten Eingabe holt der Dienst die Fehler eines Dokuments neu. */
 const DIAGNOSTIC_DELAY_MS = 250;
+/** So lange wartet das Protokoll nach dem Ende eines Servers höchstens auf den Rest von stderr. */
+const STDERR_GRACE_MS = 1000;
 
 export interface LanguageServiceOptions {
   /** Mitgelieferte TypeScript-Server; ohne Angabe startet der Dienst keine Server (schnelle Tests ohne Sprachserver). */
@@ -55,9 +62,11 @@ export interface LanguageServiceOptions {
     mavenUserSettings?: string;
   };
   log: (message: string) => void;
+  /** Protokoll der Sprachserver (Ticket 30); ohne Angabe wird nichts protokolliert. */
+  serverLog?: LanguageServerLog;
 }
 
-type ServerId = 'typescript' | 'java';
+type ServerId = LanguageServerId;
 
 /** Wie ein Server startet. */
 interface Launch {
@@ -98,6 +107,8 @@ class Server {
   stopping = false;
   gaveUp = false;
   crashes: number[] = [];
+  /** Was beim Start schiefging (etwa keine Antwort auf `initialize`), für den Eintrag im Protokoll. */
+  startNote: string | null = null;
   readonly progress = new Map<string, Progress>();
   /**
    * Dateiänderungen, die kamen, während der Server startete: Vor `initialized` geht nichts an ihn (Spezifikation von LSP;
@@ -164,14 +175,24 @@ export class LanguageService {
   }
 
   /** Ein anderes JDK in den Einstellungen: laufenden Java-Server neu starten (Ticket 14). */
-  async restartJava(): Promise<void> {
-    const java = this.servers.java;
-    await this.stop(java);
-    java.gaveUp = false;
-    java.crashes = [];
-    this.javaJdkCache = undefined;
+  restartJava(): Promise<void> {
+    return this.restart('java');
+  }
+
+  /**
+   * Startet einen Server neu, auch nachdem der Dienst ihn aufgegeben hat (Knopf „Restart“, Ticket 30). Die Zählung der
+   * Abstürze beginnt von vorn. Er startet, wenn das Projekt Kennzeichen der Sprache hat oder ein Dokument dieser Sprache
+   * offen ist; offene Dokumente bekommt er wie nach jedem Start.
+   */
+  async restart(id: ServerId): Promise<void> {
+    const server = this.servers[id];
+    await this.stop(server);
+    server.gaveUp = false;
+    server.crashes = [];
+    if (id === 'java') this.javaJdkCache = undefined;
     if (this.disposed) return;
-    if (this.hasJavaMarkers() || [...this.documents.values()].some((d) => d.server === 'java')) await this.ensure(java);
+    const markers = id === 'java' ? this.hasJavaMarkers() : TYPESCRIPT_MARKERS.some((m) => fs.existsSync(path.join(this.project.path, m)));
+    if (markers || [...this.documents.values()].some((d) => d.server === id)) await this.ensure(server);
   }
 
   /** Prozessnummer des TypeScript-Servers (Tests); `undefined`, wenn keiner läuft. */
@@ -654,6 +675,7 @@ export class LanguageService {
     if (!launch) return false;
     server.launch = launch;
     server.stopping = false;
+    server.startNote = null;
     server.initialized = false;
     server.sent.clear();
     server.pendingWatched = [];
@@ -670,7 +692,7 @@ export class LanguageService {
         log: this.options.log,
         onRequest: (method, params) => this.answer(method, params),
         onNotification: (method, params) => this.onNotification(server, method, params),
-        onExit: (code) => this.onExit(server, connection, code),
+        onExit: (code, signal) => this.onExit(server, connection, code, signal),
       });
     } catch (err) {
       // Ein Programm, das sich gar nicht starten lässt (etwa ein kaputtes java.exe), wirft schon beim Start.
@@ -711,7 +733,10 @@ export class LanguageService {
     } catch (err) {
       this.options.log(`${server.label}-Sprachserver startet nicht: ${(err as Error).message}`);
       // Hängt er oder lehnt er ab, läuft er womöglich weiter: beenden, das zählt wie ein Absturz (Review von Ticket 12).
-      if (connection.running && connection.pid !== undefined) await killProcessTree(connection.pid);
+      if (connection.running && connection.pid !== undefined) {
+        server.startNote = `Stopped by Codium while starting: ${(err as Error).message}`;
+        await killProcessTree(connection.pid);
+      }
       return false;
     } finally {
       if (server.id !== 'java' || !server.initialized) {
@@ -762,10 +787,13 @@ export class LanguageService {
     }
   }
 
-  private onExit(server: Server, connection: LspConnection, code: number | null): void {
+  private onExit(server: Server, connection: LspConnection, code: number | null, signal: string | null): void {
     for (const p of server.progress.values()) p.end();
     server.progress.clear();
     if (server.connection !== connection) return;
+    const launch = server.launch;
+    const note = connection.startError ?? server.startNote;
+    server.startNote = null;
     server.importing?.end();
     server.importing = null;
     server.connection = null;
@@ -783,17 +811,63 @@ export class LanguageService {
     // Abgestürzt: neu starten, höchstens dreimal in drei Minuten.
     const now = this.now();
     server.crashes = server.crashes.filter((t) => now - t < RESTART_WINDOW_MS);
-    this.options.log(`${server.label}-Sprachserver abgestürzt (Exit-Code ${code}).`);
-    if (server.crashes.length >= MAX_RESTARTS) {
+    this.options.log(`${server.label}-Sprachserver abgestürzt (Exit-Code ${code}${signal ? `, Signal ${signal}` : ''}).`);
+    const giveUp = server.crashes.length >= MAX_RESTARTS;
+    const outcome = giveUp
+      ? `Not restarted: it stopped ${MAX_RESTARTS + 1} times within three minutes.`
+      : `Restarting (restart ${server.crashes.length + 1} of ${MAX_RESTARTS} within three minutes).`;
+    const logged = this.logStop(server, connection, launch, { code, signal, note, outcome });
+    if (giveUp) {
       server.gaveUp = true;
-      this.project.notify({
-        level: 'error',
-        text: `The ${server.label} language server stopped ${MAX_RESTARTS + 1} times within three minutes and was not restarted. Reopen the project to try again.`,
+      const actions: NoticeAction[] = [
+        // „Show Log“ lässt die Meldung stehen, damit „Restart“ danach noch geht.
+        ...(this.options.serverLog ? [{ label: 'Show Log', action: 'languageServers.showLog' as const, params: {}, keepOpen: true as const }] : []),
+        { label: 'Restart', action: 'language.restart', params: { server: server.id } },
+      ];
+      // Erst nach dem Eintrag, damit „Show Log“ ihn schon zeigt.
+      void logged.then(() => {
+        if (this.disposed || !server.gaveUp) return;
+        this.project.notify({
+          level: 'error',
+          text: `The ${server.label} language server stopped ${MAX_RESTARTS + 1} times within three minutes and was not restarted. Click Restart to start it again.`,
+          actions,
+        });
       });
       return;
     }
     server.crashes.push(now);
     void this.ensure(server);
+  }
+
+  /**
+   * Schreibt ein unerwartetes Ende ins Protokoll der Sprachserver. stderr kann nach dem Ende des Prozesses noch Daten
+   * liefern (Node meldet `exit` vor dem Schliessen der Pipes); darauf wartet der Eintrag kurz.
+   */
+  private async logStop(
+    server: Server,
+    connection: LspConnection,
+    launch: Launch | null,
+    end: { code: number | null; signal: string | null; note: string | null; outcome: string },
+  ): Promise<void> {
+    const serverLog = this.options.serverLog;
+    if (!serverLog) return;
+    const time = new Date();
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([connection.stderrClosed, new Promise<void>((resolve) => (timer = setTimeout(resolve, STDERR_GRACE_MS)))]);
+    clearTimeout(timer);
+    await serverLog.append({
+      time,
+      project: this.project.path,
+      server: server.label,
+      kind: launch?.kind ?? 'unknown',
+      command: launch?.command ?? 'unknown',
+      args: launch?.args ?? [],
+      code: end.code,
+      signal: end.signal,
+      ...(end.note ? { note: end.note } : {}),
+      outcome: end.outcome,
+      stderr: connection.stderr,
+    });
   }
 
   private async dispose(): Promise<void> {

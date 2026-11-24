@@ -7,10 +7,11 @@ import type { Notice } from '../shared/types';
 import { CloseIcon, ErrorIcon, InfoIcon, SuccessIcon } from './icons';
 import { noticeTimeout } from './noticeRules';
 
-/** Ein Knopf an einer Meldung; ein Klick schliesst die Meldung und führt ihn aus. */
+/** Ein Knopf an einer Meldung; ein Klick schliesst die Meldung und führt ihn aus, mit `keepOpen` bleibt sie stehen. */
 export interface NoticeButton {
   label: string;
   run: () => void;
+  keepOpen?: boolean;
 }
 
 /** Eine Meldung in der Oberfläche. */
@@ -83,7 +84,7 @@ function NoticeView({ notice, onDismiss }: { notice: UiNotice; onDismiss: (id: n
               type="button"
               className="notice-action"
               onClick={() => {
-                onDismiss(notice.id);
+                if (!action.keepOpen) onDismiss(notice.id);
                 action.run();
               }}
             >

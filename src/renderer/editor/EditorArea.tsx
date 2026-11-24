@@ -112,6 +112,8 @@ export interface ReadOnlyDocument {
   language: string;
   /** Zeile (ab 1), an der der Cursor stehen soll. */
   line?: number;
+  /** Herkunft im Titel des Tabs, etwa „language server log“; ohne Angabe „comes with Codium“. */
+  origin?: string;
 }
 
 /** Pfade schreibgeschützter Dokument-Tabs beginnen so; es sind keine Dateien. */
@@ -230,6 +232,8 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   const [dirty, setDirty] = useState<ReadonlySet<string>>(() => new Set());
   const [editorReady, setEditorReady] = useState(false);
   const tabsRef = useRef(tabs);
+  /** Herkunft der schreibgeschützten Dokument-Tabs (Schlüssel des Pfads) für ihren Titel. */
+  const documentOrigins = useRef(new Map<string, string>());
   const activeRef = useRef(active);
   const models = useRef(new Map<string, ModelEntry>());
   const hostRef = useRef<HTMLDivElement>(null);
@@ -928,8 +932,13 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       const docPath = DOCUMENT_PREFIX + doc.title;
       const key = pathKey(docPath);
       const target = doc.line ? { lineNumber: doc.line, column: 1 } : undefined;
-      if (!tabsRef.current.some((t) => pathKey(t.path) === key)) {
-        const uri = monaco.Uri.from({ scheme: 'codium-doc', path: `/${doc.title}` });
+      const uri = monaco.Uri.from({ scheme: 'codium-doc', path: `/${doc.title}` });
+      documentOrigins.current.set(key, doc.origin ?? 'comes with Codium');
+      if (tabsRef.current.some((t) => pathKey(t.path) === key)) {
+        // Schon offen: mit dem neuen Text (etwa das Protokoll der Sprachserver nach einem weiteren Eintrag).
+        const model = monaco.editor.getModel(uri);
+        if (model && model.getValue() !== doc.text) model.setValue(doc.text);
+      } else {
         monaco.editor.getModel(uri)?.dispose();
         const model = monaco.editor.createModel(doc.text, doc.language, uri);
         addModel(key, model, model.getAlternativeVersionId());
@@ -1621,7 +1630,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       : isDiffTab(tabPath)
       ? `Diff of ${relativeLabel(project.path, (tabsRef.current.find((t) => t.path === tabPath)?.content as { diff?: DiffSpec } | null)?.diff?.filePath ?? '')}`
       : isDocumentTab(tabPath)
-      ? `${tabPath.slice(DOCUMENT_PREFIX.length)} – comes with Codium (read-only)`
+      ? `${tabPath.slice(DOCUMENT_PREFIX.length)} – ${documentOrigins.current.get(pathKey(tabPath)) ?? 'comes with Codium'} (read-only)`
       : isJdtPath(tabPath)
         ? `${jdtTitle(tabPath)} – library class (read-only)`
         : relativeLabel(project.path, tabPath);

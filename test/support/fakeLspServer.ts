@@ -4,12 +4,22 @@
 // an und schreibt jede Nachricht in eine Protokolldatei, bei Dateiänderungen mit den Dateinamen.
 //
 // Umgebung: FAKE_LSP_LOG (Protokolldatei), FAKE_LSP_INIT_DELAY_MS (Verzögerung der Antwort auf `initialize`).
+//
+// Abstürze auf Bestellung (Ticket 30): Solange die Datei FAKE_LSP_CRASH_FILE existiert, schreibt der Server nach einer
+// Nachricht mit der Methode FAKE_LSP_CRASH_ON (Standard `textDocument/didOpen`) etwas auf stderr und endet mit dem
+// Exit-Code FAKE_LSP_EXIT_CODE (Standard 2). Auf stderr kommen FAKE_LSP_STDERR_LINES nummerierte Zeilen (Standard 3)
+// und zum Schluss eine Zeile wie bei einer Go-Panic. Ohne die Datei beantwortet er `textDocument/definition` mit einem
+// Ziel am Anfang des Dokuments.
 // Node startet die Datei direkt (siehe processes.ts).
 
 import * as fs from 'node:fs';
 
 const log = process.env.FAKE_LSP_LOG ?? '';
 const initDelay = Number(process.env.FAKE_LSP_INIT_DELAY_MS ?? '0');
+const crashFile = process.env.FAKE_LSP_CRASH_FILE ?? '';
+const crashOn = process.env.FAKE_LSP_CRASH_ON ?? 'textDocument/didOpen';
+const exitCode = Number(process.env.FAKE_LSP_EXIT_CODE ?? '2');
+const stderrLines = Number(process.env.FAKE_LSP_STDERR_LINES ?? '3');
 const NL = String.fromCharCode(10);
 const HEADER_END = String.fromCharCode(13, 10, 13, 10);
 
@@ -22,15 +32,24 @@ function send(message: Record<string, unknown>): void {
   process.stdout.write(Buffer.concat([Buffer.from(`Content-Length: ${body.length}${HEADER_END}`, 'ascii'), body]));
 }
 
+/** Schreibt die bestellten Zeilen auf stderr und endet erst, wenn sie draussen sind. */
+function crash(method: string): void {
+  note(`absturz ${method}`);
+  const lines: string[] = [];
+  for (let i = 1; i <= stderrLines; i++) lines.push(`stderr line ${String(i).padStart(6, '0')} of ${stderrLines}`);
+  lines.push(`panic: fake crash after ${method} [pid ${process.pid}]`);
+  process.stderr.write(lines.join(NL) + NL, () => process.exit(exitCode));
+}
+
 let initialized = false;
 
-function handle(message: { id?: number; method?: string; params?: { changes?: Array<{ uri: string }> } }): void {
+function handle(message: { id?: number; method?: string; params?: { changes?: Array<{ uri: string }>; textDocument?: { uri: string } } }): void {
   if (message.method === undefined) return;
   // Bei Dateiänderungen auch die Dateinamen, in der gemeldeten Reihenfolge.
   const names = message.method === 'workspace/didChangeWatchedFiles' ? (message.params?.changes ?? []).map((c) => c.uri.split('/').pop()).join(',') : '';
   note(names ? `${message.method} ${names}` : message.method);
   if (message.method === 'initialize') {
-    setTimeout(() => send({ id: message.id, result: { capabilities: { textDocumentSync: 1, diagnosticProvider: { interFileDependencies: true, workspaceDiagnostics: false } } } }), initDelay);
+    setTimeout(() => send({ id: message.id, result: { capabilities: { textDocumentSync: 1, definitionProvider: true, diagnosticProvider: { interFileDependencies: true, workspaceDiagnostics: false } } } }), initDelay);
     return;
   }
   if (message.method === 'initialized') {
@@ -42,7 +61,16 @@ function handle(message: { id?: number; method?: string; params?: { changes?: Ar
     process.exit(2);
   }
   if (message.method === 'exit') process.exit(0);
+  if (crashFile && message.method === crashOn && fs.existsSync(crashFile)) {
+    crash(message.method);
+    return;
+  }
   if (message.id === undefined) return;
+  if (message.method === 'textDocument/definition' && message.params?.textDocument) {
+    const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } };
+    send({ id: message.id, result: [{ uri: message.params.textDocument.uri, range }] });
+    return;
+  }
   send({ id: message.id, result: message.method === 'textDocument/diagnostic' ? { kind: 'full', items: [] } : null });
 }
 
