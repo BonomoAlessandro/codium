@@ -251,7 +251,8 @@ export class LanguageService {
   // ---------- Typisierte Methoden ----------
 
   definition(params: CommandParams<'language.definition'>): Promise<CodeLocation[]> {
-    return this.locations('textDocument/definition', params);
+    // Nur hier: ein grobes Ziel in einer Klassendatei wird kurz darauf genau (siehe `hasCoarseClassFileTarget`).
+    return this.locations('textDocument/definition', params, {}, true);
   }
 
   implementations(params: CommandParams<'language.implementations'>): Promise<CodeLocation[]> {
@@ -446,17 +447,18 @@ export class LanguageService {
     return { file, position: { line: p.line, character: p.character } };
   }
 
-  private async locations(method: string, params: unknown, extra: Record<string, unknown> = {}): Promise<CodeLocation[]> {
+  private async locations(method: string, params: unknown, extra: Record<string, unknown> = {}, refineCoarse = false): Promise<CodeLocation[]> {
     const at = this.position(params);
     const connection = await this.connectionFor(at.file);
     if (!connection) return [];
     const ask = () => connection.request<unknown>(method, { textDocument: { uri: uriOf(at.file) }, position: at.position, ...extra }).catch(() => null);
-    // Ein grobes Ziel in einer Klassendatei (siehe `hasCoarseClassFileTarget`) wird kurz darauf genau: noch einmal fragen.
-    const result = await askUntilPrecise(ask, hasCoarseClassFileTarget, {
-      attempts: COARSE_TARGET_ATTEMPTS,
-      delayMs: COARSE_TARGET_DELAY_MS,
-      stop: () => this.disposed || !connection.running,
-    });
+    const result = refineCoarse
+      ? await askUntilPrecise(ask, hasCoarseClassFileTarget, {
+          windowMs: COARSE_TARGET_WINDOW_MS,
+          delayMs: COARSE_TARGET_DELAY_MS,
+          stop: () => this.disposed || !connection.running,
+        })
+      : await ask();
     const out: CodeLocation[] = [];
     for (const item of locationItems(result)) {
       const uri = item.targetUri ?? item.uri;
@@ -862,11 +864,12 @@ const SYMBOL_WAIT_MS = 5000;
 const COMPLETION_LIMIT = 1000;
 
 /**
- * Ein grobes Ziel in einer Klassendatei (siehe `hasCoarseClassFileTarget`) fragt der Dienst so oft und in diesem Abstand
- * neu, zusammen etwa 15 s. Gemessen lieferte jdtls weniger als eine Sekunde nach der groben Antwort den Namen; der Rest
- * ist Reserve für einen belasteten Rechner.
+ * Ein grobes Ziel in einer Klassendatei (siehe `hasCoarseClassFileTarget`) fragt der Dienst in diesem Abstand neu,
+ * höchstens so lange nach der ersten Antwort; danach gilt die letzte. Gemessen lieferte jdtls weniger als eine Sekunde
+ * nach der groben Antwort den Namen. Bleibt ein Ziel grob (eine Bibliothek ohne Quellen), kostet der Sprung so höchstens
+ * 4 s und acht weitere Anfragen.
  */
-const COARSE_TARGET_ATTEMPTS = 31;
+const COARSE_TARGET_WINDOW_MS = 4000;
 const COARSE_TARGET_DELAY_MS = 500;
 
 /** Ob ein Vorschlag zum getippten Wortanfang passt: dessen Buchstaben in dieser Reihenfolge, ohne Gross/Klein. */
@@ -1014,15 +1017,26 @@ export function hasCoarseClassFileTarget(result: unknown): boolean {
 }
 
 /**
- * Fragt neu, solange die Antwort grob ist, höchstens `attempts` Mal insgesamt und mit `delayMs` Pause dazwischen. Bleibt
- * sie grob (etwa eine Bibliothek ganz ohne Quellen), gilt die letzte Antwort.
+ * Fragt neu, solange die Antwort grob ist, mit `delayMs` Pause dazwischen, aber höchstens `windowMs` nach der ersten
+ * Antwort; eine Anfrage, die dann noch läuft, wartet der Aufruf nicht ab. Bleibt die Antwort grob (etwa eine Bibliothek
+ * ganz ohne Quellen), gilt die letzte.
  */
-export async function askUntilPrecise<T>(ask: () => Promise<T>, coarse: (answer: T) => boolean, options: { attempts: number; delayMs: number; stop?: () => boolean }): Promise<T> {
-  let answer = await ask();
-  for (let attempt = 1; attempt < options.attempts && coarse(answer) && !options.stop?.(); attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, options.delayMs));
-    if (options.stop?.()) break;
-    answer = await ask();
+export async function askUntilPrecise<T>(
+  ask: () => Promise<T>,
+  coarse: (answer: T) => boolean,
+  options: { windowMs: number; delayMs: number; stop?: () => boolean },
+): Promise<T> {
+  const sleep = (ms: number) => new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), ms));
+  let answer: T = await ask();
+  const deadline = Date.now() + options.windowMs;
+  while (coarse(answer) && !options.stop?.()) {
+    if (deadline - Date.now() <= 0) break;
+    await sleep(Math.min(options.delayMs, deadline - Date.now()));
+    const left = deadline - Date.now();
+    if (left <= 0 || options.stop?.()) break;
+    const next: { value: T } | 'timeout' = await Promise.race([ask().then((value): { value: T } => ({ value })), sleep(left)]);
+    if (next === 'timeout') break;
+    answer = next.value;
   }
   return answer;
 }

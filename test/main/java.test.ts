@@ -127,21 +127,43 @@ describe('Grobe Ziele in Klassendateien (Ticket 27)', () => {
     expect(hasCoarseClassFileTarget([])).toBe(false);
   });
 
-  it('fragt neu, bis die Antwort genau ist, und behält sonst nach den Versuchen die letzte', async () => {
+  it('fragt neu, bis die Antwort genau ist; ein genaues Ziel gleich beim ersten Mal fragt nicht weiter', async () => {
     const answers = ['grob', 'grob', 'genau', 'später'];
     let asked = 0;
-    const ask = async () => answers[asked++];
-    expect(await askUntilPrecise(ask, (a) => a === 'grob', { attempts: 10, delayMs: 1 })).toBe('genau');
+    expect(await askUntilPrecise(async () => answers[asked++], (a) => a === 'grob', { windowMs: 5000, delayMs: 1 })).toBe('genau');
     expect(asked).toBe(3);
 
     asked = 0;
-    expect(await askUntilPrecise(async () => (asked++, 'grob'), (a) => a === 'grob', { attempts: 4, delayMs: 1 })).toBe('grob');
-    expect(asked).toBe(4);
-
-    // Ein genaues Ziel gleich beim ersten Mal: keine weitere Frage.
-    asked = 0;
-    expect(await askUntilPrecise(async () => (asked++, 'genau'), (a) => a === 'grob', { attempts: 4, delayMs: 1 })).toBe('genau');
+    expect(await askUntilPrecise(async () => (asked++, 'genau'), (a) => a === 'grob', { windowMs: 5000, delayMs: 1 })).toBe('genau');
     expect(asked).toBe(1);
+  });
+
+  it('bleibt die Antwort grob, gilt nach der Zeitgrenze ab der ersten Antwort die letzte', async () => {
+    // Die erste Antwort braucht selbst Zeit; die Grenze zählt erst ab ihr.
+    let asked = 0;
+    const ask = async () => {
+      asked++;
+      if (asked === 1) await new Promise((resolve) => setTimeout(resolve, 150));
+      return `grob ${asked}`;
+    };
+    const start = Date.now();
+    const answer = await askUntilPrecise(ask, (a) => a.startsWith('grob'), { windowMs: 300, delayMs: 50 });
+    const elapsed = Date.now() - start;
+    expect(answer).toBe(`grob ${asked}`);
+    expect(elapsed).toBeGreaterThanOrEqual(150 + 300 - 20);
+    expect(elapsed).toBeLessThan(150 + 300 + 500);
+    // Höchstens eine Anfrage je Pause, also nicht mehr als die erste und sechs weitere.
+    expect(asked).toBeGreaterThan(1);
+    expect(asked).toBeLessThanOrEqual(7);
+  });
+
+  it('wartet eine Anfrage, die über die Zeitgrenze hinaus hängt, nicht ab', async () => {
+    let asked = 0;
+    const ask = () => (++asked === 1 ? Promise.resolve('grob') : new Promise<string>(() => {}));
+    const start = Date.now();
+    expect(await askUntilPrecise(ask, () => true, { windowMs: 200, delayMs: 20 })).toBe('grob');
+    expect(Date.now() - start).toBeLessThan(200 + 500);
+    expect(asked).toBe(2);
   });
 
   it('hört auf zu fragen, sobald der Server endet oder das Projekt schliesst', async () => {
@@ -152,7 +174,7 @@ describe('Grobe Ziele in Klassendateien (Ticket 27)', () => {
       if (asked === 2) stopped = true;
       return 'grob';
     };
-    expect(await askUntilPrecise(ask, () => true, { attempts: 10, delayMs: 1, stop: () => stopped })).toBe('grob');
+    expect(await askUntilPrecise(ask, () => true, { windowMs: 5000, delayMs: 1, stop: () => stopped })).toBe('grob');
     expect(asked).toBe(2);
   });
 });
