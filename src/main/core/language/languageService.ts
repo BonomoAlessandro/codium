@@ -99,6 +99,12 @@ class Server {
   gaveUp = false;
   crashes: number[] = [];
   readonly progress = new Map<string, Progress>();
+  /**
+   * Dateiänderungen, die kamen, während der Server startete: Vor `initialized` geht nichts an ihn (Spezifikation von LSP;
+   * der native TypeScript-Server stürzte daran ab, Ticket 27). Nach `initialized` gehen sie in derselben Reihenfolge
+   * hinaus; endet der Server vorher, verfallen sie.
+   */
+  pendingWatched: Array<{ uri: string; type: number }> = [];
 }
 
 export class LanguageService {
@@ -366,7 +372,7 @@ export class LanguageService {
         if (!server.connection?.running) return [];
         // Ein Server, der noch importiert (jdtls), hält die Treffer der anderen nicht auf (Review von Ticket 14).
         const answer = (async () => {
-          if (!(await server.ready)) return [];
+          if (!(await server.ready) || !server.initialized) return [];
           return (await server.connection?.request<unknown[] | null>('workspace/symbol', { query: p.query }).catch(() => null)) ?? [];
         })();
         return Promise.race([answer, new Promise<unknown[]>((resolve) => setTimeout(() => resolve([]), SYMBOL_WAIT_MS))]);
@@ -412,10 +418,12 @@ export class LanguageService {
     if (typeof value !== 'string' || (!path.isAbsolute(value) && !isJdtUri(value))) throw new CommandError('An absolute path is expected.', ErrorCode.invalidParams);
     // Klassendateien (JDK, Bibliotheken) über die Erweiterung von jdtls für Klasseninhalte (Ticket 14).
     if (isJdtUri(value)) {
-      const connection = this.servers.java.connection;
-      if (!this.outsideTargets.has(key(value)) || !connection?.running) {
-        throw new CommandError(`Not a target of the language server: ${value}`, ErrorCode.pathOutsideProject, { path: value });
-      }
+      const java = this.servers.java;
+      const notTarget = () => new CommandError(`Not a target of the language server: ${value}`, ErrorCode.pathOutsideProject, { path: value });
+      if (!this.outsideTargets.has(key(value))) throw notTarget();
+      // Startet jdtls gerade neu, erst nach `initialized` (wie jede Anfrage, siehe `pendingWatched`).
+      const connection = (await this.ensure(java)) && java.initialized ? java.connection : null;
+      if (!connection?.running) throw notTarget();
       const text = await connection.request<string | null>('java/classFileContents', { uri: value }).catch(() => null);
       if (typeof text !== 'string') throw new CommandError(`The class file could not be read: ${value}`, ErrorCode.fileNotFound, { path: value });
       return { text };
@@ -487,6 +495,8 @@ export class LanguageService {
     const languageId = languageIdOf(file);
     const id = serverIdOf(file);
     if (!languageId || !id || !(await this.ensure(this.servers[id]))) return null;
+    // Ist der Server inzwischen abgestürzt und startet neu, bekommt er vor `initialized` nichts (siehe `pendingWatched`).
+    if (!this.servers[id].initialized) return null;
     const connection = this.servers[id].connection;
     if (isJdtUri(file)) return connection;
     // tsserver (TypeScript bis 6) beantwortet Anfragen nur für offene Dokumente: sonst mit dem Text von der Festplatte.
@@ -560,20 +570,19 @@ export class LanguageService {
   // ---------- Dateiänderungen ----------
 
   private notifyWatched(changes: Array<{ path: string; type: number }>): void {
-    // Nur Server nach `initialized` (siehe `pullDiagnostics`); ein startender liest die Dateien ohnehin frisch.
-    const connections = Object.values(this.servers)
-      .filter((s) => s.initialized)
-      .map((s) => s.connection)
-      .filter((c): c is LspConnection => c?.running === true);
-    if (connections.length === 0 || changes.length === 0) return;
+    const servers = Object.values(this.servers).filter((s) => s.connection?.running === true);
+    if (servers.length === 0 || changes.length === 0) return;
     // Selbst geöffnete Dokumente (siehe `connectionFor`) stimmen nach einer Änderung auf der Festplatte nicht mehr:
     // schliessen, dann liest der Server die Datei selbst (oder weiss, dass sie fehlt).
     for (const change of changes) {
       const k = key(change.path);
       this.closeImplicit((d) => d === k || d.startsWith(k + path.sep));
     }
-    for (const connection of connections) {
-      connection.notify('workspace/didChangeWatchedFiles', { changes: changes.map((c) => ({ uri: uriOf(c.path), type: c.type })) });
+    const events = changes.map((c) => ({ uri: uriOf(c.path), type: c.type }));
+    for (const server of servers) {
+      // Ein startender Server bekommt sie nach `initialized` (siehe `pendingWatched`).
+      if (server.initialized) server.connection!.notify('workspace/didChangeWatchedFiles', { changes: events });
+      else server.pendingWatched.push(...events);
     }
     // Andere Dateien können die Fehler der offenen ändern.
     this.scheduleAllDiagnostics();
@@ -647,6 +656,7 @@ export class LanguageService {
     server.stopping = false;
     server.initialized = false;
     server.sent.clear();
+    server.pendingWatched = [];
     const work = this.project.progress.begin(server.id === 'java' ? 'Importing Java project…' : 'Starting TypeScript language server…');
     // Java: Der Import läuft nach `initialize` weiter, bis jdtls „ServiceReady“ meldet.
     if (server.id === 'java') server.importing = work;
@@ -690,6 +700,10 @@ export class LanguageService {
       server.tokenLegend = legend ? { types: legend.tokenTypes ?? [], modifiers: legend.tokenModifiers ?? [] } : null;
       connection.notify('initialized', {});
       server.initialized = true;
+      if (server.pendingWatched.length > 0) {
+        connection.notify('workspace/didChangeWatchedFiles', { changes: server.pendingWatched });
+        server.pendingWatched = [];
+      }
       // Die offenen Dokumente melden (auch die, die während des Starts kamen, und nach einem Neustart).
       for (const doc of this.documents.values()) this.sendOpen(server, doc.path);
       this.scheduleAllDiagnostics();
@@ -758,6 +772,7 @@ export class LanguageService {
     server.ready = null;
     server.initialized = false;
     server.sent.clear();
+    server.pendingWatched = [];
     // Selbst geöffnete Dokumente öffnet der neue Server bei Bedarf wieder, mit dem dann aktuellen Text.
     for (const k of [...this.implicit]) {
       if (this.documents.get(k)?.server !== server.id) continue;
