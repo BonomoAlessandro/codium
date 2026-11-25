@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codium Scrollbalken Entwürfe</title>
+<style>
+:root {
+  color-scheme: dark;
+  --page-bg: #141517;
+  --page-card: #1a1b1e;
+  --page-line: #2c2e33;
+  --page-text: #dfe1e5;
+  --page-muted: #9a9ea6;
+  --page-accent: #548af7;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--page-bg);
+  color: var(--page-text);
+  font: 15px/1.55 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+}
+.page { max-width: 1320px; margin: 0 auto; padding: 32px 16px 80px; }
+h1 { font-size: 28px; line-height: 1.2; margin: 0 0 6px; font-weight: 650; letter-spacing: -0.01em; }
+h2 { font-size: 21px; margin: 56px 0 6px; font-weight: 650; scroll-margin-top: 16px; }
+h3 { font-size: 15px; margin: 26px 0 8px; font-weight: 650; }
+p { margin: 0 0 10px; max-width: 80ch; }
+.lead { color: var(--page-muted); max-width: 88ch; }
+.muted { color: var(--page-muted); }
+code { font-family: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace; font-size: 0.86em; background: #232428; padding: 1px 5px; border-radius: 4px; }
+a { color: var(--page-accent); }
+nav.toc { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 20px 0 8px; }
+nav.toc a { color: var(--page-text); text-decoration: none; padding: 4px 10px; border: 1px solid var(--page-line); border-radius: 999px; font-size: 13px; }
+nav.toc a:hover { background: #222327; }
+ul.facts { margin: 8px 0 0; padding-left: 20px; max-width: 92ch; }
+ul.facts li { margin: 3px 0; }
+
+/* Ausschnitte am Rand: aufgenommen mit 3 Bildpunkten je CSS-Pixel, gezeigt mit 2 CSS-Pixeln je Pixel der App (2×). */
+.zooms { display: grid; grid-template-columns: repeat(4, max-content); gap: 18px 22px; margin-top: 14px; overflow-x: auto; padding-bottom: 6px; }
+.zooms.three { grid-template-columns: repeat(3, max-content); }
+.zooms figure { margin: 0; }
+.zooms .head { font-size: 13px; font-weight: 650; margin-bottom: 6px; }
+.zoom { display: block; width: 208px; height: auto; border-radius: 6px; border: 1px solid var(--page-line); image-rendering: auto; }
+.zoom.diff { width: 280px; }
+.row-label { grid-column: 1 / -1; color: var(--page-muted); font-size: 13px; margin: 10px 0 -8px; }
+
+.cmp { display: grid; gap: 18px 22px; margin-top: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); align-items: start; }
+.cmp.two { grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr)); }
+figure { margin: 0; min-width: 0; }
+figcaption { margin-top: 6px; color: var(--page-muted); font-size: 13.5px; }
+.shot { display: block; max-width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--page-line); }
+
+.tag { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 650; letter-spacing: 0.02em; }
+.tag::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #868a91; }
+.tag.rec::before { background: #5fb865; }
+
+table.t { border-collapse: collapse; margin-top: 10px; font-size: 14px; width: 100%; }
+.table-wrap { overflow-x: auto; }
+table.t th, table.t td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--page-line); vertical-align: top; }
+table.t thead th { color: var(--page-muted); font-weight: 600; font-size: 12.5px; letter-spacing: 0.02em; }
+table.t tbody th { font-weight: 600; white-space: nowrap; color: var(--page-muted); font-size: 13.5px; }
+.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; border: 1px solid #00000055; }
+
+.callout { border: 1px solid var(--page-line); background: var(--page-card); border-radius: 10px; padding: 14px 18px; margin-top: 14px; max-width: 96ch; }
+.callout p:last-child { margin-bottom: 0; }
+.questions { counter-reset: q; list-style: none; padding: 0; margin: 12px 0 0; max-width: 96ch; }
+.questions li { counter-increment: q; position: relative; padding: 10px 0 10px 40px; border-bottom: 1px solid var(--page-line); }
+.questions li::before { content: counter(q); position: absolute; left: 0; top: 10px; width: 26px; height: 26px; border-radius: 50%; background: #232428; display: grid; place-items: center; font-size: 13px; font-weight: 650; }
+.questions li strong { display: block; }
+.questions .rec { color: #8fd694; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Ticket 28 – Scrollbalken im Code-Bereich</h1>
+<p class="lead">Entwürfe zur Wahl: heutiger Stand und drei Varianten, jeweils in Ruhe, beim Darüberfahren und beim Ziehen. Alle Bilder stammen aus dem verborgenen Testfenster von Codium (Playwright im Testmodus); die Varianten sind dafür nur per CSS und Monaco-Optionen eingespielt, eingebaut ist noch nichts.</p>
+
+<nav class="toc">
+  <a href="#blick">Auf einen Blick</a>
+  <a href="#werte">Werte</a>
+  <a href="#heute">Heute</a>
+  <a href="#a">Variante A</a>
+  <a href="#b">Variante B</a>
+  <a href="#c">Variante C</a>
+  <a href="#vergleich">Vergleichsansicht</a>
+  <a href="#aussen">Ausserhalb von Monaco</a>
+  <a href="#empfehlung">Empfehlung</a>
+  <a href="#fragen">Fragen</a>
+  <a href="#aufnahme">Wie aufgenommen</a>
+</nav>
+
+<div class="callout">
+  <p><strong>Was im Bild zu sehen ist.</strong> Eine erfundene, gut 380 Zeilen lange TypeScript-Datei <code>inventory.ts</code> in einem Git-Repository. Am rechten Rand stehen ihre Markierungen:</p>
+  <ul class="facts">
+    <li><span class="swatch" style="background:#e51400"></span>zwei Typfehler des Sprachservers (rot, eine davon im Bild mit roter Wellenlinie, Zeile 149);</li>
+    <li><span class="swatch" style="background:#375fad"></span>geänderte Zeilen (blau) und <span class="swatch" style="background:#549159"></span>neue Zeilen (grün) gegenüber dem letzten Commit;</li>
+    <li><span class="swatch" style="background:#9a6a1c"></span>neun Suchtreffer für „minimum“ (Monacos Suche mit Ctrl + F, oben im Bild);</li>
+    <li><span class="swatch" style="background:#ced0d6"></span>die Cursorzeile (heller Strich).</li>
+  </ul>
+  <p class="muted" style="margin-top:8px">„In Ruhe“ heisst: Die Maus steht über dem Text, es wird nicht gescrollt. „Darüberfahren“: Die Maus steht auf dem Schieber. „Ziehen“: Der Schieber ist gefasst und 90 px nach unten gezogen; der Editor scrollt dabei in allen Varianten mit (von 2574 auf 3560 px).</p>
+</div>
+
+<h2 id="blick">Auf einen Blick: der rechte Rand, 2× vergrössert</h2>
+<p>Ausschnitt um den Schieber, je Spalte eine Fassung. Die Ausschnitte sind mit doppelter Pixeldichte der App aufgenommen und hier doppelt so gross gezeigt wie in der App.</p>
+<div class="zooms">
+  <div class="row-label">In Ruhe</div>
+  <figure><div class="head">Heute</div><img class="zoom" src="bilder/heute-ruhe-rand.png" alt="Heute in Ruhe, rechter Rand vergrössert"></figure>
+  <figure><div class="head">A · Kapsel über der Leiste</div><img class="zoom" src="bilder/a-ruhe-rand.png" alt="Variante A in Ruhe, rechter Rand vergrössert"></figure>
+  <figure><div class="head"><span class="tag rec">B · wie IntelliJ</span></div><img class="zoom" src="bilder/b-ruhe-rand.png" alt="Variante B in Ruhe, rechter Rand vergrössert"></figure>
+  <figure><div class="head">C · Streifen, immer sichtbar</div><img class="zoom" src="bilder/c-ruhe-rand.png" alt="Variante C in Ruhe, rechter Rand vergrössert"></figure>
+
+  <div class="row-label">Beim Darüberfahren</div>
+  <figure><img class="zoom" src="bilder/heute-darueber-rand.png" alt="Heute beim Darüberfahren"></figure>
+  <figure><img class="zoom" src="bilder/a-darueber-rand.png" alt="Variante A beim Darüberfahren"></figure>
+  <figure><img class="zoom" src="bilder/b-darueber-rand.png" alt="Variante B beim Darüberfahren"></figure>
+  <figure><img class="zoom" src="bilder/c-darueber-rand.png" alt="Variante C beim Darüberfahren"></figure>
+
+  <div class="row-label">Beim Ziehen</div>
+  <figure><img class="zoom" src="bilder/heute-ziehen-rand.png" alt="Heute beim Ziehen"></figure>
+  <figure><img class="zoom" src="bilder/a-ziehen-rand.png" alt="Variante A beim Ziehen"></figure>
+  <figure><img class="zoom" src="bilder/b-ziehen-rand.png" alt="Variante B beim Ziehen"></figure>
+  <figure><img class="zoom" src="bilder/c-ziehen-rand.png" alt="Variante C beim Ziehen"></figure>
+</div>
+
+<h2 id="werte">Werte der Varianten</h2>
+<p>Breiten in CSS-Pixeln der App. Die Farben sind aus der Grauskala des neuen IntelliJ-Designs „Dark“ abgeleitet, die Codium schon nutzt (<code>tokens.css</code>): Grau 10 (<code>#b4b8bf</code>) halb durchsichtig, damit Text und Markierungen darunter durchscheinen. Auf der Editorfläche ergibt das etwa Grau 4, 6 und 7. Die genauen Werte aus dem Theme von IntelliJ habe ich nicht nachlesen können; das Auge entscheidet ohnehin an den Bildern.</p>
+<div class="table-wrap">
+<table class="t">
+  <thead><tr><th></th><th>Heute (Monaco)</th><th>A · Kapsel über der Leiste</th><th>B · wie IntelliJ</th><th>C · Streifen, immer sichtbar</th></tr></thead>
+  <tbody>
+    <tr><th>Breite rechts gesamt</th><td>14 px</td><td>14 px</td><td>16 px</td><td>18 px</td></tr>
+    <tr><th>Greiffläche des Schiebers</th><td>14 px</td><td>14 px (ganzer Balken)</td><td>10 px (links), dann 1 px Abstand</td><td>10 px (links), dann 1 px Abstand</td></tr>
+    <tr><th>Schieber in Ruhe</th><td>14 px, eckig</td><td>6 px, Kapsel</td><td>6 px, Kapsel (ausgeblendet)</td><td>8 px, Kapsel</td></tr>
+    <tr><th>Darüberfahren / Ziehen</th><td>14 px, eckig</td><td>8 px</td><td>9 px</td><td>10 px</td></tr>
+    <tr><th>Waagrechter Schieber</th><td>12 px, eckig</td><td colspan="3">12 px Greiffläche, Kapsel so hoch wie der senkrechte Schieber breit (in Ruhe und beim Darüberfahren)</td></tr>
+    <tr><th>Farbe in Ruhe</th><td><span class="swatch" style="background:#4e515766"></span><code>#4e515766</code></td><td colspan="2"><span class="swatch" style="background:#b4b8bf40"></span><code>#b4b8bf40</code> (wirkt wie <code>#43454a</code>, Grau 4)</td><td><span class="swatch" style="background:#b4b8bf59"></span><code>#b4b8bf59</code> (wie <code>#4e5157</code>, Grau 5)</td></tr>
+    <tr><th>Farbe beim Darüberfahren</th><td><span class="swatch" style="background:#5a5d6399"></span><code>#5a5d6399</code></td><td colspan="2"><span class="swatch" style="background:#b4b8bf66"></span><code>#b4b8bf66</code> (wie <code>#5a5d63</code>, Grau 6)</td><td><span class="swatch" style="background:#b4b8bf80"></span><code>#b4b8bf80</code></td></tr>
+    <tr><th>Farbe beim Ziehen</th><td><span class="swatch" style="background:#6f737aaa"></span><code>#6f737aaa</code></td><td colspan="2"><span class="swatch" style="background:#b4b8bf8c"></span><code>#b4b8bf8c</code> (wie <code>#6f737a</code>, Grau 7)</td><td><span class="swatch" style="background:#b4b8bfa6"></span><code>#b4b8bfa6</code> (wie <code>#868a91</code>, Grau 8)</td></tr>
+    <tr><th>Verhalten</th><td>sichtbar, solange die Maus über dem Editor ist und kurz nach dem Scrollen; sonst nach 0,5 s ausgeblendet</td><td>immer sichtbar</td><td>ausgeblendet, solange nicht gescrollt wird; erscheint beim Scrollen, beim Darüberfahren über den rechten Rand und beim Ziehen</td><td>immer sichtbar</td></tr>
+    <tr><th>Markierungen</th><td>Übersichtsleiste unter dem Schieber, 14 px, drei Spuren: Git links, Suche Mitte, Fehler rechts</td><td>wie heute, unter der durchscheinenden Kapsel</td><td>eigener Streifen ganz rechts, 5 px, jede Markierung über die volle Breite</td><td>eigener Streifen ganz rechts, 7 px, zwei Spuren: links Git und Suche, rechts Fehler</td></tr>
+    <tr><th>Anklicken</th><td colspan="4">Ein Klick neben den Schieber springt wie heute an diese Stelle, auch auf eine Markierung im Streifen. Bei B bleibt der Streifen auch mit ausgeblendetem Schieber anklickbar.</td></tr>
+    <tr><th>Spur, Schatten</th><td>keine Spur, Schatten an</td><td colspan="3">keine Spur, kein Schatten</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="heute">Heute</h2>
+<p>Monacos Standard: 14 px breit, eckiger Schieber über der ganzen Breite, darunter die Übersichtsleiste mit drei Spuren. Der Schieber ist in Ruhe kaum zu sehen (<code>#4e515766</code> auf <code>#1e1f22</code>) und verschwindet, sobald die Maus den Editor verlässt.</p>
+<div class="cmp">
+  <figure><a href="bilder/heute-ruhe.png"><img class="shot" src="bilder/heute-ruhe.png" alt="Heute in Ruhe"></a><figcaption>In Ruhe</figcaption></figure>
+  <figure><a href="bilder/heute-darueber.png"><img class="shot" src="bilder/heute-darueber.png" alt="Heute beim Darüberfahren"></a><figcaption>Darüberfahren</figcaption></figure>
+  <figure><a href="bilder/heute-ziehen.png"><img class="shot" src="bilder/heute-ziehen.png" alt="Heute beim Ziehen"></a><figcaption>Ziehen</figcaption></figure>
+</div>
+
+<h2 id="a">Variante A · Kapsel über der Leiste</h2>
+<p>Die kleinste Änderung: Die Breite rechts bleibt 14 px, die Übersichtsleiste bleibt, wie sie ist. Darüber liegt eine schmale Kapsel (6 px, beim Darüberfahren 8 px), immer sichtbar. Die Kapsel liegt über der mittleren Spur (Suchtreffer); weil sie durchscheint, bleiben die Treffer darunter erkennbar, aber etwas gedämpft.</p>
+<div class="cmp">
+  <figure><a href="bilder/a-ruhe.png"><img class="shot" src="bilder/a-ruhe.png" alt="Variante A in Ruhe"></a><figcaption>In Ruhe</figcaption></figure>
+  <figure><a href="bilder/a-darueber.png"><img class="shot" src="bilder/a-darueber.png" alt="Variante A beim Darüberfahren"></a><figcaption>Darüberfahren</figcaption></figure>
+  <figure><a href="bilder/a-ziehen.png"><img class="shot" src="bilder/a-ziehen.png" alt="Variante A beim Ziehen"></a><figcaption>Ziehen</figcaption></figure>
+</div>
+
+<h2 id="b">Variante B · wie IntelliJ <span class="tag rec" style="vertical-align:3px;margin-left:6px">Empfehlung</span></h2>
+<p>Der rechte Rand teilt sich: links die Kapsel (6 px, beim Darüberfahren 9 px) in einer 10 px breiten Greiffläche, ganz rechts ein eigener, 5 px schmaler Streifen für alle Markierungen. Der Schieber tritt zurück, solange nicht gescrollt wird, und erscheint beim Scrollen, beim Darüberfahren über den rechten Rand und beim Ziehen. Der Streifen bleibt immer sichtbar und anklickbar; nichts liegt über den Markierungen.</p>
+<div class="cmp">
+  <figure><a href="bilder/b-ruhe.png"><img class="shot" src="bilder/b-ruhe.png" alt="Variante B in Ruhe"></a><figcaption>In Ruhe: nur der Streifen</figcaption></figure>
+  <figure><a href="bilder/b-darueber.png"><img class="shot" src="bilder/b-darueber.png" alt="Variante B beim Darüberfahren"></a><figcaption>Darüberfahren</figcaption></figure>
+  <figure><a href="bilder/b-ziehen.png"><img class="shot" src="bilder/b-ziehen.png" alt="Variante B beim Ziehen"></a><figcaption>Ziehen</figcaption></figure>
+</div>
+
+<h2 id="c">Variante C · eigener Streifen, immer sichtbar</h2>
+<p>Dieselbe Aufteilung wie B, aber der Schieber bleibt stehen und ist etwas breiter (8 px, beim Darüberfahren 10 px) und kräftiger. Der Streifen ist 7 px breit und hat zwei Spuren: links Git-Änderungen und Suchtreffer, rechts Fehler. So bleiben Git und Fehler auf derselben Zeile nebeneinander statt übereinander.</p>
+<div class="cmp">
+  <figure><a href="bilder/c-ruhe.png"><img class="shot" src="bilder/c-ruhe.png" alt="Variante C in Ruhe"></a><figcaption>In Ruhe</figcaption></figure>
+  <figure><a href="bilder/c-darueber.png"><img class="shot" src="bilder/c-darueber.png" alt="Variante C beim Darüberfahren"></a><figcaption>Darüberfahren</figcaption></figure>
+  <figure><a href="bilder/c-ziehen.png"><img class="shot" src="bilder/c-ziehen.png" alt="Variante C beim Ziehen"></a><figcaption>Ziehen</figcaption></figure>
+</div>
+
+<h2 id="vergleich">Vergleichsansicht</h2>
+<p>Die Vergleichsansicht hat heute rechts zwei Dinge: den eckigen Schieber des rechten Editors und daneben Monacos eigene, 30 px breite Vergleichsübersicht (rot entfernt, grün neu) mit einem grossen, eckigen Kasten für den sichtbaren Bereich. In den Varianten bekommen beide Editoren dieselbe Kapsel wie der Code-Bereich; der Kasten der Vergleichsübersicht entfällt, ihre Farben bleiben als Markierungen. Bild in Ruhe, Maus über dem rechten Editor.</p>
+<div class="cmp two">
+  <figure><a href="bilder/heute-vergleich.png"><img class="shot" src="bilder/heute-vergleich.png" alt="Vergleichsansicht heute"></a><figcaption>Heute</figcaption></figure>
+  <figure><a href="bilder/a-vergleich.png"><img class="shot" src="bilder/a-vergleich.png" alt="Vergleichsansicht Variante A"></a><figcaption>Variante A</figcaption></figure>
+  <figure><a href="bilder/b-vergleich.png"><img class="shot" src="bilder/b-vergleich.png" alt="Vergleichsansicht Variante B"></a><figcaption>Variante B (Schieber in Ruhe ausgeblendet)</figcaption></figure>
+  <figure><a href="bilder/c-vergleich.png"><img class="shot" src="bilder/c-vergleich.png" alt="Vergleichsansicht Variante C"></a><figcaption>Variante C</figcaption></figure>
+</div>
+<div class="zooms">
+  <div class="row-label">Rechter Rand der Vergleichsansicht, 2×</div>
+  <figure><div class="head">Heute</div><img class="zoom diff" src="bilder/heute-vergleich-rand.png" alt="Vergleich heute, Rand vergrössert"></figure>
+  <figure><div class="head">A</div><img class="zoom diff" src="bilder/a-vergleich-rand.png" alt="Vergleich Variante A, Rand vergrössert"></figure>
+  <figure><div class="head">B</div><img class="zoom diff" src="bilder/b-vergleich-rand.png" alt="Vergleich Variante B, Rand vergrössert"></figure>
+  <figure><div class="head">C</div><img class="zoom diff" src="bilder/c-vergleich-rand.png" alt="Vergleich Variante C, Rand vergrössert"></figure>
+</div>
+
+<h2 id="aussen">Ausserhalb von Monaco (nicht Teil des Tickets)</h2>
+<p>Diese Scrollbalken bleiben mit Ticket 28 unverändert und sehen heute anders aus als jede der Varianten. Will der Nutzer sie angleichen, wird das ein eigenes Ticket.</p>
+<ul class="facts">
+  <li><strong>Chromium-Standard im dunklen Schema</strong>, 15 px breit (im Dateibaum gemessen), mit dunkler Spur und schmalem, rundem Schieber; immer sichtbar, sobald der Inhalt überläuft. So sehen aus: Dateibaum, Änderungsansicht (Commit), Werkzeugfenster „Find“, Datenbank-Baum und Tabelleninhalt, Git-Log (Liste, Dateien, Nachricht), Git-Konsole, Markdown-Vorschau samt Codeblöcken, Bildansicht, Menüs, Branch-Dropdown, Suchfenster (Dateien, Klassen, Symbole, zuletzt geöffnete), Liste „Recent Projects“ im Willkommensfenster, Dialoge und gestapelte Meldungen. In <code>app.css</code> hat keine dieser Flächen eine eigene Gestaltung.</li>
+  <li><strong>Terminal:</strong> xterm.js 6 bringt den Scrollbalken von VS Code mit, also dasselbe Bild wie Monaco heute: eckig, rund 14 px breit, grau, erscheint beim Darüberfahren und beim Scrollen. Die Farben kämen aus dem Farbschema des Terminals, nicht aus <code>theme.ts</code>.</li>
+  <li><strong>Leisten mit Tabs:</strong> Die Datei-Tabs scrollen ohne sichtbaren Balken (bewusst so), die Terminal-Tabs mit dem schmalen Chromium-Balken (<code>scrollbar-width: thin</code>).</li>
+</ul>
+<div class="cmp">
+  <figure><img class="shot" src="bilder/aussen-baum-ruhe.png" alt="Dateibaum mit Chromium-Scrollbalken" style="max-width:274px"><figcaption>Dateibaum, Maus über der Liste</figcaption></figure>
+  <figure><img class="shot" src="bilder/aussen-baum-darueber.png" alt="Dateibaum, Maus über dem Scrollbalken" style="max-width:274px"><figcaption>Dateibaum, Maus über dem Balken</figcaption></figure>
+  <figure><img class="shot" src="bilder/aussen-terminal-darueber.png" alt="Terminal, Scrollbalken unten rechts" style="max-width:440px"><figcaption>Terminal, rechter Rand 2× (Schieber unten rechts, eckig)</figcaption></figure>
+</div>
+
+<h2 id="empfehlung">Empfehlung: Variante B</h2>
+<div class="callout">
+  <p><strong>B kommt dem Vorbild am nächsten und hält den Rand am ruhigsten.</strong> Der Nutzer will den Code-Bereich „wie in IntelliJ“; dort ist der Schieber eine schmale Kapsel ohne Spur, die zurücktritt, wenn nicht gescrollt wird, und die Markierungen stehen in einem eigenen Streifen. Genau das zeigt B.</p>
+  <ul class="facts">
+    <li><strong>Markierungen bleiben frei:</strong> Fehler, Git-Änderungen und Suchtreffer liegen nie unter dem Schieber (bei A dämpft die Kapsel die Suchtreffer, wenn sie darüber liegt). In 5 px über die volle Breite sind sie besser zu sehen als in den 4 bis 5 px breiten Spuren von heute.</li>
+    <li><strong>Gut zu greifen:</strong> Gezeichnet sind 6 px, greifen lässt sich auf 10 px; beim Darüberfahren wird die Kapsel 9 px breit und heller. Ein Klick in den Streifen springt zur Markierung.</li>
+    <li><strong>Platz:</strong> 16 statt 14 px am rechten Rand, also kaum mehr als heute.</li>
+    <li><strong>Wer den Schieber lieber immer sieht:</strong> Das Ausblenden ist ein Schalter; dann hat B das Verhalten von C mit den feineren Massen von B.</li>
+  </ul>
+  <p class="muted">Aufwand beim Einbau: B braucht wie C ein paar Zeilen mehr als A, nämlich das Einblenden beim Scrollen (ein Ereignis je Editor) und den schmalen Streifen (Monacos Übersichtsleiste mit einer Spur, nur ganz rechts gezeichnet). Alles an einer Stelle für alle Editoren: Optionen in <code>theme.ts</code>, Farben und Masse als Design-Variablen in <code>tokens.css</code>, die Kapsel per CSS am Schieber.</p>
+</div>
+
+<h2 id="fragen">Fragen an den Nutzer</h2>
+<ol class="questions">
+  <li><strong>Welche Variante: A, B oder C?</strong> Masse und Farben siehe Tabelle; Mischungen gehen, etwa die Masse von B mit den Farben von C. <span class="rec">Empfehlung: B.</span></li>
+  <li><strong>Ausblenden, wenn nicht gescrollt wird (wie IntelliJ), oder immer sichtbar?</strong> Beim Ausblenden bleibt der Streifen mit den Markierungen stehen; der Schieber kommt beim Scrollen, beim Darüberfahren über den rechten Rand und beim Ziehen. <span class="rec">Empfehlung: ausblenden.</span></li>
+  <li><strong>Aufteilung der Markierungen:</strong> unter dem Schieber wie heute (A), eigener schmaler Streifen mit jeder Markierung über die volle Breite (B) oder eigener Streifen mit zwei Spuren, Git und Suche links, Fehler rechts (C)? <span class="rec">Empfehlung: eigener Streifen, volle Breite (B).</span></li>
+  <li><strong>Nebenpunkt Vergleichsansicht:</strong> Der eckige Kasten in Monacos Vergleichsübersicht entfällt, die Kapsel des rechten Editors zeigt die Lage, die roten und grünen Markierungen bleiben. <span class="rec">Empfehlung: ja.</span></li>
+</ol>
+
+<h2 id="aufnahme">Wie aufgenommen</h2>
+<ul class="facts">
+  <li>Skript: <code>docs/entwuerfe/28-scrollbalken/aufnahmen/aufnahmen.test.ts</code> mit eigener Konfiguration daneben. Es läuft nicht in <code>npm run test:ui</code>, nur von Hand: <code>node build.mjs</code>, dann <code>npx vitest run --config docs/entwuerfe/28-scrollbalken/aufnahmen/vitest.config.mts</code>.</li>
+  <li>Die App startet über <code>launchCodium</code> im Testmodus (verborgenes Fenster, Temp-Datenordner, abgeschirmtes Git). Maus und Bilder gehen über die Entwicklerwerkzeuge der App, nicht über den Desktop.</li>
+  <li>Das Fenster hatte eine Pixeldichte von 1,5. Die ganzen Bilder sind in dieser Dichte aufgenommen, die Ausschnitte am Rand mit der doppelten (2×).</li>
+  <li>Die Varianten sind nur für die Aufnahme eingespielt: ein Style-Element und <code>updateOptions</code> an den Editoren (gefunden über die internen Felder von React). Für die Bilder ist die Hover-Anzeige des Sprachservers ausgeschaltet, damit kein Fenster über dem Text steht. Den schmalen Streifen bei B und C zeichnet Monaco in voller Breite, das CSS staucht ihn auf 5 bzw. 7 px; mit einer Spur (B) bleibt das scharf.</li>
+  <li>Protokoll der Aufnahme mit den gemessenen Scrollständen: <a href="bilder/aufnahmen.txt">bilder/aufnahmen.txt</a>.</li>
+</ul>
+
+</div>
+</body>
+</html>
