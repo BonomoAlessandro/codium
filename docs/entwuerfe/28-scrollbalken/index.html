@@ -75,9 +75,10 @@ table.t tbody th { font-weight: 600; white-space: nowrap; color: var(--page-mute
 <div class="page">
 
 <h1>Ticket 28 – Scrollbalken im Code-Bereich</h1>
-<p class="lead">Entwürfe zur Wahl: heutiger Stand und drei Varianten, jeweils in Ruhe, beim Darüberfahren und beim Ziehen. Alle Bilder stammen aus dem verborgenen Testfenster von Codium (Playwright im Testmodus); die Varianten sind dafür nur per CSS und Monaco-Optionen eingespielt, eingebaut ist noch nichts.</p>
+<p class="lead">Entwürfe zur Wahl: heutiger Stand und drei Varianten, jeweils in Ruhe, beim Darüberfahren und beim Ziehen. Alle Bilder stammen aus dem verborgenen Testfenster von Codium (Playwright im Testmodus); die Varianten waren dafür nur per CSS und Monaco-Optionen eingespielt. Der Nutzer hat Variante B gewählt; ganz oben steht der eingebaute Stand.</p>
 
 <nav class="toc">
+  <a href="#eingebaut">Eingebaut</a>
   <a href="#blick">Auf einen Blick</a>
   <a href="#werte">Werte</a>
   <a href="#heute">Heute</a>
@@ -100,6 +101,26 @@ table.t tbody th { font-weight: 600; white-space: nowrap; color: var(--page-mute
     <li><span class="swatch" style="background:#ced0d6"></span>die Cursorzeile (heller Strich).</li>
   </ul>
   <p class="muted" style="margin-top:8px">„In Ruhe“ heisst: Die Maus steht über dem Text, es wird nicht gescrollt. „Darüberfahren“: Die Maus steht auf dem Schieber. „Ziehen“: Der Schieber ist gefasst und 90 px nach unten gezogen; der Editor scrollt dabei in allen Varianten mit (von 2574 auf 3560 px).</p>
+</div>
+
+<h2 id="eingebaut">Eingebaut: Variante B <span class="tag rec" style="vertical-align:3px;margin-left:6px">gewählt</span></h2>
+<p>Entscheidung des Nutzers (2026-11-25): „ja wir nehmen variante B“; die übrigen Punkte nach den Empfehlungen. Eingebaut für alle Monaco-Editoren, mit den Farben genau wie IntelliJ „Dark“: in Ruhe <code>#a6a6a647</code>, beim Darüberfahren <code>#a6a6a659</code>, beim Ziehen eine Stufe heller <code>#a6a6a66b</code>. Masse wie B: Rand 16 px, Kapsel 6 px bzw. 9 px, Greiffläche 10 px, Streifen 5 px. In Ruhe ist die Kapsel ausgeblendet, der Streifen bleibt. Aufgenommen am eingebauten Stand, ohne etwas einzuspielen (<code>AUFNAHME_EINGEBAUT=1</code>).</p>
+<div class="zooms three">
+  <div class="row-label">Rechter Rand, 2×</div>
+  <figure><div class="head">In Ruhe</div><img class="zoom" src="bilder/eingebaut-ruhe-rand.png" alt="Eingebaut in Ruhe, rechter Rand vergrössert"></figure>
+  <figure><div class="head">Darüberfahren</div><img class="zoom" src="bilder/eingebaut-darueber-rand.png" alt="Eingebaut beim Darüberfahren, rechter Rand vergrössert"></figure>
+  <figure><div class="head">Ziehen</div><img class="zoom" src="bilder/eingebaut-ziehen-rand.png" alt="Eingebaut beim Ziehen, rechter Rand vergrössert"></figure>
+</div>
+<div class="cmp two">
+  <figure><a href="bilder/eingebaut-ruhe.png"><img class="shot" src="bilder/eingebaut-ruhe.png" alt="Eingebaut in Ruhe"></a><figcaption>Code-Bereich in Ruhe</figcaption></figure>
+  <figure><a href="bilder/eingebaut-darueber.png"><img class="shot" src="bilder/eingebaut-darueber.png" alt="Eingebaut beim Darüberfahren"></a><figcaption>Code-Bereich beim Darüberfahren</figcaption></figure>
+  <figure><a href="bilder/eingebaut-vergleich.png"><img class="shot" src="bilder/eingebaut-vergleich.png" alt="Vergleichsansicht eingebaut in Ruhe"></a><figcaption>Vergleichsansicht in Ruhe (ohne den eckigen Kasten)</figcaption></figure>
+  <figure><a href="bilder/eingebaut-vergleich-darueber.png"><img class="shot" src="bilder/eingebaut-vergleich-darueber.png" alt="Vergleichsansicht eingebaut beim Darüberfahren"></a><figcaption>Vergleichsansicht beim Darüberfahren über den rechten Editor</figcaption></figure>
+</div>
+<div class="zooms">
+  <div class="row-label">Vergleichsansicht, rechter Rand 2×</div>
+  <figure><div class="head">In Ruhe</div><img class="zoom diff" src="bilder/eingebaut-vergleich-rand.png" alt="Vergleich eingebaut in Ruhe, Rand vergrössert"></figure>
+  <figure><div class="head">Darüberfahren</div><img class="zoom diff" src="bilder/eingebaut-vergleich-darueber-rand.png" alt="Vergleich eingebaut beim Darüberfahren, Rand vergrössert"></figure>
 </div>
 
 <h2 id="blick">Auf einen Blick: der rechte Rand, 2× vergrössert</h2>
@@ -244,7 +265,7 @@ table.t tbody th { font-weight: 600; white-space: nowrap; color: var(--page-mute
   <li>Die App startet über <code>launchCodium</code> im Testmodus (verborgenes Fenster, Temp-Datenordner, abgeschirmtes Git). Maus und Bilder gehen über die Entwicklerwerkzeuge der App, nicht über den Desktop.</li>
   <li>Das Fenster hatte eine Pixeldichte von 1,5. Die ganzen Bilder sind in dieser Dichte aufgenommen, die Ausschnitte am Rand mit der doppelten (2×).</li>
   <li>Die Varianten sind nur für die Aufnahme eingespielt: ein Style-Element und <code>updateOptions</code> an den Editoren (gefunden über die internen Felder von React). Für die Bilder ist die Hover-Anzeige des Sprachservers ausgeschaltet, damit kein Fenster über dem Text steht. Den schmalen Streifen bei B und C zeichnet Monaco in voller Breite, das CSS staucht ihn auf 5 bzw. 7 px; mit einer Spur (B) bleibt das scharf.</li>
-  <li>Protokoll der Aufnahme mit den gemessenen Scrollständen: <a href="bilder/aufnahmen.txt">bilder/aufnahmen.txt</a>.</li>
+  <li>Protokoll der Aufnahme mit den gemessenen Scrollständen: <a href="bilder/aufnahmen.txt">bilder/aufnahmen.txt</a>, für den eingebauten Stand <a href="bilder/aufnahmen-eingebaut.txt">bilder/aufnahmen-eingebaut.txt</a>.</li>
 </ul>
 
 </div>

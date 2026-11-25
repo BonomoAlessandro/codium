@@ -1,7 +1,10 @@
 // Aufnahmen für die Entwürfe von Ticket 28 (Scrollbalken im Code-Bereich). Zeigt den heutigen Stand und Varianten,
 // jeweils in Ruhe, beim Darüberfahren und beim Ziehen, aus dem verborgenen Testfenster (launchCodium, Testmodus).
 // Die Varianten werden nur für die Aufnahme eingespielt: CSS über ein Style-Element und `updateOptions` an den
-// Editoren. Eingebaut ist davon nichts.
+// Editoren.
+//
+// Seit dem Einbau von Variante B liegen diese Varianten über dem eingebauten Stand; ihre Bilder entstanden vorher. Mit
+// AUFNAHME_EINGEBAUT=1 nimmt das Skript nur den eingebauten Stand auf (Bilder „eingebaut-…“), ohne etwas einzuspielen.
 //
 // Aufruf siehe vitest.config.mts in diesem Ordner. Die Bilder landen in ../bilder.
 
@@ -183,10 +186,15 @@ const TODAY_OPTIONS = {
   scrollbar: { vertical: 'auto', horizontal: 'auto', useShadows: true, verticalScrollbarSize: 14, verticalSliderSize: 14, horizontalScrollbarSize: 12, horizontalSliderSize: 12 },
 };
 
-const VARIANTS: Variant[] = [
-  { id: 'heute', options: TODAY_OPTIONS, css: '' },
-  ...Object.entries(SPECS).map(([id, spec]) => ({ id, options: capsuleOptions(spec), css: capsuleCss(spec) })),
-];
+/** Nur den eingebauten Stand aufnehmen (nach Ticket 28). */
+const BUILT = process.env.AUFNAHME_EINGEBAUT === '1';
+
+const VARIANTS: Variant[] = BUILT
+  ? [{ id: 'eingebaut', options: null, css: '' }]
+  : [
+      { id: 'heute', options: TODAY_OPTIONS, css: '' },
+      ...Object.entries(SPECS).map(([id, spec]) => ({ id, options: capsuleOptions(spec), css: capsuleCss(spec) })),
+    ];
 
 // ---------- Hilfen in der Seite ----------
 
@@ -442,8 +450,18 @@ describe('Aufnahmen Ticket 28', () => {
         await page.waitForTimeout(1500);
         await shot(cdp, `${variant.id}-vergleich`, whole(b.host, 420));
         await shot(cdp, `${variant.id}-vergleich-rand`, { x: Math.round(b.host.x + b.host.width - 140), y: Math.round(b.host.y + 60), width: 140, height: 220 }, 2);
+        if (BUILT && b.slider) {
+          // Eingebaut ist die Kapsel in Ruhe ausgeblendet; zusätzlich beim Darüberfahren über den rechten Editor.
+          await page.mouse.move(b.slider.x + 5, b.slider.y + b.slider.height / 2, { steps: 4 });
+          await page.waitForTimeout(800);
+          const edge = { x: Math.round(b.host.x + b.host.width - 140), y: Math.round(Math.max(b.host.y, b.slider.y - 80)), width: 140, height: 220 };
+          await shot(cdp, `${variant.id}-vergleich-darueber`, whole(b.host, 420));
+          await shot(cdp, `${variant.id}-vergleich-darueber-rand`, edge, 2);
+        }
       }
       await applyVariant(page, VARIANTS[0]!);
+      // Vom eingebauten Stand nur Code-Bereich und Vergleich.
+      if (BUILT) return;
 
       // Ausserhalb von Monaco: Dateibaum mit vielen Dateien (ohne die Zeile des Projekts, die den Temp-Pfad zeigt).
       await page.keyboard.press('Alt+1');
@@ -466,7 +484,7 @@ describe('Aufnahmen Ticket 28', () => {
       // im Bild steht.
       await page.keyboard.press('Alt+F12');
       const rows = page.locator('.terminal-view:not([hidden]) .xterm-rows');
-      await expect.poll(async () => (await rows.innerText()).replace(/ /g, ' '), { timeout: 30_000 }).toMatch(/>\s*$/m);
+      await expect.poll(async () => (await rows.innerText()).replace(/\u00a0/g, ' '), { timeout: 30_000 }).toMatch(/>\s*$/m);
       await page.keyboard.type('prompt $G');
       await page.keyboard.press('Enter');
       await page.keyboard.type('cls');
@@ -474,7 +492,7 @@ describe('Aufnahmen Ticket 28', () => {
       await page.waitForTimeout(500);
       await page.keyboard.type('for /L %i in (1,1,150) do @echo line %i');
       await page.keyboard.press('Enter');
-      await expect.poll(async () => (await rows.innerText()).replace(/ /g, ' '), { timeout: 30_000 }).toContain('line 150');
+      await expect.poll(async () => (await rows.innerText()).replace(/\u00a0/g, ' '), { timeout: 30_000 }).toContain('line 150');
       const termBox = await page.evaluate(() => {
         const el = document.querySelector('.terminal-view:not([hidden])')!.getBoundingClientRect();
         return { x: el.x, y: el.y, width: el.width, height: el.height };
@@ -501,8 +519,7 @@ describe('Aufnahmen Ticket 28', () => {
         }),
       );
     } finally {
-      fs.writeFileSync(path.join(OUT, 'aufnahmen.txt'), `${log.join('\n')}\n`);
-
+      fs.writeFileSync(path.join(OUT, BUILT ? 'aufnahmen-eingebaut.txt' : 'aufnahmen.txt'), `${log.join('\n')}\n`);
       await codium.close();
     }
   });
