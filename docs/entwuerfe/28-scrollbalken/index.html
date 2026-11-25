@@ -125,7 +125,7 @@ table.t tbody th { font-weight: 600; white-space: nowrap; color: var(--page-mute
 </div>
 
 <h2 id="werte">Werte der Varianten</h2>
-<p>Breiten in CSS-Pixeln der App. Die Farben sind aus der Grauskala des neuen IntelliJ-Designs „Dark“ abgeleitet, die Codium schon nutzt (<code>tokens.css</code>): Grau 10 (<code>#b4b8bf</code>) halb durchsichtig, damit Text und Markierungen darunter durchscheinen. Auf der Editorfläche ergibt das etwa Grau 4, 6 und 7. Die genauen Werte aus dem Theme von IntelliJ habe ich nicht nachlesen können; das Auge entscheidet ohnehin an den Bildern.</p>
+<p>Breiten in CSS-Pixeln der App. Die Farben sind aus der Grauskala des neuen IntelliJ-Designs „Dark“ abgeleitet, die Codium schon nutzt (<code>tokens.css</code>): Grau 10 (<code>#b4b8bf</code>) halb durchsichtig, damit Text und Markierungen darunter durchscheinen. Auf der Editorfläche ergibt das etwa Grau 4, 6 und 7. Zum Vergleich mit IntelliJ siehe den Kasten unter der Tabelle.</p>
 <div class="table-wrap">
 <table class="t">
   <thead><tr><th></th><th>Heute (Monaco)</th><th>A · Kapsel über der Leiste</th><th>B · wie IntelliJ</th><th>C · Streifen, immer sichtbar</th></tr></thead>
@@ -144,6 +144,17 @@ table.t tbody th { font-weight: 600; white-space: nowrap; color: var(--page-mute
     <tr><th>Spur, Schatten</th><td>keine Spur, Schatten an</td><td colspan="3">keine Spur, kein Schatten</td></tr>
   </tbody>
 </table>
+</div>
+
+<div class="callout">
+  <p><strong>Zum Vergleich: die Werte von IntelliJ.</strong> Das Theme „Dark“ des neuen Designs setzt keine eigenen Scrollbalken-Farben; es gelten die Vorgaben im Code von IntelliJ (<code>ScrollBarPainter</code>), halb durchsichtiges Grau ohne sichtbare Spur:</p>
+  <ul class="facts">
+    <li>Schieber in Ruhe <span class="swatch" style="background:#a6a6a647"></span><code>#a6a6a647</code> (Grau <code>#a6a6a6</code> zu 28 %), wirkt auf der Editorfläche wie <code>#444547</code>. Das ist praktisch dieselbe Helligkeit wie bei A und B (<code>#b4b8bf40</code>, wirkt wie <code>#444549</code>).</li>
+    <li>Beim Darüberfahren <span class="swatch" style="background:#a6a6a659"></span><code>#a6a6a659</code> (35 %), wirkt wie <code>#4e4e50</code>; bei den Mac-Scrollbalken <code>#8080808c</code>, wirkt wie <code>#545456</code>. A und B werden beim Darüberfahren etwas heller (wie <code>#5a5c61</code>), damit der Unterschied zur Ruhe deutlich ist.</li>
+    <li>Eine eigene Farbe beim Ziehen hat IntelliJ nicht; das Ticket verlangt sie („noch heller beim Ziehen“).</li>
+    <li>Der Schieber hat dort einen feinen Rand in der Farbe <code>#383838</code> zu 28 % bzw. 35 %; auf der dunklen Editorfläche ist er kaum zu sehen und in den Varianten weggelassen.</li>
+  </ul>
+  <p class="muted">Breiten, Verbreiterung beim Darüberfahren, Zeiten fürs Ausblenden und die Masse des Fehlerstreifens von IntelliJ sind nicht nachgelesen; die Masse der Varianten folgen dem Richtwert des Tickets (6 bis 8 px in Ruhe). Wer die Farben genau wie IntelliJ will, sagt es bei Frage 1; dann wird nur das Grau ausgetauscht.</p>
 </div>
 
 <h2 id="heute">Heute</h2>
