@@ -15,6 +15,7 @@ import { decodeAs, decodeText } from '../fileContent';
 import { changeBlocks } from './lineDiff';
 import { LogGraph } from './logGraph';
 import { LogReader } from './logReader';
+import { recentBranches, reflogMessages } from './recentBranches';
 import type { ProjectCore } from '../projectCore';
 import { CommandError } from '../router';
 
@@ -49,6 +50,14 @@ interface RunOptions {
 
 /** So viele Commits liest der Log je Seite. */
 const LOG_PAGE = 500;
+
+/**
+ * So viel vom Ende des Reflogs von HEAD liest der Dienst für die zuletzt benutzten Branches (Ticket 31): 512 KB, je
+ * nach Länge der Nachrichten 2'500 bis 4'000 Einträge, in wenigen Millisekunden. Ältere Wechsel zählen nicht mehr.
+ */
+export const REFLOG_TAIL_BYTES = 512 * 1024;
+/** Ebenso viele Einträge, wenn Git den Reflog liefern muss (Ref-Speicher „reftable“). */
+const REFLOG_ENTRIES = 3000;
 
 interface LogSession {
   key: string;
@@ -237,9 +246,12 @@ export class GitService {
 
   async branches(): Promise<GitBranches> {
     await this.requireRepository();
-    const result = await this.run(['for-each-ref', '--format=%(refname)%00%(upstream:short)%00%(HEAD)%00%(symref)%00%(upstream:track,nobracket)', 'refs/heads', 'refs/remotes'], {
-      background: true,
-    });
+    const [result, reflog] = await Promise.all([
+      this.run(['for-each-ref', '--format=%(refname)%00%(upstream:short)%00%(HEAD)%00%(symref)%00%(upstream:track,nobracket)', 'refs/heads', 'refs/remotes'], {
+        background: true,
+      }),
+      this.headReflog(),
+    ]);
     if (result.code !== 0) throw this.failure(result);
     const local: GitBranches['local'] = [];
     const remote: GitBranches['remote'] = [];
@@ -263,7 +275,27 @@ export class GitService {
     }
     // Ein Repository ohne Commits: Der aktuelle Branch ist noch ungeboren und steht nicht in den Refs.
     if (this.state.branch && !local.some((b) => b.current)) local.unshift({ name: this.state.branch, current: true });
-    return { local, remote };
+    const current = local.find((b) => b.current)?.name ?? null;
+    return { local, remote, recent: recentBranches(reflog, local.map((b) => b.name), current) };
+  }
+
+  /**
+   * Die Nachrichten im Reflog von HEAD, die neueste zuerst (Ticket 31). Git liest für `git log -g` immer den ganzen
+   * Reflog, auch mit `-n` (gemessen mit 200'000 Einträgen, 28 MB: 0,7 bis 1,7 s); deshalb liest der Dienst nur das Ende
+   * der Datei selbst. Ohne Datei (etwa mit dem Ref-Speicher „reftable“) fragt er Git nach den neuesten Einträgen.
+   */
+  private async headReflog(): Promise<string[]> {
+    const dir = this.gitDir;
+    if (!dir) return [];
+    try {
+      return await readReflogTail(path.join(dir, 'logs', 'HEAD'));
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return [];
+    }
+    // Ohne Datei gibt es entweder noch keinen Eintrag (etwa ohne Commit) oder die Refs liegen in „reftable“.
+    if (!fs.existsSync(path.join(dir, 'reftable'))) return [];
+    const result = await this.run(['--no-optional-locks', 'log', '-g', '--format=%gs', `-n${REFLOG_ENTRIES}`, 'HEAD', '--'], { background: true });
+    return result.code === 0 ? result.stdout.split(/\r?\n/).filter((line) => line !== '') : [];
   }
 
   async createBranch(params: CommandParams<'git.createBranch'>): Promise<void> {
@@ -1124,4 +1156,23 @@ function matchesLog(commit: GitLogCommit, message: string, filter: GitLogFilter)
     if (!hashMatch && !(message || commit.subject).toLowerCase().includes(t)) return false;
   }
   return true;
+}
+
+/**
+ * Die Nachrichten vom Ende eines Reflogs, die neueste zuerst: höchstens die letzten `maxBytes` der Datei, ab der ersten
+ * vollständigen Zeile darin (geschnitten wird am Zeilenende, nie mitten in einem Zeichen).
+ */
+export async function readReflogTail(file: string, maxBytes = REFLOG_TAIL_BYTES): Promise<string[]> {
+  const handle = await fs.promises.open(file, 'r');
+  try {
+    const { size } = await handle.stat();
+    const start = Math.max(0, size - maxBytes);
+    const buffer = Buffer.alloc(size - start);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, start);
+    const from = start === 0 ? 0 : buffer.indexOf(0x0a) + 1;
+    if (from === 0 && start > 0) return [];
+    return reflogMessages(buffer.subarray(from, bytesRead).toString('utf8'));
+  } finally {
+    await handle.close();
+  }
 }

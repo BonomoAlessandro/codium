@@ -369,6 +369,11 @@ export interface ChangeBlock {
 export interface GitBranches {
   local: Array<{ name: string; upstream?: string; current: boolean; ahead?: number; behind?: number }>;
   remote: Array<{ name: string; remote: string }>;
+  /**
+   * Die zuletzt ausgecheckten lokalen Branches aus dem Reflog von HEAD, der neueste zuerst (Ticket 31): höchstens fünf,
+   * nur solche, die es noch gibt, ohne den aktuellen.
+   */
+  recent: string[];
 }
 
 /** Die Felder einer Datenbank-Verbindung, wie der Nutzer sie eingibt (Ticket 20). */

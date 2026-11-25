@@ -167,6 +167,48 @@ describe('Git-Dienst', { timeout: 60_000 }, () => {
     await expect(call(test, windowId, 'git.createBranch', { name: '--force', checkout: false })).rejects.toMatchObject({ code: ErrorCode.invalidParams });
   });
 
+  it('liefert die zuletzt benutzten Branches aus dem Reflog, auch nach Wechseln von aussen (Ticket 31)', async () => {
+    const base = tempDir();
+    const { repo, env, run } = createRepoWithRemote(base);
+    for (const name of ['feature/a', 'feature/b', 'bugfix/c', 'feature/grösse']) run('branch', name);
+    const { test, windowId, state } = await open(repo, env, base);
+    await until(state, (s) => s.branch === 'main', 'main');
+    expect((await call(test, windowId, 'git.branches')).recent).toEqual([]);
+
+    // main → feature/grösse → feature/a (über Codium) → bugfix/c → losgelöst auf feature/b → main (im Terminal)
+    run('switch', 'feature/grösse');
+    await call(test, windowId, 'git.checkout', { name: 'feature/a' });
+    run('switch', 'bugfix/c');
+    run('switch', '--detach', 'feature/b');
+    run('switch', 'main');
+    await call(test, windowId, 'git.refresh');
+    expect((await call(test, windowId, 'git.branches')).recent).toEqual(['bugfix/c', 'feature/a', 'feature/grösse']);
+
+    // Ein gelöschter Branch fällt weg.
+    run('branch', '-D', 'bugfix/c');
+    expect((await call(test, windowId, 'git.branches')).recent).toEqual(['feature/a', 'feature/grösse']);
+  });
+
+  it('liest die zuletzt benutzten Branches auch mit dem Ref-Speicher „reftable“ (Ticket 31)', async (ctx) => {
+    const base = tempDir();
+    const env = shieldedGitEnv(path.join(base, 'gitconfig'));
+    const repo = path.join(base, 'rt');
+    try {
+      git(base, env, 'init', '--ref-format=reftable', '--initial-branch=main', repo);
+    } catch {
+      ctx.skip('Dieses Git kennt den Ref-Speicher „reftable“ nicht.');
+    }
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'a\n');
+    git(repo, env, 'add', 'a.txt');
+    git(repo, env, 'commit', '-m', 'erster');
+    git(repo, env, 'switch', '-c', 'feature/a');
+    git(repo, env, 'switch', 'main');
+    expect(fs.existsSync(path.join(repo, '.git', 'logs', 'HEAD'))).toBe(false);
+    const { test, windowId, state } = await open(repo, env, base);
+    await until(state, (s) => s.branch === 'main', 'main');
+    expect((await call(test, windowId, 'git.branches')).recent).toEqual(['feature/a']);
+  });
+
   it('liefert bei einem verweigerten Wechsel die betroffenen Dateien', async () => {
     const base = tempDir();
     const { repo, env, run } = createRepoWithRemote(base);
@@ -280,7 +322,7 @@ describe('Git-Dienst', { timeout: 60_000 }, () => {
     git(base, env, 'init', '--initial-branch=main', fresh);
     const first = await open(fresh, env, base);
     await until(first.state, (s) => s.repository, 'Repository');
-    expect((await call(first.test, first.windowId, 'git.branches')).local).toEqual([{ name: 'main', current: true }]);
+    expect(await call(first.test, first.windowId, 'git.branches')).toEqual({ local: [{ name: 'main', current: true }], remote: [], recent: [] });
 
     const { repo, run } = createRepoWithRemote(path.join(base, 'r'));
     fs.writeFileSync(path.join(repo, 'alt name.txt'), 'x\n');
