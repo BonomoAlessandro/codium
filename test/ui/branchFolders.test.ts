@@ -132,12 +132,25 @@ describe('Branch-Dropdown: Ordner, „Recent“ und Breite (Ticket 31)', () => {
       expect(await current.locator('.icon-head').count()).toBe(1);
       expect(await current.getAttribute('class')).toContain('current');
 
-      // Das Projektfenster merkt sich offene Ordner für die Sitzung: „bugfix“ bleibt nach dem Schliessen offen.
+      // Das Projektfenster merkt sich aufgeklappte Ordner für die Sitzung: „bugfix“ bleibt nach dem Schliessen offen.
       await local.getByRole('option', { name: 'bugfix', exact: true }).click();
       await local.getByRole('option', { name: 'bugfix/c', exact: true }).waitFor();
       await closeDropdown(page);
       await openDropdown(page, 'feature/a');
       expect(await labels(local)).toEqual(['bugfix', 'bugfix/c', 'feature', 'feature/a', 'feature/b', 'main']);
+
+      // „feature“ zuklappen: Als Ordner des aktuellen Branches ist er beim nächsten Öffnen trotzdem offen, gemerkt wird er
+      // aber nicht. Nach dem Wechsel auf main (über „Recent“) ist er zu, „bugfix“ offen (Review).
+      await local.getByRole('option', { name: 'feature', exact: true }).click();
+      await expect.poll(() => labels(local), APP).toEqual(['bugfix', 'bugfix/c', 'feature', 'main']);
+      await closeDropdown(page);
+      await openDropdown(page, 'feature/a');
+      expect(await labels(local)).toEqual(['bugfix', 'bugfix/c', 'feature', 'feature/a', 'feature/b', 'main']);
+      await section(page, 'Recent').getByRole('option', { name: 'main', exact: true }).click();
+      await page.getByRole('menu', { name: 'main', exact: true }).getByRole('menuitem', { name: 'Checkout', exact: true }).click();
+      await branchButton(page, 'main').waitFor();
+      await openDropdown(page, 'main');
+      expect(await labels(local)).toEqual(['bugfix', 'bugfix/c', 'feature', 'main']);
     } finally {
       await codium.close();
     }
@@ -199,9 +212,12 @@ describe('Branch-Dropdown: Ordner, „Recent“ und Breite (Ticket 31)', () => {
     const { codium, page } = await launch();
     try {
       const popup = await openDropdown(page, 'main');
+      const local = section(page, 'Local');
+      // Vorher „bugfix“ aufklappen: Das ist der gemerkte Zustand.
+      await local.getByRole('option', { name: 'bugfix', exact: true }).click();
+      await expect.poll(() => labels(local), APP).toEqual(['bugfix', 'bugfix/c', 'feature', 'main']);
       const search = popup.getByRole('textbox', { name: 'Search branches' });
       await search.fill('feat');
-      const local = section(page, 'Local');
       await expect.poll(() => labels(local), APP).toEqual(['feature', 'feature/a', 'feature/b']);
       expect(await local.getByRole('option', { name: 'feature', exact: true }).getAttribute('aria-expanded')).toBe('true');
       // Der Treffer im Ordnernamen ist hervorgehoben; „bugfix“ und „main“ fehlen, ebenso die Aktionen.
@@ -209,14 +225,36 @@ describe('Branch-Dropdown: Ordner, „Recent“ und Breite (Ticket 31)', () => {
       expect(await popup.getByRole('option', { name: 'bugfix', exact: true }).count()).toBe(0);
       expect(await popup.getByRole('option', { name: 'Pull', exact: true }).count()).toBe(0);
       expect(await labels(section(page, 'Remote'))).toEqual(['origin', 'feature', 'origin/feature/a', 'origin/feature/b']);
-      // Pfeil runter läuft auch hier über Ordner und Branches.
       expect(await selectedLabel(page)).toBe('feature');
+
+      // Mit Shift oder Ctrl gehören Pfeil links und rechts dem Suchfeld (markieren, wortweise springen); der Ordner
+      // bleibt offen und gewählt (Review).
+      const caret = () => search.evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd]);
+      await search.evaluate((el: HTMLInputElement) => el.setSelectionRange(4, 4));
+      await page.keyboard.press('Shift+ArrowLeft');
+      expect(await caret()).toEqual([3, 4]);
+      await page.keyboard.press('Control+ArrowLeft');
+      expect(await caret()).toEqual([0, 0]);
+      expect(await local.getByRole('option', { name: 'feature', exact: true }).getAttribute('aria-expanded')).toBe('true');
+      expect(await selectedLabel(page)).toBe('feature');
+      // Ohne sie klappt Pfeil links den Ordner zu, Pfeil rechts wieder auf; beim Filtern gilt das nur für diesen Suchtext.
+      await page.keyboard.press('ArrowLeft');
+      await expect.poll(() => labels(local), APP).toEqual(['feature']);
+      await page.keyboard.press('ArrowRight');
+      await expect.poll(() => labels(local), APP).toEqual(['feature', 'feature/a', 'feature/b']);
+
+      // Pfeil runter läuft auch hier über Ordner und Branches; Shift + Pfeil rechts auf einem Branch markiert im Suchfeld,
+      // statt das Untermenü zu öffnen.
       await page.keyboard.press('ArrowDown');
       await expect.poll(() => selectedLabel(page), APP).toBe('feature/a');
+      await page.keyboard.press('Shift+ArrowRight');
+      expect(await caret()).toEqual([0, 1]);
+      expect(await page.getByRole('menu').count()).toBe(0);
 
-      // Nach dem Leeren sind die Ordner wieder zu, wie vorher.
+      // Nach dem Leeren gilt wieder der gemerkte Zustand: „bugfix“ offen, „feature“ zu.
       await search.fill('');
-      await expect.poll(() => labels(local), APP).toEqual(['bugfix', 'feature', 'main']);
+      await expect.poll(() => labels(local), APP).toEqual(['bugfix', 'bugfix/c', 'feature', 'main']);
+      expect(await local.getByRole('option', { name: 'feature', exact: true }).getAttribute('aria-expanded')).toBe('false');
       expect(await popup.getByRole('option', { name: 'Pull', exact: true }).count()).toBe(1);
     } finally {
       await codium.close();

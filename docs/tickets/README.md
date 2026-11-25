@@ -67,7 +67,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 
 ## Übersicht
 
-Stand 2026-11-25: Codium 1 ist abgeschlossen, Tickets 01 bis 23 erledigt. Die Abnahme von Hand macht der Nutzer im Alltag ([Prüfliste](../abnahme.md)); Abweichungen werden neue Tickets. Auch die später dazugekommenen Tickets 24 bis 27 sind erledigt. Ticket 30 (Absturz des TypeScript-Servers) ist teilweise erledigt: Protokoll, „Show Log“ und „Restart“ sind gebaut, die Ursache ist offen und wird mit dem Protokoll beim nächsten Absturz gesucht. Offen sind Ticket 28 (Scrollbalken im Code-Bereich), Ticket 29 (Dateibaum: Zuklappen und Git-Farben), Ticket 31 (Branch-Anzeige, Ordner und „Recent“ im Branch-Dropdown) und Ticket 32 (Java-Symbole im Dateibaum). Offene Punkte, Entscheide und bekannte Grenzen: [offene-punkte.md](../offene-punkte.md).
+Stand 2026-11-25: Codium 1 ist abgeschlossen, Tickets 01 bis 23 erledigt. Die Abnahme von Hand macht der Nutzer im Alltag ([Prüfliste](../abnahme.md)); Abweichungen werden neue Tickets. Auch die später dazugekommenen Tickets 24 bis 27 und 31 sind erledigt. Ticket 30 (Absturz des TypeScript-Servers) ist teilweise erledigt: Protokoll, „Show Log“ und „Restart“ sind gebaut, die Ursache ist offen und wird mit dem Protokoll beim nächsten Absturz gesucht. Offen sind Ticket 28 (Scrollbalken im Code-Bereich), Ticket 29 (Dateibaum: Zuklappen und Git-Farben) und Ticket 32 (Java-Symbole im Dateibaum). Offene Punkte, Entscheide und bekannte Grenzen: [offene-punkte.md](../offene-punkte.md).
 
 | Nr. | Ticket | Typ | Blockiert durch | Etappe | Stand |
 |---|---|---|---|---|---|
@@ -101,7 +101,7 @@ Stand 2026-11-25: Codium 1 ist abgeschlossen, Tickets 01 bis 23 erledigt. Die Ab
 | 28 | [Scrollbalken im Code-Bereich wie in IntelliJ](28-scrollbalken.md) | HITL | – | – | offen |
 | 29 | [Dateibaum: Zuklappen schliesst Unterordner, Git-Farben wie in IntelliJ](29-dateibaum-zuklappen-und-farben.md) | HITL | – | – | offen |
 | 30 | [TypeScript-Server stürzt in einem Java-Projekt mit Web-Oberfläche wiederholt ab](30-typescript-server-absturz.md) | AFK | – | – | teilweise erledigt (Ursache offen) |
-| 31 | [Branch-Anzeige breiter, Branches im Dropdown in Ordnern, zuletzt benutzte Branches](31-branch-anzeige-und-ordner.md) | AFK | – | – | offen |
+| 31 | [Branch-Anzeige breiter, Branches im Dropdown in Ordnern, zuletzt benutzte Branches](31-branch-anzeige-und-ordner.md) | AFK | – | – | erledigt |
 | 32 | [Java-Dateien im Dateibaum mit Symbol je Art, ohne Endung](32-java-symbole-im-dateibaum.md) | HITL | – | – | offen |
 
 ```mermaid

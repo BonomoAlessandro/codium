@@ -1995,8 +1995,12 @@ input[type='checkbox']:disabled {
   font-size: 12px;
 }
 
+/* Trägt nichts zur Breite des Dropdowns bei: Eine lange Fehlermeldung bricht um, statt es breit zu machen (Ticket 31). */
 .branch-dropdown-empty {
+  width: 0;
+  min-width: calc(100% - 16px);
   margin: 8px;
+  overflow-wrap: anywhere;
   color: var(--text-muted);
 }
 

@@ -67,6 +67,12 @@ describe('Zuletzt benutzte Branches', () => {
     expect(recentBranches(messages, ['main', 'feature/a', 'bugfix/c'], 'feature/a')).toEqual(['bugfix/c', 'main']);
   });
 
+  it('zählt auch Wechsel, deren Ziel Leerzeichen enthält (Review)', () => {
+    // `git checkout ':/zweiter mit'` wechselt auf den Commit mit dieser Nachricht; verlassen wurde feature/a.
+    const messages = [moved(DETACHED, 'main'), moved('feature/a', ':/zweiter mit'), moved('main', 'feature/a')];
+    expect(recentBranches(messages, ['main', 'feature/a'], 'main')).toEqual(['feature/a']);
+  });
+
   it('zeigt bei abgekoppeltem HEAD oder ohne Commit alle verlassenen Branches', () => {
     const messages = [moved('main', DETACHED), moved('feature/a', 'main')];
     expect(recentBranches(messages, ['main', 'feature/a'], null)).toEqual(['main', 'feature/a']);
@@ -85,20 +91,47 @@ describe('Zuletzt benutzte Branches', () => {
 
 describe('Ende des Reflogs', () => {
   const tempDir = useTempDirs();
-  const line = (message: string) => `${'1'.repeat(40)} ${'2'.repeat(40)} Codium Test <test@codium.invalid> 1700000000 +0100\t${message}\n`;
+  // Umlaute im Namen und in der Nachricht: So lässt sich zwischen den zwei Bytes eines Zeichens schneiden.
+  const line = (message: string) => `${'1'.repeat(40)} ${'2'.repeat(40)} Jörg Test <test@codium.invalid> 1700000000 +0100\t${message}\n`;
 
-  it('liest nur die letzten Bytes, ab der ersten vollständigen Zeile', async () => {
-    const file = path.join(tempDir(), 'HEAD');
-    const commits = Array.from({ length: 4000 }, (_, i) => line(`commit: Änderung ${i}`)).join('');
-    fs.writeFileSync(file, line(moved('alt', 'main')) + commits + line(moved('feature/grösse', 'main')));
-    const messages = await readReflogTail(file, 64 * 1024);
-    expect(messages[0]).toBe(moved('feature/grösse', 'main'));
-    expect(messages).not.toContain(moved('alt', 'main'));
-    expect(messages.length).toBeLessThan(1000);
-    // Jede gelesene Zeile ist vollständig; der Schnitt liegt nie mitten in einer Zeile oder einem Zeichen.
-    expect(messages.slice(1).every((m) => /^commit: Änderung \d+$/.test(m))).toBe(true);
+  /** Ein Reflog mit einem alten Wechsel, 4000 Commits und einem neuen Wechsel; dazu eine Grenze mitten in einem Zeichen. */
+  function sample(dir: string) {
+    const lines = [line(moved('alt', 'main')), ...Array.from({ length: 4000 }, (_, i) => line(`commit: Änderung ${i}`)), line(moved('feature/grösse', 'main'))];
+    const file = path.join(dir, 'HEAD');
+    const size = Buffer.byteLength(lines.join(''));
+    fs.writeFileSync(file, lines.join(''));
+    /** So viele Bytes, dass der Schnitt nach dem ersten Byte von `char` in der Zeile des Commits `n` liegt. */
+    const cutInside = (n: number, char: string) => {
+      const start = Buffer.byteLength(lines.slice(0, n + 1).join(''));
+      const text = lines[n + 1];
+      return size - (start + Buffer.byteLength(text.slice(0, text.indexOf(char))) + 1);
+    };
+    return { file, cutInside };
+  }
 
+  it('liest nur die letzten Bytes, ab der nächsten ganzen Zeile, auch wenn der Schnitt mitten in einem Zeichen liegt', async () => {
+    const { file, cutInside } = sample(tempDir());
+    // Schnitt im Namen vor der Nachricht (die angeschnittene Zeile enthält noch Tab und Nachricht) und in der Nachricht.
+    for (const char of ['ö', 'Ä']) {
+      const messages = await readReflogTail(file, cutInside(3000, char));
+      expect(messages[0], char).toBe(moved('feature/grösse', 'main'));
+      expect(messages.at(-1), char).toBe('commit: Änderung 3001');
+      expect(messages, char).toHaveLength(1000);
+      expect(messages.join('\n'), char).not.toContain('�');
+    }
     // Ohne Grenze kommt alles.
     expect(await readReflogTail(file, 10 * 1024 * 1024)).toHaveLength(4002);
+  });
+
+  it('liefert nichts, wenn das gelesene Stück keine ganze Zeile enthält', async () => {
+    const dir = tempDir();
+    const file = path.join(dir, 'HEAD');
+    // Die letzte Zeile schreibt Git gerade noch (ohne Zeilenende); das gelesene Stück liegt ganz in ihr.
+    fs.writeFileSync(file, `${line('commit: fertig')}${line(moved('a', 'b')).slice(0, -1)}`);
+    expect(await readReflogTail(file, 40)).toEqual([]);
+    // Nur das Zeilenende der letzten Zeile.
+    const complete = path.join(dir, 'HEAD-ganz');
+    fs.writeFileSync(complete, `${line('commit: a')}${line('commit: b')}`);
+    expect(await readReflogTail(complete, 30)).toEqual([]);
   });
 });

@@ -151,7 +151,7 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
   const gitAvailable = useGitAvailable(api);
   /** Der Branch-Knopf, unter dem das Branch-Dropdown offen ist (Ticket 25); `null`, wenn es zu ist. */
   const [branchAnchor, setBranchAnchor] = useState<HTMLElement | null>(null);
-  /** Die offenen Ordner im Branch-Dropdown (Ticket 31), für die Dauer der Sitzung gemerkt, nicht gespeichert. */
+  /** Die vom Nutzer aufgeklappten Ordner im Branch-Dropdown (Ticket 31), für die Sitzung gemerkt, nicht gespeichert. */
   const branchFolders = useRef<ReadonlySet<string>>(new Set());
   const ask = useAsk();
   const askText = useAskText();

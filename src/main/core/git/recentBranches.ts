@@ -9,7 +9,11 @@
 /** So viele zuletzt benutzte Branches zeigt das Dropdown. */
 export const RECENT_LIMIT = 5;
 
-const CHECKOUT = /^checkout: moving from (\S+) to \S+$/;
+/**
+ * Ein Wechsel. Das Ziel nach „ to “ kann Leerzeichen enthalten (etwa `git checkout ':/Nachricht mit Leerzeichen'`); Git
+ * sucht für `@{-1}` ebenso nur nach „ to “. Ein Branchname vorher enthält nie ein Leerzeichen.
+ */
+const CHECKOUT = /^checkout: moving from (\S+) to /;
 
 /**
  * Die Nachrichten der Zeilen eines Reflogs, die neueste zuerst. Eine Zeile lautet

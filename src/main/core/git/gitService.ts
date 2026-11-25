@@ -287,10 +287,14 @@ export class GitService {
   private async headReflog(): Promise<string[]> {
     const dir = this.gitDir;
     if (!dir) return [];
+    const file = path.join(dir, 'logs', 'HEAD');
     try {
-      return await readReflogTail(path.join(dir, 'logs', 'HEAD'));
+      return await readReflogTail(file);
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return [];
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        this.options.log(`Reflog ${file} lässt sich nicht lesen: ${(err as Error).message}`);
+        return [];
+      }
     }
     // Ohne Datei gibt es entweder noch keinen Eintrag (etwa ohne Commit) oder die Refs liegen in „reftable“.
     if (!fs.existsSync(path.join(dir, 'reftable'))) return [];

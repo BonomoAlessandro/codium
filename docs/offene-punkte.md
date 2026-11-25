@@ -75,6 +75,9 @@ erklären die Hintergründe.
 - Beendet ein Verbindungsfehler den Pool einer Datenbank-Verbindung, scheitern Anfragen, die ihn gerade benutzen, mit
   der Meldung von node-postgres; der nächste Versuch legt einen neuen an (20).
 - Ein fehlender oder zusätzlicher Zeilenumbruch am Dateiende ergibt keinen Änderungsbalken (17).
+- Im Branch-Dropdown sind Ordnerzeilen Einträge einer Liste (`role="option"`) mit `aria-expanded`, das ARIA 1.2 dort
+  nicht vorsieht; ein Screenreader meldet „auf-“ bzw. „zugeklappt“ womöglich nicht. Ein möglicher Weg wäre das Muster
+  tree/treeitem (mit `aria-level`) für die Branches, die Aktionen davor als eigene Liste (31).
 
 ## Wackelige Tests (beobachten)
 

@@ -5,9 +5,11 @@
 // Pfeile.
 //
 // Präfixe wie `feature/` bilden Ordner (Ticket 31; die Zeilen bildet branchRows.ts). Ein Ordner klappt mit Klick, Enter
-// oder Pfeil rechts bzw. links auf und zu; Pfeil links auf einem Branch im Ordner springt zum Ordner. Beim Öffnen sind
-// die gemerkten Ordner offen (das Projektfenster merkt sie sich für die Sitzung) und dazu die des aktuellen Branches.
-// Beim Filtern sind alle Ordner mit Treffern offen; nach dem Leeren des Suchfelds gilt wieder der gemerkte Zustand.
+// oder Pfeil rechts bzw. links auf und zu; Pfeil links auf einem Branch im Ordner springt zum Ordner. Mit Shift, Ctrl
+// oder Alt gehören Pfeil links und rechts dem Suchfeld. Beim Öffnen sind die Ordner offen, die der Nutzer aufgeklappt
+// hat (das Projektfenster merkt sie sich für die Sitzung), und dazu die des aktuellen Branches, ohne dass diese gemerkt
+// würden. Beim Filtern sind alle Ordner mit Treffern offen; nach dem Leeren des Suchfelds gilt wieder der gemerkte
+// Zustand.
 //
 // Eine Branch-Zeile öffnet ihr Untermenü rechts daneben (Enter, Pfeil rechts, Klick oder Überfahren): lokal
 // „Checkout“, „New Branch from '…'…“, „Rename…“, „Delete“; remote „Checkout“ und „New Branch from '…'…“. Pfeil links
@@ -39,7 +41,17 @@ import {
 import { shortcutLabel } from '../keymap';
 import { Menu, registerOpenMenu, type MenuEntry } from '../popup/Menu';
 import { moveSelection } from '../search/searchResults';
-import { branchRows, collapseFolder, expandFolder, filterFolders, parentRow, withCurrentBranchOpen, type BranchListRow, type BranchSection } from './branchRows';
+import {
+  branchRows,
+  collapseFolder,
+  expandFolder,
+  filterFolders,
+  openFolderState,
+  parentRow,
+  toggleFolderState,
+  type BranchListRow,
+  type BranchSection,
+} from './branchRows';
 
 /** Die Aktionen des Menüs; der Aufrufer speichert vorher alle Tabs und zeigt Fehler. */
 export interface BranchActions {
@@ -68,9 +80,9 @@ interface BranchPopupProps {
   actions: BranchActions;
   /** Der Branch-Knopf der Kopfzeile; das Dropdown hängt darunter. */
   anchor: HTMLElement;
-  /** Die offenen Ordner beim letzten Schliessen (Ticket 31); das Projektfenster merkt sie sich für die Sitzung. */
+  /** Die Ordner, die der Nutzer aufgeklappt hat (Ticket 31); das Projektfenster merkt sie sich für die Sitzung. */
   openFolders: ReadonlySet<string>;
-  /** Die offenen Ordner haben sich geändert (ohne Filter). */
+  /** Der Nutzer hat ohne Filter einen Ordner auf- oder zugeklappt. */
   onOpenFoldersChange: (folders: ReadonlySet<string>) => void;
   /**
    * Das Dropdown schliesst sich: mit Escape, durch einen Klick daneben oder weil eine Aktion läuft. Der Aufrufer gibt
@@ -119,8 +131,8 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
   const [selected, setSelected] = useState(0);
   const [submenu, setSubmenu] = useState<{ index: number; anchor: HTMLElement; openedBy: OpenedBy } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Offene Ordner ohne Filter: der gemerkte Zustand, dazu die Ordner des aktuellen Branches.
-  const [expanded, setExpanded] = useState(() => withCurrentBranchOpen(openFolders, state.branch));
+  // Offene Ordner ohne Filter: der gemerkte Zustand, beim Öffnen dazu die Ordner des aktuellen Branches (nicht gemerkt).
+  const [folders, setFolders] = useState(() => openFolderState(openFolders, state.branch));
   // Offene Ordner beim Filtern, sobald der Nutzer dort einen auf- oder zuklappt; gilt nur für diesen Suchtext.
   const [filterOpen, setFilterOpen] = useState<{ query: string; folders: ReadonlySet<string> } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -154,11 +166,11 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
     };
   }, [api]);
 
-  useEffect(() => onOpenFoldersChangeRef.current(expanded), [expanded]);
+  useEffect(() => onOpenFoldersChangeRef.current(folders.remembered), [folders.remembered]);
 
   const q = query.trim().toLowerCase();
   const filterDefault = useMemo(() => (branches && q !== '' ? filterFolders(branches, q) : NO_FOLDERS), [branches, q]);
-  const shownFolders = q === '' ? expanded : filterOpen?.query === q ? filterOpen.folders : filterDefault;
+  const shownFolders = q === '' ? folders.shown : filterOpen?.query === q ? filterOpen.folders : filterDefault;
 
   const rows = useMemo(() => {
     const list = branches ? branchRows(branches, q, shownFolders) : [];
@@ -218,7 +230,7 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
   };
   const fitRef = useRef(fit);
   fitRef.current = fit;
-  useLayoutEffect(() => fitRef.current(false), [rows]);
+  useLayoutEffect(() => fitRef.current(false), [rows, error]);
   useLayoutEffect(() => {
     const onResize = () => fitRef.current(true);
     window.addEventListener('resize', onResize);
@@ -286,9 +298,8 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
   const toggleFolder = (row: FolderRow) => {
     cancelHover();
     setSubmenu(null);
-    const next = row.expanded ? collapseFolder(shownFolders, row.key) : expandFolder(shownFolders, row.key);
-    if (q === '') setExpanded(next);
-    else setFilterOpen({ query: q, folders: next });
+    if (q === '') setFolders(toggleFolderState(folders, row.key, !row.expanded));
+    else setFilterOpen({ query: q, folders: row.expanded ? collapseFolder(shownFolders, row.key) : expandFolder(shownFolders, row.key) });
   };
   const selectRow = (index: number) => {
     const position = selectable.indexOf(index);
@@ -492,13 +503,16 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
           }}
           onKeyDown={(e) => {
             const row = selectedRow === undefined ? undefined : rows[selectedRow];
+            // Mit Shift, Ctrl oder Alt gehören Pfeil links und rechts dem Suchfeld (Text markieren, wortweise springen).
+            const horizontal = e.key === 'ArrowRight' || e.key === 'ArrowLeft';
+            if (horizontal && (e.shiftKey || e.ctrlKey || e.altKey || e.metaKey)) return;
             if (e.key === 'Enter' || (e.key === 'ArrowRight' && isBranch(row))) {
               e.preventDefault();
               if (selectedRow !== undefined) activate(selectedRow, 'keyboard');
               return;
             }
             // Pfeil rechts und links wirken nur auf Ordner und Branches; sonst bewegen sie die Schreibmarke.
-            if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && selectedRow !== undefined && treeKey(e.key, selectedRow)) {
+            if (horizontal && selectedRow !== undefined && treeKey(e.key, selectedRow)) {
               e.preventDefault();
               return;
             }

@@ -6,7 +6,9 @@ import {
   collapseFolder,
   expandFolder,
   filterFolders,
+  openFolderState,
   parentRow,
+  toggleFolderState,
   withCurrentBranchOpen,
   type BranchListRow,
 } from '../../src/renderer/git/branchRows';
@@ -137,6 +139,35 @@ describe('Zeilen des Branch-Dropdowns', () => {
     ]);
     // Ohne Treffer: keine Zeilen, auch keine Überschriften.
     expect(branchRows(b, 'nichts', filterFolders(b, 'nichts'))).toEqual([]);
+  });
+
+  it('merkt sich nur ausdrückliches Auf- und Zuklappen, nicht die Ordner des aktuellen Branches (Review)', () => {
+    // Auf feature/a: „feature“ ist offen zu sehen, aber nicht gemerkt; der Nutzer klappt „bugfix“ auf.
+    let state = openFolderState(open(), 'feature/a');
+    expect([...state.shown]).toEqual(['local:feature']);
+    expect([...state.remembered]).toEqual([]);
+    state = toggleFolderState(state, 'local:bugfix', true);
+    expect([...state.shown].sort()).toEqual(['local:bugfix', 'local:feature']);
+    expect([...state.remembered]).toEqual(['local:bugfix']);
+    // Nach dem Wechsel auf main ist „feature“ beim nächsten Öffnen zu, „bugfix“ offen.
+    const b = branches(['main', 'feature/a', 'bugfix/c']);
+    state = openFolderState(state.remembered, 'main');
+    expect(show(branchRows(b, '', state.shown))).toEqual(['[Local]', '▾ bugfix', '    c', '▸ feature', 'main']);
+
+    // Klappt der Nutzer „feature“ selbst auf, ist es gemerkt; zugeklappt ist es auch im gemerkten Zustand zu.
+    state = toggleFolderState(state, 'local:feature', true);
+    expect([...state.remembered].sort()).toEqual(['local:bugfix', 'local:feature']);
+    state = toggleFolderState(openFolderState(state.remembered, 'feature/a'), 'local:feature', false);
+    expect([...state.remembered]).toEqual(['local:bugfix']);
+    // Ein Ordner des aktuellen Branches, den der Nutzer zuklappt, ist beim nächsten Öffnen wieder offen.
+    expect([...openFolderState(state.remembered, 'feature/a').shown].sort()).toEqual(['local:bugfix', 'local:feature']);
+  });
+
+  it('nimmt beim Aufklappen die Ordner darüber mit, damit nichts Offenes in einem geschlossenen Ordner liegt', () => {
+    // „feature“ ist nur wegen des aktuellen Branches offen; der Nutzer klappt darin „team-a“ auf.
+    const state = toggleFolderState(openFolderState(open(), 'feature/x'), 'local:feature/team-a', true);
+    expect([...state.remembered].sort()).toEqual(['local:feature', 'local:feature/team-a']);
+    expect([...expandFolder(open(), 'remote:origin/feature/team-a')].sort()).toEqual(['remote:origin', 'remote:origin/feature', 'remote:origin/feature/team-a']);
   });
 
   it('klappt beim Zuklappen eines Ordners auch seine Unterordner zu (wie im Dateibaum, Ticket 29)', () => {
