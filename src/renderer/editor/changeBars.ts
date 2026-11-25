@@ -8,6 +8,9 @@ import { monaco } from './monaco';
 
 const DELAY_MS = 250;
 
+/** Stapelreihenfolge der Änderungen im Streifen am rechten Rand (Ticket 28). */
+export const GIT_OVERVIEW_Z_INDEX = 5;
+
 export class ChangeBars {
   private decorations: monaco.editor.IEditorDecorationsCollection;
   private blocks: ChangeBlock[] = [];
@@ -102,6 +105,10 @@ export class ChangeBars {
             isWholeLine: true,
             linesDecorationsClassName: `change-bar ${b.kind}`,
             overviewRuler: { color: b.kind === 'added' ? '#549159' : '#375fad', position: monaco.editor.OverviewRulerLane.Left },
+            // Seit Ticket 28 teilen sich alle Markierungen eine Spur im Streifen; Monaco zeichnet sie nach zIndex. Über
+            // den hervorgehobenen Vorkommen eines Worts (0), unter Suchtreffern (10 und 13), Warnungen (20) und
+            // Fehlern (30).
+            zIndex: GIT_OVERVIEW_Z_INDEX,
           },
         };
       }),

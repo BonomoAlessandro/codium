@@ -24,7 +24,7 @@ function radiusDeclarations(): Array<{ line: number; value: string }> {
 }
 
 describe('Rundungen', () => {
-  it('tokens.css legt klein, mittel, gross, Dialog und Inseln fest', () => {
+  it('tokens.css legt klein, mittel, gross, Dialog, Inseln und Kapsel fest', () => {
     expect(Object.fromEntries(radiusTokens())).toEqual({
       '--radius-xs': '3px',
       '--radius-s': '4px',
@@ -32,6 +32,7 @@ describe('Rundungen', () => {
       '--radius-l': '8px',
       '--radius-xl': '10px',
       '--radius-island': '10px',
+      '--radius-pill': '999px',
     });
   });
 

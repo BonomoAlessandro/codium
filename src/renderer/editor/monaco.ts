@@ -1,6 +1,7 @@
 // Monaco für Codium einrichten: lokal gebündelt (ohne eingebaute Sprachdienste, siehe build.mjs), mit seinem
-// allgemeinen Editor-Worker aus den eigenen Dateien, dem Farbschema nach IntelliJ „Dark“, JetBrains Mono und einer
-// eigenen JSON-Sprache. Wird einmal beim ersten Import ausgeführt.
+// allgemeinen Editor-Worker aus den eigenen Dateien, dem Farbschema nach IntelliJ „Dark“, JetBrains Mono, einer
+// eigenen JSON-Sprache und den Scrollbalken wie in IntelliJ für jeden Editor (Ticket 28). Wird einmal beim ersten
+// Import ausgeführt.
 
 import '@fontsource/jetbrains-mono/400.css';
 import '@fontsource/jetbrains-mono/400-italic.css';
@@ -10,6 +11,7 @@ import * as monaco from 'monaco-editor';
 import { baseName } from '../project/filePaths';
 import { JSON_CONFIGURATION, JSON_LANGUAGE, JSON_MONARCH } from './jsonLanguage';
 import { languageForFile } from './languages';
+import { applyScrollbarVariables, setUpScrollbars } from './scrollbars';
 import { THEME_NAME, codiumTheme } from './theme';
 
 /** Schrift aller Editoren; JetBrains Mono wird mitgeliefert (OFL). */
@@ -25,6 +27,9 @@ monaco.languages.setLanguageConfiguration('json', JSON_CONFIGURATION);
 monaco.languages.setMonarchTokensProvider('json', JSON_MONARCH as monaco.languages.IMonarchLanguage);
 monaco.editor.defineTheme(THEME_NAME, codiumTheme());
 monaco.editor.setTheme(THEME_NAME);
+// Scrollbalken für alle Editoren an einer Stelle, auch für die beiden Seiten der Vergleichsansicht.
+applyScrollbarVariables(document.documentElement);
+monaco.editor.onDidCreateEditor(setUpScrollbars);
 
 /** Die Sprache (Farben nach Wortarten) einer Datei. */
 export function languageOf(filePath: string): string {

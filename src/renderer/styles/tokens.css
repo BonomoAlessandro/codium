@@ -37,9 +37,16 @@
   --radius-xl: 10px;
   /* Werkzeugfenster und Editor als Inseln, mit Abstand dazwischen */
   --radius-island: 10px;
+  /* Ganz gerundet (Kapsel), etwa der Schieber der Scrollbalken in Monaco (Ticket 28) */
+  --radius-pill: 999px;
   --island-gap: 6px;
   /* Abstand der Auswahlbalken zum Rand von Listen und Bäumen */
   --list-inset: 6px;
+
+  /* Scrollbalken der Monaco-Editoren (Ticket 28): Masse und Farben stehen an einer Stelle, in
+     src/renderer/editor/theme.ts (EDITOR_SCROLLBAR), weil Monaco sie als Optionen braucht. monaco.ts setzt daraus
+     --editor-scrollbar-thumb, --editor-scrollbar-thumb-hover und --editor-scrollbar-stripe auf :root; die Farben
+     kommen als Monacos Farbvariablen (--vscode-scrollbarSlider-*). */
 
   /* Flächen */
   --bg: #1e1f22;

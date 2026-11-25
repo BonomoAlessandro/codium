@@ -821,6 +821,101 @@ input[type='checkbox']:disabled {
   text-align: left;
 }
 
+/* ---------- Scrollbalken der Monaco-Editoren (Ticket 28) ---------- */
+
+/* Wie IntelliJ, für alle Monaco-Editoren (Code-Bereich, Vergleich, Vorschau der Projektsuche, Zelleditor): rechts
+   eine Greiffläche mit einer schmalen Kapsel, ganz rechts ein eigener Streifen mit den Markierungen; keine Spur, kein
+   Schatten. Die Kapsel ist ausgeblendet, solange nicht gescrollt wird, und erscheint beim Scrollen (Attribut aus
+   scrollbars.ts), beim Darüberfahren über den Rand und beim Ziehen; der Streifen bleibt stehen.
+   Masse und Farben stehen in editor/theme.ts (EDITOR_SCROLLBAR): Die Masse kommen als --editor-scrollbar-* (gesetzt
+   von monaco.ts), die Farben über Monacos Farbvariablen (scrollbarSlider.*). Gemeint ist nur der Balken des Editors
+   selbst (.editor-scrollable), nicht die Listen in Monacos Vorschlags- und Hover-Fenstern. */
+.monaco-editor .monaco-scrollable-element.editor-scrollable > .scrollbar > .slider,
+.monaco-editor .monaco-scrollable-element.editor-scrollable > .scrollbar > .slider:hover,
+.monaco-editor .monaco-scrollable-element.editor-scrollable > .scrollbar > .slider.active {
+  background: transparent;
+}
+
+/* Monaco setzt den senkrechten Schieber mittig in den Rand (Stil am Element); er gehört in die Greiffläche links vom
+   Streifen. */
+.monaco-editor .monaco-scrollable-element.editor-scrollable > .scrollbar.vertical > .slider {
+  left: 0 !important;
+}
+
+/* Gezeichnet wird nur die Kapsel; gegriffen wird auf dem ganzen Schieber. */
+.monaco-editor .monaco-scrollable-element.editor-scrollable > .scrollbar > .slider::before {
+  content: '';
+  position: absolute;
+  border-radius: var(--radius-pill);
+  background: var(--vscode-scrollbarSlider-background);
+  opacity: 0;
+  transition:
+    opacity 300ms linear,
+    width 120ms ease-out,
+    height 120ms ease-out,
+    left 120ms ease-out,
+    top 120ms ease-out,
+    background-color 120ms linear;
+}
+
+.monaco-editor .monaco-scrollable-element.editor-scrollable > .scrollbar.vertical > .slider::before {
+  top: 2px;
+  bottom: 2px;
+  left: calc((100% - var(--editor-scrollbar-thumb)) / 2);
+  width: var(--editor-scrollbar-thumb);
+}
+
+.monaco-editor .monaco-scrollable-element.editor-scrollable > .scrollbar.horizontal > .slider::before {
+  left: 2px;
+  right: 2px;
+  top: calc((100% - var(--editor-scrollbar-thumb)) / 2);
+  height: var(--editor-scrollbar-thumb);
+}
+
+/* Darüberfahren über den Rand und Ziehen: breiter und heller. */
+.monaco-editor .monaco-scrollable-element.editor-scrollable > .scrollbar.vertical:hover > .slider::before,
+.monaco-editor .monaco-scrollable-element.editor-scrollable > .scrollbar.vertical > .slider.active::before {
+  left: calc((100% - var(--editor-scrollbar-thumb-hover)) / 2);
+  width: var(--editor-scrollbar-thumb-hover);
+}
+
+.monaco-editor .monaco-scrollable-element.editor-scrollable > .scrollbar.horizontal:hover > .slider::before,
+.monaco-editor .monaco-scrollable-element.editor-scrollable > .scrollbar.horizontal > .slider.active::before {
+  top: calc((100% - var(--editor-scrollbar-thumb-hover)) / 2);
+  height: var(--editor-scrollbar-thumb-hover);
+}
+
+.monaco-editor .monaco-scrollable-element.editor-scrollable > .scrollbar:hover > .slider::before {
+  background: var(--vscode-scrollbarSlider-hoverBackground);
+}
+
+.monaco-editor .monaco-scrollable-element.editor-scrollable > .scrollbar > .slider.active::before {
+  background: var(--vscode-scrollbarSlider-activeBackground);
+}
+
+/* Sichtbar beim Scrollen, Darüberfahren und Ziehen: schnell ein, langsamer aus. */
+.monaco-editor[data-codium-scrolling] > .overflow-guard > .editor-scrollable > .scrollbar > .slider::before,
+.monaco-editor .monaco-scrollable-element.editor-scrollable > .scrollbar:hover > .slider::before,
+.monaco-editor .monaco-scrollable-element.editor-scrollable > .scrollbar > .slider.active::before {
+  opacity: 1;
+  transition-duration: 100ms, 120ms, 120ms, 120ms, 120ms, 120ms;
+}
+
+/* Eigener Streifen ganz rechts: Monaco zeichnet seine Übersichtsleiste so breit wie den ganzen Rand (mit einer Spur,
+   jede Markierung über die volle Breite, siehe theme.ts); hier wird sie auf den Streifen gestaucht. Sie nimmt keine
+   Mausereignisse an: Ein Klick in den Streifen geht an den Balken darüber und springt an diese Stelle. */
+.monaco-editor .decorationsOverviewRuler {
+  width: var(--editor-scrollbar-stripe) !important;
+}
+
+/* Vergleichsansicht: Der eckige Kasten in Monacos Vergleichsübersicht entfällt; die Lage zeigt die Kapsel des rechten
+   Editors. Die roten und grünen Markierungen der Übersicht bleiben. */
+.monaco-diff-editor .diffOverview .diffViewport,
+.monaco-diff-editor .diffOverview .diffViewport:hover,
+.monaco-diff-editor .diffOverview .diffViewport:active {
+  background: transparent;
+}
+
 /* ---------- Statusleiste ---------- */
 
 .statusbar {

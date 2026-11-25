@@ -187,6 +187,70 @@ export function semanticRules(): TokenRule[] {
   });
 }
 
+/**
+ * Scrollbalken aller Monaco-Editoren (Ticket 28, Variante B wie IntelliJ): rechts eine Greiffläche mit einer schmalen
+ * Kapsel, daneben ein eigener Streifen für die Markierungen. Masse in CSS-Pixeln. scrollbars.ts gibt jedem Editor die
+ * Optionen dazu (`editorScrollbarOptions`), monaco.ts reicht die Masse der Kapsel und des Streifens als CSS-Variablen
+ * an app.css weiter; die Farben gehen über Monacos Farbvariablen (`scrollbarSlider.*` in EDITOR_COLORS).
+ */
+export const EDITOR_SCROLLBAR = {
+  /** Greiffläche des senkrechten Schiebers, links im Rand. */
+  grip: 10,
+  /** Abstand zwischen Greiffläche und Streifen. */
+  gap: 1,
+  /** Eigener Streifen für die Markierungen, ganz rechts; jede Markierung über die volle Breite. */
+  stripe: 5,
+  /** Gezeichnete Breite der Kapsel in Ruhe. */
+  thumb: 6,
+  /** … beim Darüberfahren über den Rand und beim Ziehen. */
+  thumbHover: 9,
+  /** Höhe des waagrechten Balkens (Greiffläche); die Kapsel darin ist so hoch wie die senkrechte breit. */
+  horizontal: 12,
+  /** So lange bleibt die Kapsel nach dem letzten Scrollen sichtbar (ms); danach blendet sie aus. */
+  revealMs: 800,
+  /**
+   * Farben wie IntelliJ „Dark“ (Vorgaben in IntelliJs ScrollBarPainter, das Theme setzt keine eigenen): Grau #a6a6a6
+   * zu 28 % in Ruhe und zu 35 % beim Darüberfahren. Eine Farbe beim Ziehen hat IntelliJ nicht; sie ist eine weitere
+   * gleich grosse Stufe (42 %) und wirkt auf der Editorfläche fast so hell wie IntelliJs Mac-Schieber beim
+   * Darüberfahren (#8080808c).
+   */
+  color: '#a6a6a647',
+  hoverColor: '#a6a6a659',
+  activeColor: '#a6a6a66b',
+} as const;
+
+/** Breite des ganzen Rands rechts: Greiffläche, Abstand und Streifen. */
+export const EDITOR_SCROLLBAR_WIDTH = EDITOR_SCROLLBAR.grip + EDITOR_SCROLLBAR.gap + EDITOR_SCROLLBAR.stripe;
+
+/** Optionen für jeden Monaco-Editor (an einer Stelle angewendet, siehe scrollbars.ts). */
+export function editorScrollbarOptions() {
+  return {
+    // Eine Spur: Jede Markierung geht über die volle Breite des Streifens.
+    overviewRulerLanes: 1,
+    scrollbar: {
+      // Immer bedienbar, auch der Streifen; ein- und ausgeblendet wird nur die Kapsel (app.css).
+      vertical: 'visible',
+      horizontal: 'visible',
+      useShadows: false,
+      verticalHasArrows: false,
+      horizontalHasArrows: false,
+      verticalScrollbarSize: EDITOR_SCROLLBAR_WIDTH,
+      verticalSliderSize: EDITOR_SCROLLBAR.grip,
+      horizontalScrollbarSize: EDITOR_SCROLLBAR.horizontal,
+      horizontalSliderSize: EDITOR_SCROLLBAR.horizontal,
+    },
+  } as const;
+}
+
+/** Masse für app.css; monaco.ts setzt sie auf dem Wurzelelement. */
+export function editorScrollbarCssVariables(): Record<string, string> {
+  return {
+    '--editor-scrollbar-thumb': `${EDITOR_SCROLLBAR.thumb}px`,
+    '--editor-scrollbar-thumb-hover': `${EDITOR_SCROLLBAR.thumbHover}px`,
+    '--editor-scrollbar-stripe': `${EDITOR_SCROLLBAR.stripe}px`,
+  };
+}
+
 /** Farben der Editorfläche, im Format von Monaco. */
 export const EDITOR_COLORS: Readonly<Record<string, string>> = {
   'editor.background': SCHEME.background,
@@ -224,9 +288,9 @@ export const EDITOR_COLORS: Readonly<Record<string, string>> = {
   'input.border': '#4e5157',
   'focusBorder': '#3574f0',
   'scrollbar.shadow': '#00000000',
-  'scrollbarSlider.background': '#4e515766',
-  'scrollbarSlider.hoverBackground': '#5a5d6399',
-  'scrollbarSlider.activeBackground': '#6f737aaa',
+  'scrollbarSlider.background': EDITOR_SCROLLBAR.color,
+  'scrollbarSlider.hoverBackground': EDITOR_SCROLLBAR.hoverColor,
+  'scrollbarSlider.activeBackground': EDITOR_SCROLLBAR.activeColor,
   'menu.background': '#2b2d30',
   'menu.foreground': '#dfe1e5',
   'menu.selectionBackground': '#2e436e',
