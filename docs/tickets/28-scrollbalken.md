@@ -1,6 +1,6 @@
 # 28 – Scrollbalken im Code-Bereich wie in IntelliJ
 
-Status: `ready-for-agent` · Typ: HITL
+Status: `erledigt` (2026-11-25) · Typ: HITL
 Blockiert durch: –
 User Stories: keine eigene; ergänzt 24 (dunkel im Stil des neuen IntelliJ)
 Spezifikation: „Oberfläche“ (Design), Code-Farben (`src/renderer/editor/theme.ts`)
@@ -145,3 +145,4 @@ Testläufe nach dem Review (2026-11-25, nacheinander, allein auf dem Rechner):
 Nachtrag nach dem Review:
 - **Längere Standard-Wartezeit im UI-Lauf:** Auch ein voller Lauf des Koordinators (16:38 bis 16:50, ohne Standby) hatte „Rollback“ rot, nach 1 s stand noch der geänderte Inhalt in der Datei. `expect.poll` wartet im UI-Lauf ohne eigene Angabe nur 1 s; das gilt für rund 300 der 392 Abfragen in `test/ui`. Jetzt sind es 5 s (`test.expect.poll.timeout` in `vitest.ui.config.mts`, eine Option, die Vitest 5 kennt; der schnelle Lauf hat 10 s). Eine Abfrage endet weiterhin, sobald ihre Bedingung gilt, auch die mit `.not`; länger dauert nur ein Test, der ohnehin scheitert. Keine Abfrage in `test/ui` rechnet damit, dass sie ins Zeitlimit läuft. Eingetragen in `docs/offene-punkte.md` unter „Wackelige Tests“, samt den beiden Tests mit 1 s.
 - **Macht der Review-Commit die App langsamer?** Kein Hinweis darauf. `commit.test.ts` allein, je nach frischem Build: auf 1c86f41 13,4, 20,4 und 32,5 s (der letzte mit 20 % Import, also Last), auf 9b2ac45 15,2, 12,9 und 12,8 s; der jeweils erste Lauf nach einem Build dauerte 22 bis 30 s (frisch gebaute Dateien, Virenscanner). Das zusätzliche `updateOptions` läuft einmal je neu angelegtem Editor, nicht beim Tippen oder Scrollen. `:has(.diffOverview:hover)` gilt nur in der Vergleichsansicht und nur beim Darüberfahren. Die Dauer voller Läufe schwankte schon vor dem Review (525 s vor, 523 bis 575 s nach dem Review bei mir, 660 s beim Koordinator).
+- **Voller UI-Lauf danach** (ab 17:00, Rechner vorher wach, letztes Kernel-Power-Ereignis 507 um 16:37:50, während des Laufs kein 506): 28 Dateien, 98 Tests grün, 544 s; keine Meldung der Schlussprüfung, keine übrigen Prozesse. `npm run typecheck` vorher sauber.
