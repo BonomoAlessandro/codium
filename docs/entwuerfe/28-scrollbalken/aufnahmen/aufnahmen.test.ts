@@ -3,8 +3,11 @@
 // Die Varianten werden nur für die Aufnahme eingespielt: CSS über ein Style-Element und `updateOptions` an den
 // Editoren.
 //
-// Seit dem Einbau von Variante B liegen diese Varianten über dem eingebauten Stand; ihre Bilder entstanden vorher. Mit
-// AUFNAHME_EINGEBAUT=1 nimmt das Skript nur den eingebauten Stand auf (Bilder „eingebaut-…“), ohne etwas einzuspielen.
+// Achtung, seit dem Einbau von Variante B: Ohne Schalter gibt das Skript „heute“, A, B und C nicht mehr richtig
+// wieder. Die eingebauten Regeln in app.css sind spezifischer als die eingespielten und gewinnen (Kapsel, Ausblenden,
+// Streifen), und Monaco bekommt die eingebauten Optionen. Die Bilder dieser Fassungen entstanden vor dem Einbau und
+// bleiben als Beleg liegen; nicht neu aufnehmen. Den heutigen Stand zeigt nur AUFNAHME_EINGEBAUT=1: Dann nimmt das
+// Skript den eingebauten Stand auf (Bilder „eingebaut-…“), ohne etwas einzuspielen.
 //
 // Aufruf siehe vitest.config.mts in diesem Ordner. Die Bilder landen in ../bilder.
 
@@ -457,6 +460,14 @@ describe('Aufnahmen Ticket 28', () => {
           const edge = { x: Math.round(b.host.x + b.host.width - 140), y: Math.round(Math.max(b.host.y, b.slider.y - 80)), width: 140, height: 220 };
           await shot(cdp, `${variant.id}-vergleich-darueber`, whole(b.host, 420));
           await shot(cdp, `${variant.id}-vergleich-darueber-rand`, edge, 2);
+          // Und beim Darüberfahren über Monacos Vergleichsübersicht ganz rechts: Die Kapsel des rechten Editors zeigt die
+          // Lage.
+          const overview = (await page.locator('.diff-host .diffOverview').boundingBox())!;
+          await page.mouse.move(b.host.x + b.host.width * 0.8, b.host.y + 60, { steps: 4 });
+          await page.waitForTimeout(800);
+          await page.mouse.move(overview.x + overview.width / 2, b.slider.y + b.slider.height / 2, { steps: 4 });
+          await page.waitForTimeout(800);
+          await shot(cdp, `${variant.id}-vergleich-uebersicht-rand`, edge, 2);
         }
       }
       await applyVariant(page, VARIANTS[0]!);

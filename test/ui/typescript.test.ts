@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Locator, Page } from 'playwright-core';
 import { describe, expect, it } from 'vitest';
+import { EDITOR_SCROLLBAR_WIDTH } from '../../src/renderer/editor/theme';
 import { launchCodium, prepareAppState } from '../support/launchApp';
 import { useTempDirs } from '../support/tempDir';
 
@@ -105,6 +106,19 @@ describe('TypeScript im Editor', () => {
         )
         .toBeGreaterThan(0);
       await expect.poll(() => peek.innerText()).toContain('main.ts');
+      // Die Vorschau im Peek ist ein eingebetteter Editor mit eigenen Vorgaben (Rand 14 px); sie hat trotzdem dieselben
+      // Scrollbalken wie der Code-Bereich (Ticket 28), auch nachdem sich der Editor darüber ändert (Schriftgrösse mit
+      // Ctrl + Mausrad über dem Code).
+      const previewBar = () =>
+        page.evaluate(() => document.querySelector('.editor-host .zone-widget .preview .editor-scrollable > .scrollbar.vertical')?.getBoundingClientRect().width ?? null);
+      await expect.poll(previewBar).toBe(EDITOR_SCROLLBAR_WIDTH);
+      const code = (await page.locator('.editor-host').boundingBox())!;
+      await page.mouse.move(code.x + 200, code.y + 20);
+      await page.keyboard.down('Control');
+      await page.mouse.wheel(0, -120);
+      await page.keyboard.up('Control');
+      await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector('.editor-host .view-line')!).fontSize)).toBe('14px');
+      expect(await previewBar()).toBe(EDITOR_SCROLLBAR_WIDTH);
       await page.keyboard.press('Escape');
 
       // Alt + F7 auf der Deklaration: ein Reiter im Werkzeugfenster „Find“ mit den Verwendungen.

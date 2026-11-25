@@ -163,6 +163,11 @@ Geprüft wird die installierte App (`release\Codium Setup <version>.exe`), ausse
 - [ ] Im Branch-Dropdown finden sich Branches in den Ordnern `feature`, `bugfix` usw. so schnell wie in IntelliJ. (31)
 - [ ] Unter „Recent“ stehen die Branches, zwischen denen ich zuletzt gewechselt habe. (31)
 - [ ] Im schmalen Fenster mit langem Branchnamen lässt sich das Fenster rechts neben dem Branch-Knopf noch an der Kopfzeile ziehen. (31)
+- [ ] Die Scrollbalken im Code-Bereich sehen aus wie in IntelliJ und lassen sich mit der Maus gut greifen, auch in der Vergleichsansicht, in der Vorschau der Projektsuche, im Peek und im Zelleditor einer Tabelle. (28)
+- [ ] Fehler und Git-Änderungen sind im schmalen Streifen am rechten Rand weiter gut zu erkennen. (28)
+- [ ] Die Kapsel erscheint beim Scrollen mit Mausrad, Touchpad und Tastatur und verschwindet kurz danach wieder; das Ausblenden stört nicht beim Suchen der Lage in der Datei. (28)
+- [ ] Der schmale Streifen ist bei 100 % und 150 % Skalierung scharf, und ein Klick auf eine Markierung springt an die richtige Stelle. Bei 150 % können der Streifen (5 px, also 7,5 Bildpunkte) und die 9 px breite Kapsel leicht unscharf wirken; die Masse sind so freigegeben. (28)
+- [ ] Die Kapsel blitzt auch auf, wenn die App selbst scrollt: beim Tabwechsel, beim nächsten Suchtreffer, bei der Auswahl in der Projektsuche. Stört das kurze Aufblitzen? (28)
 
 ## Frischer Rechner bzw. Windows-Benutzer (22)
 

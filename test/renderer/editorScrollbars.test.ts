@@ -16,6 +16,14 @@ import {
 
 const app = fs.readFileSync(path.resolve(__dirname, '..', '..', 'src', 'renderer', 'styles', 'app.css'), 'utf8');
 
+/** Der Abschnitt „Scrollbalken der Monaco-Editoren“ in app.css, ohne Kommentare. */
+function scrollbarSection(): string {
+  const start = app.indexOf('/* ---------- Scrollbalken der Monaco-Editoren');
+  const end = app.indexOf('/* ---------- ', start + 1);
+  expect(start).toBeGreaterThan(0);
+  return app.slice(start, end).replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
 /** Farbe `#rrggbbaa` als Grau und Deckkraft. */
 function rgba(color: string): { rgb: string; alpha: number } {
   return { rgb: color.slice(1, 7), alpha: parseInt(color.slice(7, 9), 16) };
@@ -24,7 +32,7 @@ function rgba(color: string): { rgb: string; alpha: number } {
 describe('Scrollbalken der Editoren', () => {
   it('hat die Masse der freigegebenen Variante B', () => {
     expect(EDITOR_SCROLLBAR_WIDTH).toBe(16);
-    expect(EDITOR_SCROLLBAR).toMatchObject({ grip: 10, gap: 1, stripe: 5, thumb: 6, thumbHover: 9, horizontal: 12 });
+    expect(EDITOR_SCROLLBAR).toMatchObject({ grip: 10, gap: 1, stripe: 5, thumb: 6, thumbHover: 9, horizontal: 12, inset: 2 });
   });
 
   it('hat die Farben von IntelliJ „Dark“, beim Ziehen eine Stufe heller', () => {
@@ -59,16 +67,23 @@ describe('Scrollbalken der Editoren', () => {
     });
   });
 
-  it('app.css nutzt die Masse und Farben von dort, keine eigenen Werte', () => {
-    for (const name of Object.keys(editorScrollbarCssVariables())) expect(app).toContain(`var(${name})`);
+  it('app.css nutzt die Masse, Zeiten und Farben von dort, keine eigenen Werte', () => {
     expect(editorScrollbarCssVariables()).toEqual({
       '--editor-scrollbar-thumb': '6px',
       '--editor-scrollbar-thumb-hover': '9px',
       '--editor-scrollbar-stripe': '5px',
+      '--editor-scrollbar-inset': '2px',
+      '--editor-scrollbar-fade-in': '100ms',
+      '--editor-scrollbar-fade-out': '300ms',
+      '--editor-scrollbar-resize': '120ms',
     });
-    for (const color of ['background', 'hoverBackground', 'activeBackground']) expect(app).toContain(`var(--vscode-scrollbarSlider-${color})`);
-    expect(app).toContain(`.monaco-editor[${SCROLLING_ATTRIBUTE}]`);
+    const section = scrollbarSection();
+    for (const name of Object.keys(editorScrollbarCssVariables())) expect(section).toContain(`var(${name})`);
+    for (const color of ['background', 'hoverBackground', 'activeBackground']) expect(section).toContain(`var(--vscode-scrollbarSlider-${color})`);
+    expect(section).toContain(`.monaco-editor[${SCROLLING_ATTRIBUTE}]`);
+    // Keine festen Längen, Zeiten oder Farben im Abschnitt (0, 100 % und die Variablen ausgenommen).
+    expect(section.match(/(?<![\w-])\d+(\.\d+)?(px|ms|s)\b|#[0-9a-f]{3,8}\b|rgba?\(/gi) ?? []).toEqual([]);
     // Die Kapsel ist ganz gerundet.
-    expect(app).toMatch(/\.slider::before \{[^}]*border-radius: var\(--radius-pill\)/);
+    expect(section).toMatch(/\.slider::before \{[^}]*border-radius: var\(--radius-pill\)/);
   });
 });

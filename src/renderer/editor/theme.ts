@@ -190,8 +190,8 @@ export function semanticRules(): TokenRule[] {
 /**
  * Scrollbalken aller Monaco-Editoren (Ticket 28, Variante B wie IntelliJ): rechts eine Greiffläche mit einer schmalen
  * Kapsel, daneben ein eigener Streifen für die Markierungen. Masse in CSS-Pixeln. scrollbars.ts gibt jedem Editor die
- * Optionen dazu (`editorScrollbarOptions`), monaco.ts reicht die Masse der Kapsel und des Streifens als CSS-Variablen
- * an app.css weiter; die Farben gehen über Monacos Farbvariablen (`scrollbarSlider.*` in EDITOR_COLORS).
+ * Optionen dazu (`editorScrollbarOptions`), monaco.ts reicht Masse und Zeiten der Kapsel und des Streifens als
+ * CSS-Variablen an app.css weiter; die Farben gehen über Monacos Farbvariablen (`scrollbarSlider.*` in EDITOR_COLORS).
  */
 export const EDITOR_SCROLLBAR = {
   /** Greiffläche des senkrechten Schiebers, links im Rand. */
@@ -206,8 +206,14 @@ export const EDITOR_SCROLLBAR = {
   thumbHover: 9,
   /** Höhe des waagrechten Balkens (Greiffläche); die Kapsel darin ist so hoch wie die senkrechte breit. */
   horizontal: 12,
+  /** Abstand der Kapsel zu den Enden ihres Schiebers (oben und unten bzw. links und rechts). */
+  inset: 2,
   /** So lange bleibt die Kapsel nach dem letzten Scrollen sichtbar (ms); danach blendet sie aus. */
   revealMs: 800,
+  /** Einblenden, Ausblenden und Breiter- bzw. Schmalerwerden der Kapsel (ms). */
+  fadeInMs: 100,
+  fadeOutMs: 300,
+  resizeMs: 120,
   /**
    * Farben wie IntelliJ „Dark“ (Vorgaben in IntelliJs ScrollBarPainter, das Theme setzt keine eigenen): Grau #a6a6a6
    * zu 28 % in Ruhe und zu 35 % beim Darüberfahren. Eine Farbe beim Ziehen hat IntelliJ nicht; sie ist eine weitere
@@ -242,12 +248,16 @@ export function editorScrollbarOptions() {
   } as const;
 }
 
-/** Masse für app.css; monaco.ts setzt sie auf dem Wurzelelement. */
+/** Masse und Zeiten für app.css; monaco.ts setzt sie auf dem Wurzelelement. */
 export function editorScrollbarCssVariables(): Record<string, string> {
   return {
     '--editor-scrollbar-thumb': `${EDITOR_SCROLLBAR.thumb}px`,
     '--editor-scrollbar-thumb-hover': `${EDITOR_SCROLLBAR.thumbHover}px`,
     '--editor-scrollbar-stripe': `${EDITOR_SCROLLBAR.stripe}px`,
+    '--editor-scrollbar-inset': `${EDITOR_SCROLLBAR.inset}px`,
+    '--editor-scrollbar-fade-in': `${EDITOR_SCROLLBAR.fadeInMs}ms`,
+    '--editor-scrollbar-fade-out': `${EDITOR_SCROLLBAR.fadeOutMs}ms`,
+    '--editor-scrollbar-resize': `${EDITOR_SCROLLBAR.resizeMs}ms`,
   };
 }
 

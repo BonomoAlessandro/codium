@@ -1,6 +1,8 @@
 // Teststelle 2: Scrollbalken der Monaco-Editoren wie in IntelliJ (Ticket 28, Variante B) in der echten App, mit einer
-// langen Datei in einem Temp-Repository: Kapsel mit den freigegebenen Massen und Farben, Ziehen, Ausblenden, eigener
-// Streifen mit den Markierungen (Git-Änderung, Suchtreffer) und dieselben Scrollbalken in der Vergleichsansicht.
+// langen Datei in einem Temp-Repository: Kapsel mit den freigegebenen Massen und Farben (senkrecht und waagrecht),
+// Ziehen, Ausblenden, eigener Streifen mit den Markierungen (Git-Änderung, Suchtreffer) und dieselben Scrollbalken in
+// der Vergleichsansicht. Die Vorschau im Peek prüft typescript.test.ts, die der Projektsuche search.test.ts und den
+// Zelleditor databaseTables.test.ts.
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -14,10 +16,13 @@ import { useTempDirs } from '../support/tempDir';
 const LINES = 300;
 const CHANGED_LINE = 200;
 const NEEDLE_LINES = [40, 150, 260];
+/** Eine lange Zeile oben, damit es einen waagrechten Balken gibt. */
+const LONG_LINE = 5;
 
 function committedText(): string {
   return Array.from({ length: LINES }, (_, i) => {
     const n = i + 1;
+    if (n === LONG_LINE) return `line ${n}: ${'a very long description of the shelf, '.repeat(12)}end`;
     return NEEDLE_LINES.includes(n) ? `line ${n}: needle in the stock list` : `line ${n}: shelf ${n % 7}, pallet ${n % 11}`;
   }).join('\n');
 }
@@ -42,6 +47,7 @@ interface Box {
 interface ThumbState {
   /** Gezeichnete Kapsel (`::before` am Schieber). */
   width: number;
+  height: number;
   radius: number;
   color: [number, number, number, number];
   opacity: number;
@@ -52,33 +58,37 @@ interface ThumbState {
   scrolling: boolean;
 }
 
-/** Zustand des senkrechten Scrollbalkens im ersten Editor unter `host`. */
-async function thumb(page: Page, host: string): Promise<ThumbState> {
-  const state = await page.evaluate((selector) => {
-    const box = (el: Element): Box => {
-      const r = el.getBoundingClientRect();
-      return { x: r.x, y: r.y, width: r.width, height: r.height };
-    };
-    const editor = document.querySelector(`${selector} .monaco-editor`);
-    const bar = editor?.querySelector('.editor-scrollable > .scrollbar.vertical');
-    const slider = bar?.querySelector(':scope > .slider');
-    if (!editor || !bar || !slider) return null;
-    const before = getComputedStyle(slider, '::before');
-    const color = (/rgba?\(([^)]+)\)/.exec(before.backgroundColor)?.[1] ?? '').split(',').map((v) => parseFloat(v));
-    const stripe = editor.querySelector('canvas.decorationsOverviewRuler');
-    return {
-      width: parseFloat(before.width),
-      radius: parseFloat(before.borderTopLeftRadius),
-      color: [color[0] ?? 0, color[1] ?? 0, color[2] ?? 0, color[3] ?? 1] as [number, number, number, number],
-      opacity: parseFloat(before.opacity),
-      active: slider.classList.contains('active'),
-      bar: box(bar),
-      slider: box(slider),
-      stripe: stripe ? box(stripe) : null,
-      scrolling: editor.hasAttribute('data-codium-scrolling'),
-    };
-  }, host);
-  if (!state) throw new Error(`Kein Scrollbalken unter ${host}`);
+/** Zustand des senkrechten (bzw. waagrechten) Scrollbalkens im ersten Editor unter `host`. */
+async function thumb(page: Page, host: string, axis: 'vertical' | 'horizontal' = 'vertical'): Promise<ThumbState> {
+  const state = await page.evaluate(
+    ({ selector, axis }) => {
+      const box = (el: Element): Box => {
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      };
+      const editor = document.querySelector(`${selector} .monaco-editor`);
+      const bar = editor?.querySelector(`.editor-scrollable > .scrollbar.${axis}`);
+      const slider = bar?.querySelector(':scope > .slider');
+      if (!editor || !bar || !slider) return null;
+      const before = getComputedStyle(slider, '::before');
+      const color = (/rgba?\(([^)]+)\)/.exec(before.backgroundColor)?.[1] ?? '').split(',').map((v) => parseFloat(v));
+      const stripe = editor.querySelector('canvas.decorationsOverviewRuler');
+      return {
+        width: parseFloat(before.width),
+        height: parseFloat(before.height),
+        radius: parseFloat(before.borderTopLeftRadius),
+        color: [color[0] ?? 0, color[1] ?? 0, color[2] ?? 0, color[3] ?? 1] as [number, number, number, number],
+        opacity: parseFloat(before.opacity),
+        active: slider.classList.contains('active'),
+        bar: box(bar),
+        slider: box(slider),
+        stripe: stripe ? box(stripe) : null,
+        scrolling: editor.hasAttribute('data-codium-scrolling'),
+      };
+    },
+    { selector: host, axis },
+  );
+  if (!state) throw new Error(`Kein Scrollbalken (${axis}) unter ${host}`);
   return state;
 }
 
@@ -159,7 +169,7 @@ describe('Scrollbalken der Editoren (Ticket 28)', () => {
     return { codium, page, repo };
   }
 
-  it('Kapsel wie freigegeben: 6 px und rund, Farben in Ruhe und beim Darüberfahren, ausgeblendet ohne Scrollen, Ziehen scrollt', async () => {
+  it('Kapsel wie freigegeben: 6 px und rund, auch waagrecht, Farben in Ruhe und beim Darüberfahren, ausgeblendet ohne Scrollen, Ziehen scrollt', async () => {
     const { codium, page } = await launch();
     try {
       // Rand: 16 px, der Schieber in der Greiffläche links, der Streifen ganz rechts.
@@ -179,6 +189,20 @@ describe('Scrollbalken der Editoren (Ticket 28)', () => {
       expect(state.width).toBe(EDITOR_SCROLLBAR.thumb);
       expect(state.radius).toBeGreaterThanOrEqual(state.width / 2);
       expect(sameColor(state.color, EDITOR_SCROLLBAR.color), `Farbe in Ruhe ${state.color}`).toBe(true);
+
+      // Der waagrechte Balken (lange Zeile oben) entsprechend: 12 px hoch, Kapsel 6 px, beim Darüberfahren 9 px und heller.
+      let across = await thumb(page, '.editor-host', 'horizontal');
+      expect(across.bar.height).toBeCloseTo(EDITOR_SCROLLBAR.horizontal, 1);
+      expect(across.height).toBe(EDITOR_SCROLLBAR.thumb);
+      expect(across.radius).toBeGreaterThanOrEqual(across.height / 2);
+      expect(across.opacity).toBe(0);
+      expect(sameColor(across.color, EDITOR_SCROLLBAR.color)).toBe(true);
+      await page.mouse.move(across.slider.x + across.slider.width / 2, across.slider.y + across.slider.height / 2, { steps: 4 });
+      await expect.poll(async () => (await thumb(page, '.editor-host', 'horizontal')).height, { timeout: 10_000 }).toBe(EDITOR_SCROLLBAR.thumbHover);
+      await expect.poll(async () => sameColor((await thumb(page, '.editor-host', 'horizontal')).color, EDITOR_SCROLLBAR.hoverColor), { timeout: 10_000 }).toBe(true);
+      across = await thumb(page, '.editor-host', 'horizontal');
+      expect(across.opacity).toBe(1);
+      expect(across.radius).toBeGreaterThanOrEqual(EDITOR_SCROLLBAR.thumbHover / 2);
 
       // Darüberfahren: sichtbar, 9 px, heller.
       const grip = { x: state.slider.x + state.slider.width / 2, y: state.slider.y + state.slider.height / 2 };
@@ -205,6 +229,10 @@ describe('Scrollbalken der Editoren (Ticket 28)', () => {
       await page.mouse.wheel(0, 400);
       await expect.poll(async () => (await thumb(page, '.editor-host')).scrolling, { timeout: 5_000 }).toBe(true);
       await expect.poll(async () => (await thumb(page, '.editor-host')).opacity, { timeout: 5_000 }).toBe(1);
+      // Sichtbar beim Scrollen, ohne dass die Maus auf dem Rand ist: die Farbe in Ruhe, 6 px.
+      state = await thumb(page, '.editor-host');
+      expect(sameColor(state.color, EDITOR_SCROLLBAR.color), `Farbe beim Scrollen ${state.color}`).toBe(true);
+      expect(state.width).toBe(EDITOR_SCROLLBAR.thumb);
       await expect.poll(async () => (await thumb(page, '.editor-host')).scrolling, { timeout: 10_000 }).toBe(false);
       await expect.poll(async () => (await thumb(page, '.editor-host')).opacity, { timeout: 10_000 }).toBe(0);
     } finally {
@@ -267,6 +295,15 @@ describe('Scrollbalken der Editoren (Ticket 28)', () => {
       await expect.poll(async () => (await thumb(page, '.diff-host .editor.modified')).width, { timeout: 10_000 }).toBe(EDITOR_SCROLLBAR.thumbHover);
       state = await thumb(page, '.diff-host .editor.modified');
       expect(state.opacity).toBe(1);
+
+      // Über dem Text blendet die Kapsel aus; beim Darüberfahren über die Vergleichsübersicht ganz rechts zeigt sie die
+      // Lage.
+      const text = (await page.locator(`${modified} .view-lines`).boundingBox())!;
+      await page.mouse.move(text.x + 100, text.y + 100, { steps: 4 });
+      await expect.poll(async () => (await thumb(page, modified)).opacity, { timeout: 10_000 }).toBe(0);
+      const overview = (await page.locator('.diff-host .diffOverview').boundingBox())!;
+      await page.mouse.move(overview.x + overview.width / 2, overview.y + overview.height / 2, { steps: 4 });
+      await expect.poll(async () => (await thumb(page, modified)).opacity, { timeout: 10_000 }).toBe(1);
 
       // Monacos Vergleichsübersicht bleibt (rot und grün), aber ohne den Kasten für den sichtbaren Bereich.
       const viewport = await page.evaluate(() => {

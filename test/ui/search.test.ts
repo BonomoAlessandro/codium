@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Locator, Page } from 'playwright-core';
 import { describe, expect, it } from 'vitest';
+import { EDITOR_SCROLLBAR_WIDTH } from '../../src/renderer/editor/theme';
 import { launchCodium, prepareAppState, type LaunchedApp } from '../support/launchApp';
 import { useTempDirs } from '../support/tempDir';
 
@@ -151,6 +152,8 @@ describe('Suchen', () => {
       // Die Vorschau zeigt die Fundstelle, mit Farben nach Wortarten (Monacos Token-Klassen).
       await expect.poll(() => popup.locator('.find-popup-preview .view-lines').innerText()).toContain('needle');
       expect(await popup.locator('.find-popup-preview .view-lines span[class^="mtk"]').evaluateAll((els) => new Set(els.map((e) => e.className)).size)).toBeGreaterThan(1);
+      // Die Vorschau hat dieselben Scrollbalken wie der Code-Bereich (Ticket 28): Rand rechts 16 px.
+      expect(await popup.locator('.find-popup-preview .editor-scrollable > .scrollbar.vertical').evaluate((el) => el.getBoundingClientRect().width)).toBe(EDITOR_SCROLLBAR_WIDTH);
 
       const appMatch = results.filter({ hasText: 'needleFunction' });
       await appMatch.dblclick();

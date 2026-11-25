@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Locator, Page } from 'playwright-core';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { EDITOR_SCROLLBAR_WIDTH } from '../../src/renderer/editor/theme';
 import { launchCodium, prepareAppState } from '../support/launchApp';
 import { PG_DATABASE, PG_PASSWORD, PG_USER, startPostgres, type TestPostgres } from '../support/postgres';
 import { useTempDirs } from '../support/tempDir';
@@ -126,6 +127,15 @@ describe('Tabelleninhalt', () => {
         .poll(async () => (await server.sql('SELECT name FROM store.items WHERE id = 2')).rows[0].name, { timeout: 15_000 })
         .toBe('Direkt gespeichert');
       expect((await server.sql('SELECT note FROM store.items WHERE id = 4')).rows[0].note).toBeNull();
+
+      // Der Zelleditor („Open Editor“) hat dieselben Scrollbalken wie der Code-Bereich (Ticket 28): Rand rechts 16 px.
+      await cell(page, 'name', 3).click({ button: 'right' });
+      await page.getByRole('menuitem', { name: 'Open Editor' }).click();
+      const bar = page.locator('.value-editor-host .editor-scrollable > .scrollbar.vertical');
+      await bar.waitFor({ state: 'attached' });
+      expect(await bar.evaluate((el) => el.getBoundingClientRect().width)).toBe(EDITOR_SCROLLBAR_WIDTH);
+      await page.keyboard.press('Escape');
+      await page.locator('.value-editor').waitFor({ state: 'detached' });
     } finally {
       await codium.close();
     }
