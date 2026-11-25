@@ -78,7 +78,7 @@ alte. `npm run test:packaged` zählt nicht hoch. Der Installer installiert für 
 Zustand je Projekt samt Datenbank-Verbindungen) unter `%APPDATA%\Codium`, nie im Projektordner. Dort liegt auch das
 Protokoll der Sprachserver (`logs\language-servers.log`, höchstens 1 MB, das vorige als `language-servers.old.log`):
 Jedes unerwartete Ende eines Sprachservers steht darin mit Exit-Code und dem Ende seiner Fehlerausgabe; „Show Log“ an
-der Meldung nach wiederholten Abstürzen öffnet es. Updates gibt es nicht
+der Meldung nach wiederholten Abstürzen zeigt das vorige und das aktuelle. Updates gibt es nicht
 automatisch, und der Installer ist nicht signiert (Windows SmartScreen fragt beim ersten Start nach).
 
 ## Entwicklung

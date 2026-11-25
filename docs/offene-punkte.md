@@ -21,6 +21,23 @@ erklären die Hintergründe.
 5. **TypeScript fremder Projekte** (Ticket 12): Beim Öffnen eines Projekts startet Codium dessen eigenes TypeScript
    (`tsc.exe` bzw. `tsserver.js` aus `node_modules`) ohne Vertrauensabfrage. So spezifiziert, aber ein bewusstes Risiko
    bei fremden Repositories.
+6. **Absturz des nativen TypeScript-Servers** (Ticket 30): Die Ursache der wiederholten Abstürze im Projekt des Nutzers
+   ist nicht gefunden; kein Nachstellen brachte den Server 7.0.2 zum Absturz, auch nicht das Nachspielen über Codiums
+   Kern. Seit Ticket 30 steht jedes unerwartete Ende mit Exit-Code und dem Ende von stderr im Protokoll der
+   Sprachserver; beim nächsten Mal dort nachsehen.
+   Gefunden, aber nicht als Ursache belegt: Kommen bis zur nächsten Anfrage mehr als 1000 Dateiänderungen zusammen
+   (etwa bei einem Build), verliert der Server eine gleichzeitige Bearbeitung einer offenen Datei; Anfragen zu ihr
+   enden dann in Panics, die er abfängt (keine Vorschläge, keine Färbung). Ein Entwurf einer Meldung an typescript-go
+   steht im Ticket; sie geht nur mit Zustimmung des Nutzers hinaus.
+   Vorschlag: Codium meldet `didChangeWatchedFiles.dynamicRegistration: true`, damit der Server seine eigene, erst seit
+   Juni 2026 vorhandene Überwachung des ganzen Projektordners nicht startet (Codium meldet die Änderungen ohnehin
+   selbst, wie VS Code); die Schübe wären etwa halb so gross. Zusätzlich könnte Codium dem TypeScript-Server nur
+   Dateien mit Endungen melden, die er liest, und Ordner; erst das hielte Build-Ausgaben ganz fern. Nicht belegt, dass
+   das den Absturz behebt; Änderungen ausserhalb des Projekts sähe dann niemand mehr.
+7. **Gemeinsamer Typ-Zwischenspeicher** (Ticket 30): Bei Projekten ohne Konfiguration installiert der native Server
+   Typen über `npm` nach `%LOCALAPPDATA%\Microsoft\TypeScript\7.0` (ATA), auch aus Tests heraus, und das mit der
+   npm-Registry des Rechners. Der Ordner gehört auch anderen Editoren. Abschalten (Einstellung des Servers) oder
+   bewusst so lassen?
 
 ## Bei der Abnahme besonders prüfen
 
@@ -45,7 +62,8 @@ erklären die Hintergründe.
 - Das Suchfenster ist kein echtes Modal: Kürzel für Werkzeugfenster und Tabs ruhen darunter (08).
 - Ein Terminal direkt nach dem Start zu schliessen dauert im Hintergrund gut 3 s (ConPTY wartet auf die Antwort des
   Terminals); der Tab schliesst sofort (11).
-- „Neustart höchstens dreimal in drei Minuten“ des Sprachservers: drei Neustarts, der vierte Absturz gibt auf (12).
+- „Neustart höchstens dreimal in drei Minuten“ des Sprachservers: drei Neustarts, der vierte Absturz gibt auf (12);
+  seit Ticket 30 mit „Show Log“ und „Restart“ an der Meldung.
 - Vervollständigung ohne Herkunftsmodul (`labelDetails`); Ctrl + N findet Type-Aliase mit TypeScript 6 nicht (13).
 - Zu Zeile (Ctrl + G) über wenige Zeilen erzeugt keinen Eintrag im Zurück/Vor-Verlauf (erst ab Dateiwechsel oder mehr
   als 10 Zeilen; 13).
@@ -68,7 +86,12 @@ Stand 2026-11-24, nach Ticket 27. Gelegentlich rot, einzeln jeweils grün:
   (Vermutung: jdtls nahm App.java als Datei ausserhalb des Projekts).
 - UI: „speichert Eingaben der letzten Sekunde vor „Exit““. Einmal hing im zweiten Start der Doppelklick 30 s in
   Playwright („performing dblclick action“); die Eingabe kam bei der App nicht an. Einzeln 8 von 8 grün, in Codium
-  keine Ursache gefunden.
+  keine Ursache gefunden. Am 2026-11-25 (Ticket 30, nach dem Review) dasselbe Bild in zwei vollen UI-Läufen
+  hintereinander, je einmal und in anderen Tests: „bleibt stabil, wenn ein Tab während des Lesens schliesst …“
+  (`editor.test.ts`) und „lädt eine von aussen geänderte Datei still neu …“ (`save.test.ts`); kein Standby, kein
+  fremder Build. Einzeln danach `editor.test.ts` 3 von 3 grün, `save.test.ts` 6 von 7 (der rote Einzellauf traf einen
+  dritten Test, seine Meldung ist nicht festgehalten). Ein dritter voller UI-Lauf vor dem Merge war grün (90 von 90).
+  Häufiger als bisher; beobachten.
 - UI: „TypeScript: Ctrl + Klick auf die Deklaration zeigt die Verwendungen“ (Auswahl erscheint nicht innert 30 s);
   auch einzeln etwa 1 von 4 Mal direkt nach einem vollen Lauf, danach mit Diagnose 16 Mal grün.
 - UI: einzelne Zeitüberschreitungen im Dateibaum, im Terminal und im zeitbasierten Hinweis-Test (layout).
