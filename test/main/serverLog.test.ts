@@ -46,6 +46,17 @@ describe('Ringpuffer für stderr', () => {
     tail.push(Buffer.from('a'.repeat(40) + '\nende\n'));
     expect(tail.read()).toEqual({ text: 'ende\n', truncated: true });
   });
+
+  it('beginnt ohne ganze Zeile am ersten ganzen Zeichen, nie mitten in einem UTF-8-Zeichen', () => {
+    // Ohne Zeilenumbruch: 18 Bytes „€“ (je 3), die letzten 10 beginnen mit dem dritten Byte eines Zeichens.
+    const noLine = new TailBuffer(10);
+    noLine.push(Buffer.from('€'.repeat(6)));
+    expect(noLine.read()).toEqual({ text: '€€€', truncated: true });
+    // Nur eine Zeile, die am Ende aufhört: 17 Bytes, die letzten 10 beginnen mit dem zweiten Byte eines Zeichens.
+    const oneLine = new TailBuffer(10);
+    oneLine.push(Buffer.from(`${'€'.repeat(5)}x\n`));
+    expect(oneLine.read()).toEqual({ text: '€€x\n', truncated: true });
+  });
 });
 
 describe('Protokolldatei', () => {
@@ -91,31 +102,92 @@ describe('Protokolldatei', () => {
     expect(old).not.toContain('Then:    Eintrag 12');
     // Mehr als zwei Dateien gibt es nie.
     expect(fs.readdirSync(dir).sort()).toEqual(['language-servers.log', 'language-servers.old.log']);
+    // „Show Log“ bekommt erst das ersetzte, dann das aktuelle Protokoll.
+    expect(await log.readAll()).toBe(old + current);
   });
 
-  it('kürzt einen einzelnen Eintrag über der Grenze hinten', async () => {
-    const file = path.join(tempDir(), 'language-servers.log');
-    const log = new LanguageServerLog(file, { maxBytes: 1000 });
-    await log.append(entry({ stderr: { text: 'ü'.repeat(3000), truncated: false } }));
-    const text = fs.readFileSync(file, 'utf8');
-    expect(fs.statSync(file).size).toBeLessThanOrEqual(1000);
-    expect(text).toContain('Exit:    code 2');
-    expect(text).toContain('… (cut to fit the log size)');
-    expect(text).not.toContain('\uFFFD');
-  });
-
-  it('schreibt gleichzeitige Einträge nacheinander und meldet Fehler, statt zu werfen', async () => {
+  it('hängt den Eintrag an, auch wenn sich das Protokoll nicht ersetzen lässt', async () => {
+    // Ein nicht leerer Ordner, wo das ersetzte Protokoll hin soll: Das Umbenennen scheitert (wie unter Windows, wenn ein
+    // anderes Programm die Datei offen hält).
     const dir = tempDir();
     const file = path.join(dir, 'language-servers.log');
-    const log = new LanguageServerLog(file);
-    await Promise.all([1, 2, 3, 4, 5].map((i) => log.append(entry({ outcome: `Eintrag ${i}` }))));
+    const messages: string[] = [];
+    const log = new LanguageServerLog(file, { maxBytes: 1000, log: (m) => messages.push(m) });
+    fs.mkdirSync(log.oldFile);
+    fs.writeFileSync(path.join(log.oldFile, 'blockiert'), '');
+    await log.append(entry({ outcome: 'Eintrag 1' }));
+    await log.append(entry({ outcome: 'Eintrag 2', stderr: { text: `${'s'.repeat(700)}\n`, truncated: false } }));
     const text = fs.readFileSync(file, 'utf8');
-    for (let i = 1; i <= 5; i++) expect(text.split(`Then:    Eintrag ${i}\n`)).toHaveLength(2);
-    // Ein Ordner, wo die Datei liegen soll: Der Fehler landet im Protokoll von Codium.
+    expect(text).toContain('Then:    Eintrag 1');
+    expect(text).toContain('Then:    Eintrag 2');
+    expect(messages.join('\n')).toMatch(/Protokoll der Sprachserver nicht ersetzt, der Eintrag kommt trotzdem dazu/);
+  });
+
+  it('kürzt einen einzelnen Eintrag über der Grenze hinten, nie mitten in einem Zeichen', async () => {
+    // Mit 0, 1 bzw. 2 ASCII-Zeichen vor lauter „€“ (3 Bytes) fällt die Grenze an jede Stelle eines Zeichens.
+    for (const lead of ['', 'a', 'ab']) {
+      const file = path.join(tempDir(), 'language-servers.log');
+      const log = new LanguageServerLog(file, { maxBytes: 1000 });
+      await log.append(entry({ stderr: { text: lead + '€'.repeat(1000), truncated: false } }));
+      const text = fs.readFileSync(file, 'utf8');
+      expect(fs.statSync(file).size, `Vorlauf „${lead}“`).toBeLessThanOrEqual(1000);
+      expect(text).toContain('Exit:    code 2');
+      expect(text).toContain('€\n… (cut to fit the log size)');
+      expect(text.includes(String.fromCharCode(0xfffd)), `Vorlauf „${lead}“`).toBe(false);
+    }
+  });
+
+  it('schreibt gleichzeitige Einträge nacheinander, auch wenn das Protokoll dabei ersetzt wird', async () => {
+    // Je Datei passen zwei Einträge: Die Warteschlange muss Ersetzen und Anhängen nacheinander erledigen.
+    const dir = tempDir();
+    const file = path.join(dir, 'language-servers.log');
+    const one = Buffer.byteLength(formatEntry(entry({ outcome: 'Eintrag 1' })));
+    const log = new LanguageServerLog(file, { maxBytes: 2 * one + 10 });
+    await Promise.all([1, 2, 3, 4, 5, 6, 7].map((i) => log.append(entry({ outcome: `Eintrag ${i}` }))));
+    expect(fs.statSync(file).size).toBeLessThanOrEqual(2 * one + 10);
+    expect(fs.statSync(log.oldFile).size).toBeLessThanOrEqual(2 * one + 10);
+    const all = await log.readAll();
+    // Ganze Einträge in der Reihenfolge des Anhängens, ohne Lücke und mit dem letzten zuletzt.
+    const order = [...all.matchAll(/^Then:    Eintrag (\d)$/gm)].map((m) => Number(m[1]));
+    expect(order.length).toBeGreaterThanOrEqual(3);
+    expect(order).toEqual(order.map((_, i) => 8 - order.length + i));
+    expect(all.split('=== ').length - 1).toBe(order.length);
+    expect(all.split('--- end of stderr ---').length - 1).toBe(order.length);
+  });
+
+  it('meldet Fehler, statt zu werfen, und schreibt danach weiter, auch wenn die Meldung selbst scheitert', async () => {
+    const dir = tempDir();
+    // Ein Ordner, wo die Datei liegen soll: Der Fehler geht an `log`, nie als Ausnahme.
     const messages: string[] = [];
     const blocked = new LanguageServerLog(dir, { log: (m) => messages.push(m) });
     await expect(blocked.append(entry())).resolves.toBeUndefined();
     expect(messages.join('\n')).toMatch(/Protokoll der Sprachserver nicht geschrieben/);
     expect(await new LanguageServerLog(path.join(dir, 'fehlt.log')).read()).toBe('');
+    // Wirft auch `log`, bleibt die Warteschlange benutzbar: Ist der Weg frei, kommt der nächste Eintrag an.
+    const file = path.join(dir, 'später.log');
+    fs.mkdirSync(file);
+    const throwing = new LanguageServerLog(file, {
+      log: () => {
+        throw new Error('Meldung gescheitert');
+      },
+    });
+    await expect(throwing.append(entry({ outcome: 'Eintrag 1' }))).resolves.toBeUndefined();
+    fs.rmdirSync(file);
+    await expect(throwing.append(entry({ outcome: 'Eintrag 2' }))).resolves.toBeUndefined();
+    expect(fs.readFileSync(file, 'utf8')).toContain('Then:    Eintrag 2');
+  });
+
+  it('wartet beim Beenden auf vorbereitete Einträge, höchstens bis zur Frist', async () => {
+    const file = path.join(tempDir(), 'language-servers.log');
+    const log = new LanguageServerLog(file);
+    // Ein Eintrag, der erst nach 300 ms geschrieben wird (wie einer, der auf den Rest von stderr wartet).
+    log.track(new Promise<void>((resolve) => setTimeout(resolve, 300)).then(() => log.append(entry({ outcome: 'Eintrag spät' }))));
+    await log.idle(5000);
+    expect(fs.readFileSync(file, 'utf8')).toContain('Then:    Eintrag spät');
+    // Einer, der nie fertig wird, hält das Beenden höchstens bis zur Frist auf.
+    log.track(new Promise(() => {}));
+    const started = Date.now();
+    await log.idle(200);
+    expect(Date.now() - started).toBeLessThan(2000);
   });
 });

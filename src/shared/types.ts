@@ -747,7 +747,8 @@ export interface Commands {
   'app.readme': { params: void; result: { text: string } };
   /**
    * Das Protokoll der Sprachserver (Ticket 30): unerwartete Enden mit Exit-Code und dem Ende von stderr, für „Show Log“.
-   * `text` ist leer, solange es keines gibt.
+   * `text` ist erst das ersetzte (`language-servers.old.log`), dann das aktuelle Protokoll (`path`); leer, solange es
+   * keines gibt.
    */
   'app.languageServerLog': { params: void; result: { text: string; path: string } };
   /**

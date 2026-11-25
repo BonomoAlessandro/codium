@@ -817,6 +817,8 @@ export class LanguageService {
       ? `Not restarted: it stopped ${MAX_RESTARTS + 1} times within three minutes.`
       : `Restarting (restart ${server.crashes.length + 1} of ${MAX_RESTARTS} within three minutes).`;
     const logged = this.logStop(server, connection, launch, { code, signal, note, outcome });
+    // Beim Beenden wartet der App-Kern kurz darauf (`LanguageServerLog.idle`), damit ein letzter Absturz nicht fehlt.
+    this.options.serverLog?.track(logged);
     if (giveUp) {
       server.gaveUp = true;
       const actions: NoticeAction[] = [

@@ -7,8 +7,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MAX_RESTARTS } from '../../src/main/core/language/languageService';
+import type { ServerStopEntry } from '../../src/main/core/language/serverLog';
 import type { CommandArgs, CommandName, CommandResult, Notice } from '../../src/shared/types';
-import { createTestCore, type TestCore } from '../support/core';
+import { createTestCore, quitApp, type TestCore } from '../support/core';
 import { useTempDirs } from '../support/tempDir';
 
 const WELCOME = 'Welcome to Codium';
@@ -21,23 +22,28 @@ describe('Protokoll der Sprachserver und Neustart nach dem Aufgeben (Ticket 30)'
     return test.core.router.call({ windowId }, name, ...args);
   }
 
-  /** Ein Projekt mit TypeScript bis 6: Codium startet dafür den nachgemachten Server. */
-  async function openShapes(server: Record<string, string>, options: { serverLogMaxBytes?: number } = {}) {
-    const root = tempDir();
-    const project = path.join(root, 'Shapes');
+  /** TypeScript bis 6 im Projekt: Codium startet dafür den nachgemachten Server (`project-tsserver`). */
+  function withTypeScript5(project: string): void {
     fs.mkdirSync(path.join(project, 'node_modules', 'typescript', 'lib'), { recursive: true });
     fs.writeFileSync(path.join(project, 'node_modules', 'typescript', 'package.json'), JSON.stringify({ name: 'typescript', version: '5.9.3' }));
     fs.writeFileSync(path.join(project, 'node_modules', 'typescript', 'lib', 'tsserver.js'), '');
+  }
+
+  /** Ein Projekt mit TypeScript bis 6 und tsconfig.json (Kennzeichen): Der nachgemachte Server startet mit dem Projekt. */
+  async function openShapes(server: Record<string, string>) {
+    const root = tempDir();
+    const project = path.join(root, 'Shapes');
+    withTypeScript5(project);
     fs.writeFileSync(path.join(project, 'tsconfig.json'), '{}');
     const crashFile = path.join(root, 'crash');
     fs.writeFileSync(crashFile, '');
     const test = createTestCore(path.join(root, 'data'), {
       cleanupTimeoutMs: 10_000,
-      ...options,
       typescript: {
         nativeTsc: path.join(root, 'nicht-benutzt.exe'),
         languageServerCli: FAKE_SERVER,
-        node: { execPath: process.execPath, env: { FAKE_LSP_CRASH_FILE: crashFile, ...server } },
+        // Ohne Warnungen von Node (etwa zum Modultyp der .ts-Datei) steht auf stderr nur, was der Server schreibt.
+        node: { execPath: process.execPath, env: { NODE_NO_WARNINGS: '1', FAKE_LSP_CRASH_FILE: crashFile, ...server } },
       },
     });
     await test.core.start();
@@ -86,7 +92,7 @@ describe('Protokoll der Sprachserver und Neustart nach dem Aufgeben (Ticket 30)'
   it('nach dem Aufgeben: Meldung mit „Show Log“ und „Restart“; „Restart“ startet neu, die Definition geht wieder', async () => {
     // Der Server stürzt bei jedem `didOpen` ab, also auch nach jedem Neustart, sobald Codium ihm das offene Dokument
     // meldet; so wie ein Server, den ein Zustand im Projekt immer wieder zum Absturz bringt.
-    const { project, test, windowId, language, notices, crashFile } = await openShapes({}, { serverLogMaxBytes: 4000 });
+    const { project, test, windowId, language, notices, crashFile, logFile } = await openShapes({});
     const file = path.join(project, 'a.ts');
     await call(test, windowId, 'language.didOpen', { path: file, text: 'export const a = 1;\n', version: 1 });
     await expect.poll(() => notices().filter((n) => n.level === 'error').length, { timeout: 30_000 }).toBe(1);
@@ -99,15 +105,14 @@ describe('Protokoll der Sprachserver und Neustart nach dem Aufgeben (Ticket 30)'
     expect(language().typescriptPid).toBeUndefined();
     expect(await call(test, windowId, 'language.definition', { path: file, line: 0, character: 13 })).toEqual([]);
 
-    // „Show Log“ zeigt alle vier Enden, das letzte mit „Not restarted“. Mit 4000 Bytes Grenze wurde das Protokoll dabei
-    // ersetzt; das ältere liegt daneben.
+    // „Show Log“ zeigt alle vier Enden, das letzte mit „Not restarted“. (Das Ersetzen bei der Grössengrenze und die
+    // Reihenfolge von altem und aktuellem Protokoll prüft serverLog.test.ts.)
     const { text, path: logPath } = await call(test, windowId, 'app.languageServerLog');
-    expect(logPath).toBe(path.join(test.dataDir, 'logs', 'language-servers.log'));
-    expect(text).toContain(`Then:    Not restarted: it stopped ${MAX_RESTARTS + 1} times within three minutes.`);
-    expect(fs.statSync(logPath).size).toBeLessThanOrEqual(4000);
-    const all = text + fs.readFileSync(path.join(test.dataDir, 'logs', 'language-servers.old.log'), 'utf8');
-    expect(all.match(/stopped unexpectedly/g)).toHaveLength(MAX_RESTARTS + 1);
-    expect(all.match(/panic: fake crash after textDocument\/didOpen/g)).toHaveLength(MAX_RESTARTS + 1);
+    expect(logPath).toBe(logFile);
+    expect(text).toBe(fs.readFileSync(logFile, 'utf8'));
+    expect(text.match(/stopped unexpectedly/g)).toHaveLength(MAX_RESTARTS + 1);
+    expect(text.match(/panic: fake crash after textDocument\/didOpen/g)).toHaveLength(MAX_RESTARTS + 1);
+    expect(text.split('\n=== ').at(-1)).toContain(`Then:    Not restarted: it stopped ${MAX_RESTARTS + 1} times within three minutes.`);
 
     // „Restart“: Die Ursache ist weg, der Server startet neu, bekommt das offene Dokument und beantwortet die Definition.
     fs.rmSync(crashFile);
@@ -125,15 +130,55 @@ describe('Protokoll der Sprachserver und Neustart nach dem Aufgeben (Ticket 30)'
   });
 
   it('prüft die Parameter von „language.restart“ und startet ohne Dokument und Kennzeichen keinen Server', async () => {
-    const { root, test, windowId, language } = await openShapes({});
+    const { root, test, windowId, logFile } = await openShapes({});
     await expect(call(test, windowId, 'language.restart', { server: 'cobol' as never })).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
-    // Ein Projekt ohne Kennzeichen und ohne offenes Dokument: „Restart“ startet nichts.
+    // Ein Projekt ohne Kennzeichen (kein tsconfig.json, jsconfig.json, package.json) und ohne offenes Dokument, aber mit
+    // TypeScript 5: Ein Start nähme den nachgemachten Server. „Restart“ startet trotzdem nichts.
     const plain = path.join(root, 'Plain');
-    fs.mkdirSync(plain);
+    withTypeScript5(plain);
     await call(test, windowId, 'app.openProject', { path: plain });
     const plainWindow = test.ports.windows.windowTitled('Plain – Codium');
+    const plainLanguage = test.core.projectCore(plainWindow)!.language;
+    expect(plainLanguage.typescriptPid).toBeUndefined();
     await call(test, plainWindow, 'language.restart', { server: 'typescript' });
-    expect(test.core.projectCore(plainWindow)!.language.typescriptPid).toBeUndefined();
-    expect(language()).toBeDefined();
+    expect(plainLanguage.typescriptPid).toBeUndefined();
+    expect(plainLanguage.typescriptKind).toBeNull();
+    expect(fs.existsSync(logFile)).toBe(false);
+  });
+
+  it('meldet einen Eintrag, der noch auf den Rest von stderr wartet, beim Kern an; er steht nach dem Beenden im Protokoll', async () => {
+    // Nach dem Absturz hält ein Hilfsprozess stderr 1,5 s offen: Der Eintrag wartet bis 1 s darauf und wird erst danach
+    // geschrieben. Bis dahin kennt ihn der Kern als „in Vorbereitung“ und wartet beim Beenden darauf.
+    const { project, test, windowId, logFile } = await openShapes({ FAKE_LSP_CRASH_ON: 'textDocument/hover', FAKE_LSP_HOLD_STDERR_MS: '1500' });
+    const file = path.join(project, 'a.ts');
+    await call(test, windowId, 'language.didOpen', { path: file, text: 'export const a = 1;\n', version: 1 });
+    await call(test, windowId, 'language.hover', { path: file, line: 0, character: 13 });
+    await expect.poll(() => test.logs.some((l) => l.includes('abgestürzt')), { timeout: 15_000 }).toBe(true);
+    expect(fs.existsSync(logFile)).toBe(false);
+    expect(test.core.serverLog.preparingCount).toBe(1);
+    await quitApp(test);
+    expect(fs.readFileSync(logFile, 'utf8')).toContain('panic: fake crash after textDocument/hover');
+    expect(test.core.serverLog.preparingCount).toBe(0);
+  });
+
+  it('wartet beim Beenden auf Einträge in Vorbereitung, höchstens bis zur Frist', async () => {
+    // Ein Kern ohne Projekt beendet sich sofort; ein Eintrag, der erst nach 1,5 s geschrieben wird, fehlte sonst.
+    const test = createTestCore(path.join(tempDir(), 'data'), { cleanupTimeoutMs: 10_000 });
+    await test.core.start();
+    const late: ServerStopEntry = {
+      time: new Date(),
+      project: 'C:\\Projekte\\Shapes',
+      server: 'TypeScript',
+      kind: 'bundled-native',
+      command: 'tsc.exe',
+      args: ['--lsp', '--stdio'],
+      code: 2,
+      signal: null,
+      outcome: 'Restarting (restart 1 of 3 within three minutes).',
+      stderr: { text: 'panic: spät\n', truncated: false },
+    };
+    test.core.serverLog.track(new Promise((resolve) => setTimeout(resolve, 1500)).then(() => test.core.serverLog.append(late)));
+    await quitApp(test);
+    expect(fs.readFileSync(test.core.serverLog.file, 'utf8')).toContain('panic: spät');
   });
 });

@@ -9,10 +9,13 @@
 // Nachricht mit der Methode FAKE_LSP_CRASH_ON (Standard `textDocument/didOpen`) etwas auf stderr und endet mit dem
 // Exit-Code FAKE_LSP_EXIT_CODE (Standard 2). Auf stderr kommen FAKE_LSP_STDERR_LINES nummerierte Zeilen (Standard 3)
 // und zum Schluss eine Zeile wie bei einer Go-Panic. Ohne die Datei beantwortet er `textDocument/definition` mit einem
-// Ziel am Anfang des Dokuments.
+// Ziel am Anfang des Dokuments. Mit FAKE_LSP_HOLD_STDERR_MS hält ein Hilfsprozess stderr nach dem Absturz so lange offen
+// (wie ein Kindprozess eines echten Servers); Codium sieht dann das Ende des Servers vor dem Ende von stderr.
 // Node startet die Datei direkt (siehe processes.ts).
 
+import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 
 const log = process.env.FAKE_LSP_LOG ?? '';
 const initDelay = Number(process.env.FAKE_LSP_INIT_DELAY_MS ?? '0');
@@ -20,6 +23,7 @@ const crashFile = process.env.FAKE_LSP_CRASH_FILE ?? '';
 const crashOn = process.env.FAKE_LSP_CRASH_ON ?? 'textDocument/didOpen';
 const exitCode = Number(process.env.FAKE_LSP_EXIT_CODE ?? '2');
 const stderrLines = Number(process.env.FAKE_LSP_STDERR_LINES ?? '3');
+const holdStderrMs = Number(process.env.FAKE_LSP_HOLD_STDERR_MS ?? '0');
 const NL = String.fromCharCode(10);
 const HEADER_END = String.fromCharCode(13, 10, 13, 10);
 
@@ -38,6 +42,10 @@ function crash(method: string): void {
   const lines: string[] = [];
   for (let i = 1; i <= stderrLines; i++) lines.push(`stderr line ${String(i).padStart(6, '0')} of ${stderrLines}`);
   lines.push(`panic: fake crash after ${method} [pid ${process.pid}]`);
+  if (holdStderrMs > 0) {
+    // Der Hilfsprozess erbt stderr und endet von selbst; sein Arbeitsordner ist nicht der Projektordner (Löschen im Test).
+    spawn(process.execPath, ['-e', `setTimeout(() => {}, ${holdStderrMs})`], { stdio: ['ignore', 'ignore', 'inherit'], cwd: os.tmpdir(), windowsHide: true }).unref();
+  }
   process.stderr.write(lines.join(NL) + NL, () => process.exit(exitCode));
 }
 

@@ -69,6 +69,12 @@ import { cascadeFrom, placeWindow } from './windowPlacement';
 /** So lange wartet der Kern höchstens, bis ein Fenster vor dem Schliessen oder Beenden seine Tabs gespeichert hat. */
 export const DEFAULT_FLUSH_TIMEOUT_MS = 3000;
 
+/**
+ * So lange wartet der Kern beim Beenden höchstens auf Einträge im Protokoll der Sprachserver: Ein Eintrag wartet bis
+ * 1 s auf den Rest von stderr, dazu das Schreiben.
+ */
+const SERVER_LOG_SHUTDOWN_WAIT_MS = 2000;
+
 /** Titel des Willkommensfensters. */
 export const WELCOME_TITLE = 'Welcome to Codium';
 
@@ -115,8 +121,6 @@ export interface AppCoreOptions {
   mavenUserSettings?: string;
   /** Pfad zum mitgelieferten README (im Paket ausserhalb des App-Archivs), für „Open README“. */
   readmePath?: string;
-  /** Höchstgrösse des Protokolls der Sprachserver (Tests); ohne Angabe 1 MB. */
-  serverLogMaxBytes?: number;
   /** Umgebung für gestartete Programme (Git); ohne Angabe die des Prozesses. Tests schirmen damit die Git-Konfiguration ab. */
   processEnv?: NodeJS.ProcessEnv;
   log?: (message: string) => void;
@@ -156,10 +160,7 @@ export class AppCore {
   constructor(private readonly options: AppCoreOptions) {
     this.ports = options.ports;
     this.log = options.log ?? ((message) => console.error(message));
-    this.serverLog = new LanguageServerLog(path.join(options.dataDir, SERVER_LOG_FILE), {
-      ...(options.serverLogMaxBytes ? { maxBytes: options.serverLogMaxBytes } : {}),
-      log: this.log,
-    });
+    this.serverLog = new LanguageServerLog(path.join(options.dataDir, SERVER_LOG_FILE), { log: this.log });
     this.folders = new FolderQueries({ timeoutMs: options.folderQueryTimeoutMs });
     this.events = new BufferedEventSink(options.events);
     this.appStateFile = new StateFile(path.join(options.dataDir, APP_STATE_FILE), SCHEMA_VERSION, emptyAppState, {
@@ -439,6 +440,8 @@ export class AppCore {
       this.appStateFile.flush();
       const closing = [...this.projects.keys()].map((windowId) => this.closeProjectCore(windowId));
       await Promise.all([...closing, ...cancelling, ...this.disposals.values()]);
+      // Ein Absturz kurz vor dem Beenden soll im Protokoll der Sprachserver stehen; mit Obergrenze (Ticket 30, Review).
+      await this.serverLog.idle(SERVER_LOG_SHUTDOWN_WAIT_MS);
       this.appStateFile.flush();
     })();
     return this.shuttingDown;
@@ -520,7 +523,8 @@ export class AppCore {
       if (text === null) throw new CommandError('The README that comes with Codium was not found.', ErrorCode.fileNotFound);
       return { text };
     });
-    this.router.register('app.languageServerLog', async () => ({ text: await this.serverLog.read(), path: this.serverLog.file }));
+    // Erst das ersetzte, dann das aktuelle Protokoll: Nach einem Ersetzen fehlen so die ersten Abstürze einer Reihe nicht.
+    this.router.register('app.languageServerLog', async () => ({ text: await this.serverLog.readAll(), path: this.serverLog.file }));
     this.router.register('editor.flushed', (_ctx, params) => {
       const requestId = (params as { requestId?: unknown } | undefined)?.requestId;
       if (typeof requestId === 'number') this.flushWaiters.get(requestId)?.();

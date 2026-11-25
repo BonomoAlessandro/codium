@@ -46,8 +46,6 @@ export interface TestCoreOptions {
   mavenUserSettings?: string;
   /** Wartezeit beim Verbinden mit einer Datenbank (Ticket 20). */
   dbConnectTimeoutMs?: number;
-  /** Höchstgrösse des Protokolls der Sprachserver (Ticket 30). */
-  serverLogMaxBytes?: number;
 }
 
 /** Erzeugt einen App-Kern auf einem Datenordner, mit nachgemachten Ports und sofortigem Schreiben. */
@@ -73,7 +71,6 @@ export function createTestCore(dataDir: string, options: TestCoreOptions = {}): 
     ...(options.java ? { java: options.java } : {}),
     ...(options.mavenUserSettings ? { mavenUserSettings: options.mavenUserSettings } : {}),
     ...(options.dbConnectTimeoutMs ? { dbConnectTimeoutMs: options.dbConnectTimeoutMs } : {}),
-    ...(options.serverLogMaxBytes ? { serverLogMaxBytes: options.serverLogMaxBytes } : {}),
     folderQueryTimeoutMs: options.folderQueryTimeoutMs,
     log: (message) => logs.push(message),
   });

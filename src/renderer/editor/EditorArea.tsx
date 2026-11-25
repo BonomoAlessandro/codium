@@ -935,9 +935,20 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       const uri = monaco.Uri.from({ scheme: 'codium-doc', path: `/${doc.title}` });
       documentOrigins.current.set(key, doc.origin ?? 'comes with Codium');
       if (tabsRef.current.some((t) => pathKey(t.path) === key)) {
-        // Schon offen: mit dem neuen Text (etwa das Protokoll der Sprachserver nach einem weiteren Eintrag).
+        // Schon offen: mit dem neuen Text (etwa das Protokoll der Sprachserver nach einem weiteren Eintrag). Der neue Text
+        // ist der gespeicherte Stand; sonst gälte der schreibgeschützte Tab als ungespeichert (Review von Ticket 30).
         const model = monaco.editor.getModel(uri);
-        if (model && model.getValue() !== doc.text) model.setValue(doc.text);
+        const entry = models.current.get(key);
+        if (model && model.getValue() !== doc.text) {
+          model.setValue(doc.text);
+          if (entry?.model === model) {
+            if (entry.saveTimer !== null) window.clearTimeout(entry.saveTimer);
+            entry.saveTimer = null;
+            entry.savedVersion = model.getAlternativeVersionId();
+            entry.diskText = doc.text;
+          }
+          updateDirty(key);
+        }
       } else {
         monaco.editor.getModel(uri)?.dispose();
         const model = monaco.editor.createModel(doc.text, doc.language, uri);
@@ -949,7 +960,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
       }
       activate(docPath, { focus: true, ...(target ? { target } : {}) });
     },
-    [activate, addModel, setTabs],
+    [activate, addModel, setTabs, updateDirty],
   );
 
   /** Öffnet eine Vergleichsansicht als Tab; beim Vergleich mit dem Arbeitsordner lädt die Datei (unsichtbar) mit. */

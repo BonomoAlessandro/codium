@@ -126,12 +126,23 @@ describe('Sprachserver aufgegeben (Ticket 30)', () => {
       expect(await tabList(page).getByRole('tab', { name: 'language-servers.log' }).getAttribute('title')).toBe('language-servers.log – language server log (read-only)');
       await expect.poll(() => editorText(page)).toContain('TypeScript language server stopped unexpectedly');
       expect(await editorText(page)).toContain('Not restarted: it stopped 4 times within three minutes.');
-      const log = fs.readFileSync(path.join(dataFolder(dataRoot, false), 'logs', 'language-servers.log'), 'utf8');
+      const logFile = path.join(dataFolder(dataRoot, false), 'logs', 'language-servers.log');
+      const log = fs.readFileSync(logFile, 'utf8');
       expect(log.match(/stopped unexpectedly/g)).toHaveLength(4);
       const lastHeader = log.split('\n').reduce((last, line, i) => (line.startsWith('=== ') ? i : last), -1) + 1;
       expect(await page.getByLabel('Line and column', { exact: true }).innerText()).toBe(`${lastHeader}:1`);
       await page.keyboard.type('xyz');
       expect(await editorText(page)).not.toContain('xyz');
+      expect(await notice.count()).toBe(1);
+
+      // „Show Log“ ein zweites Mal, nachdem ein Eintrag dazukam: Der offene Tab bekommt den neuen Text und gilt nicht als
+      // ungespeichert (Review von Ticket 30). Der Eintrag kommt hier direkt in die Datei; der Kern liest sie bei jedem Klick.
+      const logTab = tabList(page).getByRole('tab', { name: 'language-servers.log' });
+      fs.appendFileSync(logFile, '=== 2026-11-25 10:00:00.000 – TypeScript language server stopped unexpectedly ===\nThen:    Nachtrag aus dem Test\n\n');
+      await notice.getByRole('button', { name: 'Show Log' }).click();
+      await expect.poll(() => editorText(page)).toContain('Nachtrag aus dem Test');
+      expect(await tabList(page).getByRole('tab').count()).toBe(2);
+      expect(await logTab.getAttribute('data-modified')).toBeNull();
       expect(await notice.count()).toBe(1);
 
       // „Restart“: Die Meldung geht zu, der Server läuft wieder, und Ctrl + Linksklick springt zur Definition.
@@ -141,6 +152,13 @@ describe('Sprachserver aufgegeben (Ticket 30)', () => {
       await tabList(page).getByRole('tab', { name: 'main.ts' }).click();
       await expect.poll(() => activeTab(page)).toBe('main.ts');
       await jumpToDefinition(page);
+
+      // Der Tab des Protokolls schliesst ohne die Rückfrage zu ungespeicherten Änderungen (der Knopf zeigt sich am aktiven Tab).
+      await logTab.click();
+      await expect.poll(() => activeTab(page)).toBe('language-servers.log');
+      await page.getByRole('button', { name: 'Close language-servers.log' }).click();
+      await expect.poll(() => logTab.count()).toBe(0);
+      expect(await page.getByRole('dialog').count()).toBe(0);
     } finally {
       await codium.close();
     }
