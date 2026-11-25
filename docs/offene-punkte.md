@@ -81,7 +81,7 @@ erklären die Hintergründe.
 
 ## Wackelige Tests (beobachten)
 
-Stand 2026-11-24, nach Ticket 27. Gelegentlich rot, einzeln jeweils grün:
+Stand 2026-11-25, nach Ticket 28. Gelegentlich rot, einzeln jeweils grün:
 
 - Langsam: „Gradle 8: Import mit dem Wrapper …“. Einmal im vollen Lauf (2026-11-23) nach erfolgreichem Import 240 s
   ohne Definition; das Protokoll des Gradle-Daemons war unauffällig, einzeln 5 von 5 grün. Eine Zeitüberschreitung
@@ -94,7 +94,14 @@ Stand 2026-11-24, nach Ticket 27. Gelegentlich rot, einzeln jeweils grün:
   (`editor.test.ts`) und „lädt eine von aussen geänderte Datei still neu …“ (`save.test.ts`); kein Standby, kein
   fremder Build. Einzeln danach `editor.test.ts` 3 von 3 grün, `save.test.ts` 6 von 7 (der rote Einzellauf traf einen
   dritten Test, seine Meldung ist nicht festgehalten). Ein dritter voller UI-Lauf vor dem Merge war grün (90 von 90).
-  Häufiger als bisher; beobachten.
+  Häufiger als bisher; beobachten. Am 2026-11-25 (Ticket 28, nach dem Review) wieder einmal in einem vollen Lauf, in
+  „listet bei vielen Tabs alle über den Pfeil“ (`editorKeys.test.ts`); kein Standby, einzeln 3-mal 5 von 5 grün.
+- UI: „setzt mit „Rollback…“ nach Rückfrage den alten Inhalt zurück …“ (`commit.test.ts`) und „findet mit Ctrl + Shift +
+  F Text im Projekt …“ (`search.test.ts`): Die Datei war nach 1 s noch nicht zurückgesetzt bzw. die Trefferliste nach
+  1 s noch leer. Am 2026-11-25 (Ticket 28) „Rollback“ in zwei vollen Läufen (einer mit Standby am Ende, einer ohne),
+  die Suche in einem; einzeln jeweils grün. Ursache: `expect.poll` wartete im UI-Lauf ohne eigene Angabe nur 1 s, und
+  das galt für rund 300 der knapp 400 Abfragen. Seit Ticket 28 wartet es dort 5 s (`vitest.ui.config.mts`); eine
+  Abfrage endet weiterhin, sobald ihre Bedingung gilt. Beobachten, ob die beiden damit ruhig sind.
 - UI: „TypeScript: Ctrl + Klick auf die Deklaration zeigt die Verwendungen“ (Auswahl erscheint nicht innert 30 s);
   auch einzeln etwa 1 von 4 Mal direkt nach einem vollen Lauf, danach mit Diagnose 16 Mal grün.
 - UI: einzelne Zeitüberschreitungen im Dateibaum, im Terminal und im zeitbasierten Hinweis-Test (layout).

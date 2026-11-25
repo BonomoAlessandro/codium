@@ -13,6 +13,10 @@ export default defineConfig({
     globalSetup: ['test/support/finalCheck.ts', 'test/support/warmBuild.ts'],
     testTimeout: 90_000,
     hookTimeout: 90_000,
+    // expect.poll wartet ohne eigene Angabe nur 1 s. Das war auf dem Entwicklungsrechner mehrmals zu knapp, etwa für
+    // die Treffer der Projektsuche oder das Zurücksetzen einer Datei nach „Rollback“ (Ticket 28, offene-punkte.md).
+    // Eine Abfrage endet, sobald ihre Bedingung gilt; länger dauert nur ein Test, der ohnehin scheitert.
+    expect: { poll: { timeout: 5_000 } },
     fileParallelism: false,
   },
 });
