@@ -347,6 +347,9 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
 
 - **Fensterrahmen:** Die Kopfzeile wird von Codium selbst gezeichnet; die Fensterknöpfe von Windows bleiben über die Titelleisten-Überlagerung von Electron erhalten. Der Fenstertitel in der Taskleiste lautet „Projektname – Codium“.
 - **Kopfzeile:** links das Projektmenü (Projektname mit Pfeil), daneben das Branch-Menü (Branchname, voraus/zurück). In einem Ordner ohne Git-Repository fehlt das Branch-Menü.
+  - Der Projektname ist höchstens 280 px breit, der Branchname doppelt so breit, also höchstens 560 px (Ticket 31). Längere Namen werden mit „…“ gekürzt; der Tooltip nennt den vollen Namen, beim Branch mit Upstream.
+  - Ist das Fenster schmal, wird der Branchname weiter gekürzt. Rechts bleibt immer ein Stück Zieh-Fläche frei (48 px), und nichts reicht unter die Fensterknöpfe.
+  - Die Breiten stehen als Design-Variablen in `tokens.css`.
 - **Werkzeugfenster:**
   - Symbolleisten links und rechts wie im neuen IntelliJ: links oben „Project“ und „Commit“, links in der unteren Gruppe „Terminal“, „Git“ und „Find“, rechts „Database“. Die Symbole der unteren Gruppe öffnen ihr Werkzeugfenster unten.
   - Pro Seite ist höchstens ein Werkzeugfenster sichtbar; ein Klick auf das Symbol des sichtbaren Fensters schliesst es, ein Klick auf ein anderes wechselt.
@@ -493,6 +496,14 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
   - **Remote-Branch auschecken** legt einen lokalen Branch gleichen Namens an, der dem Remote-Branch folgt. Gibt es den lokalen Namen schon, checkt Codium diesen aus.
   - **Rename** benennt einen lokalen Branch um.
   - **Delete** löscht einen lokalen Branch. Ist er nicht gemerged, verweigert Git, Codium fragt nach und löscht dann erzwungen. Der aktuelle Branch lässt sich nicht löschen.
+- **Branch-Menü** (Dropdown unter dem Branch-Knopf, Tickets 25 und 31): Titelzeile mit „Fetch“, Suchfeld, die Aktionen „Pull“, „Commit…“, „Push…“ und „New Branch…“, darunter die Bereiche „Recent“, „Local“ und „Remote“. Jede Branchzeile hat ein Untermenü (lokal „Checkout“, „New Branch from …“, „Rename…“, „Delete“; remote „Checkout“, „New Branch from …“); der aktuelle Branch trägt das gelbe Etikett, voraus und zurück stehen als farbige Pfeile.
+  - **Recent:** die letzten 5 ausgecheckten lokalen Branches, der neueste zuerst, mit vollem Namen. Der aktuelle Branch zählt nicht mit, gelöschte fallen weg (dafür rücken ältere nach), losgelöste Stände zählen nicht. Ohne Eintrag fehlt der Bereich samt Überschrift. Ein Branch kann zugleich unter „Recent“ und „Local“ stehen.
+    - Quelle ist der Reflog von HEAD: Aus „checkout: moving from <vorher> to <nachher>“ zählt der verlassene Stand, wie bei Git selbst für `@{-1}`. So zählen auch Wechsel im Terminal oder in anderen Werkzeugen, und Codium speichert nichts.
+    - Der Git-Dienst liest höchstens die letzten 512 KB der Datei (2'500 bis 4'000 Einträge), weil Git für `git log -g` immer den ganzen Reflog liest. Ohne Datei (Ref-Speicher „reftable“) fragt er Git nach den neuesten 3'000 Einträgen.
+  - **Ordner:** Unter „Local“ und „Remote“ bildet ein „/“ im Namen Ordner wie in IntelliJ: `feature/login` steht als „login“ im Ordner „feature“, mehrere Ebenen ergeben verschachtelte Ordner. Bei Remote-Branches ist das Remote die erste Ebene, auch bei nur einem Remote (wie in IntelliJ). Je Ebene stehen Ordner vor Branches, beides alphabetisch ohne Rücksicht auf Gross und Klein, Zahlen nach ihrem Wert. Untermenü, Checkout und Tooltip arbeiten mit dem vollen Namen.
+  - **Auf- und Zuklappen** mit Klick, Enter oder Pfeil rechts bzw. links; Pfeil rechts auf einem offenen Ordner geht zum ersten Eintrag, Pfeil links auf einem Branch im Ordner zum Ordner. Pfeil rechts auf einer Branchzeile öffnet ihr Untermenü. Zuklappen schliesst auch die Ordner darin. Beim Öffnen des Dropdowns sind die Ordner offen, die beim letzten Mal offen waren (das Projektfenster merkt sie sich für die Sitzung, gespeichert wird nichts), und dazu die Ordner des aktuellen Branches.
+  - **Suchen** filtert über den vollen Namen, in allen Bereichen: `feat` findet auch `feature/login`. Während gefiltert wird, sind alle Ordner mit Treffern offen und zeigen nur die Treffer; Ordner und Bereiche ohne Treffer verschwinden. Nach dem Leeren des Suchfelds gilt wieder der gemerkte Zustand.
+  - **Breite:** Das Dropdown folgt dem Inhalt, mindestens 380 px, höchstens 680 px, und bleibt im Fenster. Solange es offen ist, wird es beim Aufklappen höchstens breiter, nie schmaler.
 - **Fetch** holt von allen Remotes und entfernt Remote-Branches, die es auf dem Server nicht mehr gibt (siehe Präzisierungen). Es gibt keinen automatischen Fetch.
 - **Pull** holt und führt zusammen nach der Git-Konfiguration des Nutzers. Codium gibt keine Strategie vor.
 - **Push:**
@@ -741,7 +752,7 @@ Für Teststelle 2 und jede automatische Prüfung der echten App gibt es einen Te
   - Ctrl + Shift + N und Ctrl + Shift + F finden und öffnen an der richtigen Stelle
   - Änderungsansicht zeigt eine geänderte und eine neue Datei, Commit mit Auswahl (auch Ctrl + K mit Fokus im Editor), Vergleichsansicht per Doppelklick, Rollback mit Rückfrage
   - Änderungsbalken erscheinen nach dem Tippen, Block zurücksetzen
-  - Branch-Menü: neuen Branch anlegen, wechseln, Push ohne Upstream (auch Ctrl + Shift + K mit Fokus im Editor)
+  - Branch-Menü: neuen Branch anlegen, wechseln, Push ohne Upstream (auch Ctrl + Shift + K mit Fokus im Editor); Ordner, Tastatur, Suchen und „Recent“ im Dropdown, Breite des Branchnamens in der Kopfzeile (Ticket 31)
   - Git-Log zeigt Commits mit Graph, Details eines Commits
   - Terminal öffnet im Projektordner mit cmd und führt einen Befehl aus
   - Datenbank (embedded-postgres): Verbindung anlegen, Tabelle öffnen, Zellen ändern, Submit

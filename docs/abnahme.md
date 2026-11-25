@@ -159,6 +159,10 @@ Geprüft wird die installierte App (`release\Codium Setup <version>.exe`), ausse
 - [ ] Das Branch-Dropdown bedient sich wie das von IntelliJ, mit Maus und Tastatur: öffnet unter dem Branch-Knopf, Untermenü rechts daneben beim Überfahren, mit Enter oder Pfeil rechts, Pfeil links und Escape schliessen. (25)
 - [ ] Ein Klick auf die leere Kopfzeile schliesst das Branch-Dropdown. (Unter Windows erreicht ein Klick auf die Zieh-Fläche die Seite womöglich nicht.) (25)
 - [ ] Die Symbole sind bei 100 % und 150 % Skalierung klar und eindeutig. (25)
+- [ ] Lange Branchnamen sind in der Kopfzeile ganz lesbar. (31)
+- [ ] Im Branch-Dropdown finden sich Branches in den Ordnern `feature`, `bugfix` usw. so schnell wie in IntelliJ. (31)
+- [ ] Unter „Recent“ stehen die Branches, zwischen denen ich zuletzt gewechselt habe. (31)
+- [ ] Im schmalen Fenster mit langem Branchnamen lässt sich das Fenster rechts neben dem Branch-Knopf noch an der Kopfzeile ziehen. (31)
 
 ## Frischer Rechner bzw. Windows-Benutzer (22)
 

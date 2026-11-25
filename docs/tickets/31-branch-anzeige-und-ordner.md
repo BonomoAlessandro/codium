@@ -93,7 +93,7 @@ Dieses Ticket kam nach Ticket 30 dazu, auf Wunsch des Nutzers. Es geht um drei V
 
 ## Akzeptanzkriterien
 
-- [ ] Einheitstests für das Bilden der Zeilen:
+- [x] Einheitstests für das Bilden der Zeilen:
   - Präfixe werden zu Ordnern, auch verschachtelt.
   - Branches ohne `/` bleiben oben.
   - Remote-Branches stehen unter ihrem Remote bzw. nach der gewählten Regel.
@@ -101,36 +101,79 @@ Dieses Ticket kam nach Ticket 30 dazu, auf Wunsch des Nutzers. Es geht um drei V
   - Die Ordner des aktuellen Branches sind offen.
   - Ein Filter öffnet Ordner mit Treffern und blendet die übrigen aus.
   - Ein zugeklappter Ordner klappt seine Unterordner mit zu.
-- [ ] Ein Playwright-Test im Testmodus mit einem Repository mit `main`, `feature/a`, `feature/b`, `bugfix/c` und einem Remote prüft:
+- [x] Ein Playwright-Test im Testmodus mit einem Repository mit `main`, `feature/a`, `feature/b`, `bugfix/c` und einem Remote prüft:
   - Ordner „feature“ und „bugfix“ erscheinen.
   - Ein Klick klappt auf.
   - Der Checkout von `feature/a` über die Zeile im Ordner gelingt.
   - Danach zeigt die Kopfzeile `feature/a`.
-- [ ] Ein Playwright-Test prüft die Tastatur: Pfeile und Enter auf Ordnern, Pfeil links springt zum Ordner, Pfeil rechts auf einer Branchzeile öffnet das Untermenü.
-- [ ] Ein Playwright-Test prüft das Suchen: `feat` zeigt nur die Treffer in einem offenen Ordner „feature“.
-- [ ] Ein Playwright-Test prüft die Breite: Ein Branchname, der länger ist als 280 px und kürzer als 560 px, steht ungekürzt im Branch-Knopf. Ein noch längerer wird gekürzt. Der Projektname bleibt bei höchstens 280 px.
-- [ ] Einheitstests für „Recent“:
+- [x] Ein Playwright-Test prüft die Tastatur: Pfeile und Enter auf Ordnern, Pfeil links springt zum Ordner, Pfeil rechts auf einer Branchzeile öffnet das Untermenü.
+- [x] Ein Playwright-Test prüft das Suchen: `feat` zeigt nur die Treffer in einem offenen Ordner „feature“.
+- [x] Ein Playwright-Test prüft die Breite: Ein Branchname, der länger ist als 280 px und kürzer als 560 px, steht ungekürzt im Branch-Knopf. Ein noch längerer wird gekürzt. Der Projektname bleibt bei höchstens 280 px.
+- [x] Einheitstests für „Recent“:
   - höchstens 5;
   - der neueste zuerst;
   - ohne aktuellen Branch;
   - ohne gelöschte Branches, dafür rücken ältere nach;
   - ohne losgelöste Stände;
   - doppelte Wechsel ergeben nur einen Eintrag.
-- [ ] Ein Playwright-Test prüft „Recent“:
+- [x] Ein Playwright-Test prüft „Recent“:
   - Nach den Wechseln `main` → `feature/a` → `bugfix/c` → `main` stehen unter „Recent“ `bugfix/c` und `feature/a`, in dieser Reihenfolge.
   - Ein gelöschter Branch erscheint dort nicht mehr.
   - Der Checkout über eine Zeile in „Recent“ gelingt.
-- [ ] Die bestehenden Tests zum Branch-Menü bleiben grün oder sind sinngemäss angepasst.
-- [ ] `npm run typecheck`, `npm test` und `npm run test:ui` sind grün.
+- [x] Die bestehenden Tests zum Branch-Menü bleiben grün oder sind sinngemäss angepasst.
+- [ ] `npm run typecheck`, `npm test` und `npm run test:ui` sind grün. (typecheck und `npm test` grün; im UI-Lauf 94 von 95, rot nur der bekannte wackelige TypeScript-Test, einzeln grün; siehe „Umsetzung“)
 
 ## Abnahme von Hand
 
 - [ ] Lange Branchnamen sind in der Kopfzeile ganz lesbar.
 - [ ] Im Dropdown finden sich Branches in den Ordnern `feature`, `bugfix` usw. so schnell wie in IntelliJ.
 - [ ] Unter „Recent“ stehen die Branches, zwischen denen ich zuletzt gewechselt habe.
+- [ ] Im schmalen Fenster mit langem Branchnamen lässt sich das Fenster rechts neben dem Branch-Knopf noch an der Kopfzeile ziehen. (ergänzt bei der Umsetzung)
 
 ## Hinweise
 
 - Die Spielregeln gelten: Die App nur über die Testläufe bzw. `launchCodium` starten, nie direkt. Keine echten Eingaben an den Desktop.
 - Testrepositories entstehen im Temp-Ordner des Laufs. Nie gegen ein echtes Remote pushen oder fetchen.
 - Ticket 29 ändert das Zuklappen im Dateibaum. Das Verhalten der Ordner im Dropdown soll dazu passen.
+
+## Umsetzung (Agent, 2026-11-25)
+
+- **Branch-Anzeige in der Kopfzeile:**
+  - Die Breiten stehen als Design-Variablen in `tokens.css`: `--header-label-max-width: 280px` für den Projektnamen und `--header-branch-label-max-width: calc(2 * var(--header-label-max-width))`, also 560 px, für den Branchnamen (eigene Regel `.branch-widget .header-widget-label` in `app.css`).
+  - **Schmales Fenster:** Das Branch-Menü darf schrumpfen (`min-width: 0` an `.header-branch` und `.branch-widget`), der Name wird dann mit „…“ gekürzt. Rechts in der Kopfzeile bleiben immer 48 px Zieh-Fläche frei (`--header-drag-min-width` als Innenabstand von `.header-content`). Der Projektname gibt wie bisher nicht nach. Bei der kleinsten Fensterbreite (720 px) bleiben für einen langen Branchnamen gut 130 px.
+  - Der Tooltip mit vollem Namen und Upstream ist unverändert.
+- **Breite des Dropdowns:** Es folgt dem Inhalt (`width: max-content`), mindestens 380 px, höchstens 680 px (`--branch-dropdown-min-width`, `--branch-dropdown-max-width`), und bleibt im Fenster.
+  - 680 px, weil eine Branchzeile neben dem Namen etwa 100 px für Pfeilspalte, Symbol, Abstände und den Pfeil zum Untermenü braucht: So steht ein Name, der in der Kopfzeile ganz steht (bis 560 px), auch unter „Recent“ oder direkt unter „Local“ ganz. Der Upstream daneben wird zuerst gekürzt.
+  - Damit das Dropdown beim Tippen, Auf- und Zuklappen nicht springt, wird es, solange es offen ist, nur breiter, nie schmaler. Nach dem Verkleinern des Fensters bemisst es sich neu.
+- **Ordner:**
+  - **Reine Funktion** `src/renderer/git/branchRows.ts`: `branchRows(branches, query, expanded)` gibt die sichtbaren Zeilen (Überschrift, Ordner, Branch) mit Ebene zurück; dazu `filterFolders`, `withCurrentBranchOpen`, `expandFolder`, `collapseFolder` und `parentRow`. `BranchPopup.tsx` zeichnet nur und hält den Zustand. Ein Ordner heisst nach Bereich und Pfad, etwa `local:feature/team-a` oder `remote:origin/feature`.
+  - **Ebene des Remotes:** Sie bleibt auch bei nur einem Remote. In IntelliJ steht unter „Remote“ der Knoten „origin“, darunter die Ordner der Präfixe; der Name wird dort wie bei lokalen Branches an jedem „/“ geteilt. Das stammt aus der Erinnerung an IntelliJ; der Versuch, es im Quelltext von IntelliJ Community nachzulesen, brachte kein Ergebnis. Unabhängig davon spricht dafür: Der Pfad der Zeile entspricht dem vollen Namen, nach dem auch das Suchfeld filtert (`origin/feature/a`). Mit einem zweiten Remote ordnet sich nichts um. Und zugeklappt ist „Remote“ eine einzige Zeile, auch bei hundert Remote-Branches.
+  - **Reihenfolge:** Je Ebene stehen die Ordner vor den Branches, beides alphabetisch ohne Rücksicht auf Gross und Klein, Zahlen nach ihrem Wert (`release/1.9` vor `release/1.10`); bei Gleichstand entscheiden die Zeichen. Bisher galt die Reihenfolge von Git (nach Bytes, Grossbuchstaben zuerst). Favoriten, die IntelliJ mit Stern nach oben stellt (standardmässig `main` bzw. `master`), gibt es in Codium nicht. Der aktuelle Branch bleibt an seinem Platz und trägt sein Etikett.
+  - **Darstellung wie im Dateibaum:** Ordner mit Pfeil und Ordnersymbol, 16 px Einzug je Ebene; Branchzeilen haben eine leere Pfeilspalte, damit die Symbole in allen Bereichen bündig stehen. Eine Branchzeile im Ordner zeigt den Namen ohne Präfix; zugänglicher Name, Tooltip, Untermenü und Aktionen nutzen den vollen Namen. Ordnerzeilen sind wählbare Einträge der Liste mit `aria-expanded`.
+  - **Bereiche als Gruppen:** „Recent“, „Local“ und „Remote“ sind Gruppen (`role="group"`) mit ihrem Namen, für Screenreader und für Tests. Nötig wurde das, weil ein Branch jetzt in „Recent“ und unter „Local“ zugleich stehen kann.
+  - **Offene Ordner:** Das Projektfenster merkt sie sich für die Sitzung (`ProjectWindow.tsx`, ohne Speichern). Beim Öffnen kommen die Ordner des aktuellen Branches dazu, damit er sichtbar ist; klappt der Nutzer einen davon zu, ist er beim nächsten Öffnen wieder offen. Zuklappen entfernt auch alle Unterordner aus dem gemerkten Zustand, wie im Dateibaum nach Ticket 29.
+  - **Suchen:** Beim Filtern sind zunächst alle Ordner mit Treffern offen. Klappt der Nutzer dabei einen zu, gilt das nur für diesen Suchtext; nach dem Leeren des Suchfelds gilt wieder der gemerkte Zustand.
+  - **Tastatur:** wie im Dateibaum. Pfeil rechts klappt einen Ordner auf und geht auf einem offenen zum ersten Eintrag; Pfeil links klappt zu und springt sonst zum Ordner darüber. Auf Zeilen ohne Ordner und auf den Aktionen bewegen Pfeil rechts und links wie bisher die Schreibmarke im Suchfeld (ausser Pfeil rechts auf einem Branch, der sein Untermenü öffnet).
+- **„Recent“:**
+  - **Quelle:** der Reflog von HEAD, wie vorgeschlagen; kein eigener Verlauf im Projekt-Zustand. Gezählt wird aus „checkout: moving from <vorher> to <nachher>“ der verlassene Stand, so wie Git selbst `@{-1}` und `git checkout -` bestimmt. Der Name nach „to“ ist nur das Argument des Befehls: Nach `git checkout --detach main` stünde dort „main“, obwohl HEAD an keinem Branch hing. Nach „from“ steht dagegen der Branch, an dem HEAD wirklich hing, bei einem losgelösten Stand dessen voller Hash. Ausserdem zählt so auch der Branch, auf dem ein Klon begann. Gezeigt werden nur lokale Branches, die es noch gibt, ohne den aktuellen, jeder einmal, höchstens 5.
+  - **Wo:** reine Funktion `src/main/core/git/recentBranches.ts` im Kern; der Git-Dienst liefert das Ergebnis mit `git.branches` (Vertrag: neues Feld `GitBranches.recent`) und liest den Reflog gleichzeitig mit den Refs.
+  - **Begrenzung, gemessen** mit Git 2.48 an einem Reflog mit 200'000 Einträgen (28 MB), je zwei Läufe: `git log -g -n 1000` 0,76 und 0,96 s, mit `--grep-reflog` und `-n 100` 1,0 und 1,7 s, `git reflog show -n 1000` 0,8 und 1,7 s, der ganze Reflog 1,2 und 1,8 s. Git liest also immer den ganzen Reflog; `-n` begrenzt nur die Ausgabe. Deshalb liest der Dienst die Datei `logs/HEAD` im Git-Verzeichnis selbst (bei einem Worktree dessen eigenes), höchstens die letzten 512 KB, je nach Länge der Nachrichten 2'500 bis 4'000 Einträge, in wenigen Millisekunden. Er schneidet an einem Zeilenende; eine letzte Zeile, die Git gerade noch schreibt, zählt nicht. Ältere Wechsel zählen nicht mehr; Git selbst entfernt Einträge ohnehin nach 90 Tagen.
+  - **Ohne Datei:** Gibt es noch keinen Eintrag (etwa ohne Commit), ist „Recent“ leer. Liegen die Refs im Ref-Speicher „reftable“ (Ordner `reftable` im Git-Verzeichnis; seit Git 2.45 wählbar), fragt der Dienst Git nach den neuesten 3'000 Einträgen (`git log -g --format=%gs -n3000 HEAD`).
+- **Abweichungen und Auslegung:**
+  - „Branches ohne `/` bleiben oben“ (Akzeptanzkriterien) ist wie unter „Was gebaut wird“ verstanden: Sie stehen direkt unter „Local“ bzw. „Remote“, auf der obersten Ebene. Innerhalb dieser Ebene stehen sie nach den Ordnern.
+  - Ergänzt: ein Punkt in „Abnahme von Hand“ und in `docs/abnahme.md`, dass sich das schmale Fenster rechts neben dem Branch-Knopf noch ziehen lässt. Das Ziehen lässt sich nicht automatisch prüfen; der UI-Test prüft nur, dass die 48 px frei bleiben.
+  - Testhilfe: `createRepoWithRemote` nimmt optional den Ordnernamen der Arbeitskopie (für den langen Projektnamen im Breitentest).
+- **Tests:**
+  - Schneller Lauf: `test/renderer/branchRows.test.ts` (8 Tests: Ordner auch verschachtelt, Branches ohne `/` auf der obersten Ebene, Remote unter seinem Remote auch bei nur einem, Reihenfolge, Ordner des aktuellen Branches, Filter, Zuklappen samt Unterordnern, „Recent“, Elternordner). `test/main/recentBranches.test.ts` (9 Tests: höchstens 5, neuester zuerst, ohne aktuellen, ohne gelöschte mit Nachrücken, ohne losgelöste Stände, Doppeltes einmal, fremde Einträge, Lesen der Reflog-Zeilen, Lesen nur des Endes der Datei). `test/main/git.test.ts`: zwei neue Tests am Git-Dienst (Wechsel über Codium und im Terminal, losgelöst, gelöscht, Umlaut im Namen; Ref-Speicher „reftable“), der Test ohne Commit prüft jetzt das ganze Ergebnis.
+  - UI-Lauf: `test/ui/branchFolders.test.ts` mit 5 Tests: Ordner, Aufklappen, Checkout über die Zeile im Ordner und gemerkte Ordner; Tastatur; Suchen; „Recent“ mit Löschen und Checkout; Breite samt schmalem Fenster und Breite des Dropdowns. Die Namen im Breitentest sind so gewählt, dass die Pfade unter `.git/refs` die Grenze von Windows (260 Zeichen) nicht erreichen; ein erster Entwurf scheiterte daran.
+  - Angepasst: `test/ui/git.test.ts` wählt `main` beim Suchen unter „Local“, weil es nun auch unter „Recent“ steht. `test/ui/branchDropdown.test.ts` blieb unverändert grün.
+- **Testläufe** (2026-11-25, nacheinander und allein auf dem Rechner):
+
+  | Lauf | Ergebnis | Dauer |
+  |---|---|---|
+  | `npm run typecheck` | grün | wenige Sekunden |
+  | `npm test` | 475 von 475 grün (54 Dateien) | 100 s |
+  | `npm run test:ui` | 94 von 95 grün (27 Dateien) | 565 s |
+  | `test/ui/typescript.test.ts` einzeln danach | 1 von 1 grün | 38 s |
+
+  Rot war im UI-Lauf nur „springt mit Ctrl + Linksklick zur Definition, zeigt auf der Deklaration die Verwendungen, Alt + F7 füllt „Find““ (`typescript.test.ts:106`, die Auswahl der Verwendungen erschien nicht innert 30 s). Das ist der bekannte wackelige Test aus `docs/offene-punkte.md`; er berührt das Branch-Menü nicht und lief einzeln grün. Alle Tests zum Branch-Menü (`branchFolders`, `branchDropdown`, `git`) waren im vollen Lauf grün, vorher auch in einem eigenen Lauf (10 von 10). Das Vorlesen der gebauten App meldete `mermaid.js` mit 18,9 s (Virenscanner). Das Kriterium „`npm run test:ui` grün“ bleibt deshalb offen, bis ein voller Lauf ganz grün ist.
