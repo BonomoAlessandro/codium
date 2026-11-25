@@ -38,7 +38,8 @@ describe('Git: Branches und Konsole', () => {
       // Zurück auf main über das Untermenü des Branches; das Suchfeld findet ihn.
       await branchButton(page, 'feature-x').click();
       await popup.getByRole('textbox', { name: 'Search branches' }).fill('mai');
-      await popup.getByRole('option', { name: 'main', exact: true }).click();
+      // main steht auch unter „Recent“ (Ticket 31); hier die Zeile unter „Local“.
+      await popup.getByRole('group', { name: 'Local' }).getByRole('option', { name: 'main', exact: true }).click();
       await page.getByRole('menuitem', { name: 'Checkout', exact: true }).click();
       await branchButton(page, 'main').waitFor();
 

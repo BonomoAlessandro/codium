@@ -1,6 +1,7 @@
 // Kopfzeile des Projektfensters, von Codium gezeichnet: links das Projektmenü (Projektname mit Pfeil), daneben der
 // Platz für das Branch-Menü (Ticket 15). Die Kopfzeile ist die Zieh-Fläche des Fensters (Verschieben, Doppelklick
-// maximiert); rechts liegen die Fensterknöpfe von Windows als Überlagerung darüber.
+// maximiert); rechts liegen die Fensterknöpfe von Windows als Überlagerung darüber. Der Branchname darf doppelt so
+// breit werden wie der Projektname und wird bei schmalem Fenster zuerst gekürzt (Ticket 31, Breiten in tokens.css).
 
 import { useRef, useState } from 'react';
 import type { CodiumApi, GitState, ProjectInfo } from '../../shared/types';

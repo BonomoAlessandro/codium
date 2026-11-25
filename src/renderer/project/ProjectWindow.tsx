@@ -151,6 +151,8 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
   const gitAvailable = useGitAvailable(api);
   /** Der Branch-Knopf, unter dem das Branch-Dropdown offen ist (Ticket 25); `null`, wenn es zu ist. */
   const [branchAnchor, setBranchAnchor] = useState<HTMLElement | null>(null);
+  /** Die offenen Ordner im Branch-Dropdown (Ticket 31), für die Dauer der Sitzung gemerkt, nicht gespeichert. */
+  const branchFolders = useRef<ReadonlySet<string>>(new Set());
   const ask = useAsk();
   const askText = useAskText();
   /** Zeigt das Werkzeugfenster „Commit“ mit dem Fokus in der Nachricht. */
@@ -893,6 +895,10 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
           state={gitState}
           actions={branchActions}
           anchor={branchAnchor}
+          openFolders={branchFolders.current}
+          onOpenFoldersChange={(folders) => {
+            branchFolders.current = folders;
+          }}
           onClose={(reason) => {
             setBranchAnchor(null);
             // Nach Escape und vor einer Aktion sofort an den Knopf: Dialoge (etwa „New Branch…“) merken ihn sich so als

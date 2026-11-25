@@ -9,6 +9,15 @@
   --font-mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
 
   --header-height: 40px;
+  /* Höchste Breite der Beschriftung in der Kopfzeile: Projektname; der Branchname darf doppelt so breit werden
+     (Ticket 31). Bei schmalem Fenster wird der Branchname vorher gekürzt. */
+  --header-label-max-width: 280px;
+  --header-branch-label-max-width: calc(2 * var(--header-label-max-width));
+  /* So viel Zieh-Fläche bleibt rechts in der Kopfzeile mindestens frei. */
+  --header-drag-min-width: 48px;
+  /* Branch-Dropdown: Die Breite folgt dem Inhalt zwischen diesen Grenzen und bleibt im Fenster (Ticket 31). */
+  --branch-dropdown-min-width: 380px;
+  --branch-dropdown-max-width: 680px;
   --stripe-width: 40px;
   --statusbar-height: 24px;
   --tool-window-header-height: 32px;

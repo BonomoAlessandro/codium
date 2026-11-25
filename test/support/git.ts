@@ -57,11 +57,14 @@ export interface RepoWithRemote {
   run(...args: string[]): string;
 }
 
-/** Legt unter `baseDir` ein Bare-Repository und eine Arbeitskopie mit erstem, gepushtem Commit an. */
-export function createRepoWithRemote(baseDir: string): RepoWithRemote {
+/**
+ * Legt unter `baseDir` ein Bare-Repository und eine Arbeitskopie mit erstem, gepushtem Commit an; `name` ist der Ordner
+ * der Arbeitskopie und damit der Projektname.
+ */
+export function createRepoWithRemote(baseDir: string, name = 'repo'): RepoWithRemote {
   const env = shieldedGitEnv(path.join(baseDir, 'gitconfig-global'));
   const remote = path.join(baseDir, 'remote.git');
-  const repo = path.join(baseDir, 'repo');
+  const repo = path.join(baseDir, name);
   git(baseDir, env, 'init', '--bare', '--initial-branch=main', remote);
   git(baseDir, env, 'init', '--initial-branch=main', repo);
   fs.writeFileSync(path.join(repo, 'README.md'), '# Testprojekt\n', 'utf8');
