@@ -112,7 +112,9 @@ Stand 2026-11-25, nach Ticket 28. Gelegentlich rot, einzeln jeweils grün:
   das galt für rund 300 der knapp 400 Abfragen. Seit Ticket 28 wartet es dort 5 s (`vitest.ui.config.mts`); eine
   Abfrage endet weiterhin, sobald ihre Bedingung gilt. Beobachten, ob die beiden damit ruhig sind.
 - UI: „TypeScript: Ctrl + Klick auf die Deklaration zeigt die Verwendungen“ (Auswahl erscheint nicht innert 30 s);
-  auch einzeln etwa 1 von 4 Mal direkt nach einem vollen Lauf, danach mit Diagnose 16 Mal grün.
+  auch einzeln etwa 1 von 4 Mal direkt nach einem vollen Lauf, danach mit Diagnose 16 Mal grün. Am 2026-11-26
+  (Ticket 32) wieder einmal in einem vollen Lauf (105 von 106, „expected 0 to be greater than 0“ nach 30 s, kein
+  Standby); einzeln danach 3 von 3 grün, der nächste volle Lauf grün.
 - UI: einzelne Zeitüberschreitungen im Dateibaum, im Terminal und im zeitbasierten Hinweis-Test (layout).
 - Langsam: einmal 4 Terminal-Tests; einmal ein Absturz des Test-Workers in `terminal.test.ts` (0xC0000005, node-pty).
 

@@ -193,7 +193,7 @@ Damit gelten die sieben Empfehlungen des Agenten:
   - „Rename“ schlägt den vollen Dateinamen vor.
 - [x] Ein Playwright-Test prüft, dass sich das Symbol nach dem Speichern ändert, etwa von `class` zu `interface`.
 - [x] Werden die Symbole auch in Tabs, „Recent Files“ oder „Go to File“ gezeigt: je ein Test.
-- [ ] `npm run typecheck`, `npm test` und `npm run test:ui` sind grün.
+- [x] `npm run typecheck`, `npm test` und `npm run test:ui` sind grün (siehe Umsetzung, Testläufe).
 
 ## Abnahme von Hand
 
@@ -278,3 +278,12 @@ Gemessen im verborgenen Testfenster (Playwright im Testmodus) mit einem Ordner a
   - Kern: ohne Zwischenspeicher, ohne Meldung der Überwachung oder des Speicherns, mit Vergessen statt Mitwandern, ohne Vergessen beim Löschen, ohne Schnitt am Zeilenumbruch, ohne Überspringen von Strings im Rumpf.
   - Oberfläche: Name nicht gekürzt, ohne Tooltip, Listen ohne Java-Symbol (3 Tests rot), ohne Meldung des Speicherns.
   - Die erste Prüfung des gestrichelten Rings war zu schwach (sie hätte auch ohne Striche bestanden) und ist geschärft: acht Bögen, ein Kreis ohne Rand.
+
+### Testläufe (2026-11-26, nacheinander, allein auf dem Rechner)
+
+- `npm run typecheck`: sauber.
+- `npm test`: 59 Dateien, 563 Tests grün (14:04 bis 14:05). Der Rechner war dabei im Standby (Kernel-Power 506 um 14:02:35, 507 erst um 14:10:36); der Lauf war trotzdem grün.
+- `npm run test:ui`, erster Lauf (ab 14:11, letztes Kernel-Power-Ereignis davor 507 um 14:10:36, während des Laufs kein 506): 105 von 106, 669 s.
+  - Rot war der bekannte wackelige Test „TypeScript im Editor: springt mit Ctrl + Linksklick zur Definition, zeigt auf der Deklaration die Verwendungen …“ (`typescript.test.ts`, „expected 0 to be greater than 0“ nach 30 s).
+  - Einzeln danach 3 von 3 grün; vermerkt in `offene-punkte.md` unter „Wackelige Tests“.
+- `npm run test:ui`, zweiter Lauf (ab 14:24, kein Kernel-Power-Ereignis seit 14:10:36): 29 Dateien, 106 Tests grün, 698 s. Keine Meldung der Schlussprüfung, keine übrigen Prozesse.
