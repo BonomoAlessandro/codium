@@ -58,6 +58,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
   - `npm run test:slow`: Sprachserver, Terminal, Datenbank, Netz
   - `npm run test:ui`: Playwright gegen `dist/` mit dem Electron aus den Entwicklungsabhängigkeiten
   - `npm run test:packaged`: Prüfungen am gepackten Paket ohne Fenster
+  - **Keine Grossmessungen ohne Rückfrage:** Messungen oder Proben, die Projekte mit Tausenden Dateien auf der Platte anlegen, laufen nur nach Rückfrage beim Nutzer bzw. Koordinator und nicht wiederholt. Leistung lieber mit Daten im Speicher prüfen (Einheitstests). Die normalen Testläufe dürfen so oft laufen wie nötig (Wunsch des Nutzers, 2026-11-26).
 - **Vorlage THub** (`C:\workspace\THub`, ein Projekt desselben Nutzers):
   - `src/main/workspace/ports.ts`: Ports des Kerns
   - `src/main/main.ts`: Testmodus mit `THUB_TEST_HIDDEN`, `THUB_TEST_DATA_DIR`, `THUB_TEST_PICK_DIR`
