@@ -2271,27 +2271,35 @@ input[type='checkbox']:disabled {
 
 /* ---------- Commit und Git-Farben (Ticket 16) ---------- */
 
-/* Farben wie in IntelliJ „Dark“: geändert blau, neu grün, nicht versioniert rotbraun, ignoriert grau, Konflikt rot. */
-.git-modified,
+/* Git-Zustand (Ticket 29): nur die Design-Variablen aus tokens.css, keine eigenen Farben. Geändert und umbenannt blau,
+   neu grün, gelöscht grau, nicht versioniert lachsrot, ignoriert orange, Konflikt rot. Im Dateibaum trägt die Zeile die
+   Klasse (Name, nicht das Symbol), in der Änderungsansicht und im Git-Log die Zeile samt Symbol, im Tab der Titel. */
+.git-modified {
+  color: var(--git-modified);
+}
+
 .git-renamed {
-  color: #6897bb;
+  color: var(--git-renamed);
 }
 
 .git-added {
-  color: #629755;
+  color: var(--git-added);
 }
 
-.git-deleted,
-.git-ignored {
-  color: #6f737a;
+.git-deleted {
+  color: var(--git-deleted);
 }
 
 .git-unversioned {
-  color: #d1675a;
+  color: var(--git-unversioned);
+}
+
+.git-ignored {
+  color: var(--git-ignored);
 }
 
 .git-conflict {
-  color: #f75464;
+  color: var(--git-conflict);
 }
 
 .commit-body {

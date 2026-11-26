@@ -221,10 +221,12 @@ interface EditorAreaProps {
   empty: ReactNode;
   /** Alt + F7: Verwendungen als Reiter im Werkzeugfenster „Find“. */
   onShowUsages: (title: string, matches: SearchMatch[]) => void;
+  /** Git-Zustand einer Datei; der Titel ihres Tabs trägt dessen Farbe wie in IntelliJ (Ticket 29). */
+  gitStatusOf?: (path: string) => string | undefined;
 }
 
 export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function EditorArea(
-  { api, project, notify, fontSize, onActiveFileChange, onStatusChange, empty, onShowUsages },
+  { api, project, notify, fontSize, onActiveFileChange, onStatusChange, empty, onShowUsages, gitStatusOf },
   ref,
 ) {
   const [tabs, setTabsState] = useState<readonly Tab[]>([]);
@@ -1681,6 +1683,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
               const key = pathKey(tab.path);
               const label = tabLabel(tab);
               const isActive = activeTab === tab;
+              const git = gitStatusOf?.(tab.path);
               return (
                 <div
                   key={key}
@@ -1691,6 +1694,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
                   aria-label={label.hint ? `${label.name} – ${label.hint}` : label.name}
                   data-modified={dirty.has(key) ? 'true' : undefined}
                   data-pinned={tab.pinned ? 'true' : undefined}
+                  data-git={git}
                   title={tabDescription(tab.path)}
                   tabIndex={-1}
                   onMouseDown={(e) => {
@@ -1709,7 +1713,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
                   <span className="editor-tab-icon">
                     <FileIcon />
                   </span>
-                  <span className="editor-tab-name">{label.name}</span>
+                  <span className={git ? `editor-tab-name git-${git}` : 'editor-tab-name'}>{label.name}</span>
                   {label.hint && <span className="editor-tab-hint">{label.hint}</span>}
                   {dirty.has(key) && <span className="editor-tab-modified" title="Unsaved changes" />}
                   {tab.pinned ? (

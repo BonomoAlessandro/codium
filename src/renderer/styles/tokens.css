@@ -91,4 +91,16 @@
   --git-incoming: var(--info);
   --git-outgoing: var(--success);
   --git-head: #d6b33d;
+
+  /* Git-Zustand von Dateien und Ordnern (Ticket 29): im Dateibaum, in der Änderungsansicht, im Git-Log und in den
+     Datei-Tabs. Werte wie im neuen IntelliJ-Design „Dark“ (Farbschema expUI_darkScheme.xml, gleich in „Islands Dark“;
+     Schlüssel FILESTATUS_MODIFIED, _RENAMED, _ADDED, _DELETED, _UNKNOWN, _IDEA_FILESTATUS_IGNORED und
+     _IDEA_FILESTATUS_MERGED_WITH_CONFLICTS). app.css nutzt nur diese Variablen. */
+  --git-modified: #70aeff;
+  --git-renamed: var(--git-modified);
+  --git-added: #73bd79;
+  --git-deleted: #6f737a;
+  --git-unversioned: #e88f89;
+  --git-ignored: #d69a6b;
+  --git-conflict: #de6a66;
 }

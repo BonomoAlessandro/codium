@@ -13,6 +13,7 @@ import { useAsk } from '../popup/Dialogs';
 import { Menu, type MenuEntry } from '../popup/Menu';
 import { baseName, parentPath, relativeLabel } from '../project/filePaths';
 import { ToolWindowHeader } from '../project/ToolWindowHeader';
+import { changeKind } from './fileStatus';
 
 interface CommitToolWindowProps {
   api: CodiumApi;
@@ -27,17 +28,6 @@ interface CommitToolWindowProps {
   onPush: () => Promise<void>;
   /** Vor jeder schreibenden Git-Aktion: alle Tabs speichern (Ticket 07). */
   saveAll: () => Promise<void>;
-}
-
-/** Art einer Änderung für Farbe und Beschriftung. */
-export function changeKind(file: GitFileStatus): 'modified' | 'added' | 'deleted' | 'renamed' | 'unversioned' | 'ignored' | 'conflict' {
-  if (file.conflict) return 'conflict';
-  if (file.index === '?') return 'unversioned';
-  if (file.index === '!') return 'ignored';
-  if (file.origPath) return 'renamed';
-  if (file.index === 'A') return 'added';
-  if (file.index === 'D' || file.worktree === 'D') return 'deleted';
-  return 'modified';
 }
 
 export function CommitToolWindow({ api, project, state, notify, onHide, onOpenFile, onShowDiff, onPush, saveAll }: CommitToolWindowProps) {

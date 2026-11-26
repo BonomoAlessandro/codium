@@ -168,6 +168,10 @@ Geprüft wird die installierte App (`release\Codium Setup <version>.exe`), ausse
 - [ ] Die Kapsel erscheint beim Scrollen mit Mausrad, Touchpad und Tastatur und verschwindet kurz danach wieder; das Ausblenden stört nicht beim Suchen der Lage in der Datei. (28)
 - [ ] Der schmale Streifen ist bei 100 % und 150 % Skalierung scharf, und ein Klick auf eine Markierung springt an die richtige Stelle. Bei 150 % können der Streifen (5 px, also 7,5 Bildpunkte) und die 9 px breite Kapsel leicht unscharf wirken; die Masse sind so freigegeben. (28)
 - [ ] Die Kapsel blitzt auch auf, wenn die App selbst scrollt: beim Tabwechsel, beim nächsten Suchtreffer, bei der Auswahl in der Projektsuche. Stört das kurze Aufblitzen? (28)
+- [ ] Zuklappen und Aufklappen eines Ordners im Dateibaum zeigt die Unterordner zu, auch nach einem Neustart. (29)
+- [ ] Nicht getrackte Dateien und Ordner sind auf einen Blick erkennbar (ignorierte orange, nicht versionierte lachsrot), die Farben wirken so satt wie in IntelliJ. (29)
+- [ ] Die Titel der Datei-Tabs tragen die Farbe des Git-Zustands und folgen ihm, etwa nach einem Commit oder Rollback. (29)
+- [ ] In einem grossen Repository, auch mit einem grossen nicht versionierten Ordner, folgen Baum und Änderungsansicht Änderungen so flüssig wie bisher. (29)
 
 ## Frischer Rechner bzw. Windows-Benutzer (22)
 

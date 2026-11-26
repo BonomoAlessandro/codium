@@ -4,6 +4,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { pathChunks } from '../../src/main/core/git/gitService';
 import { NodeSystem } from '../../src/main/system/nodeSystem';
 import type { CommandArgs, CommandName, CommandResult, GitState } from '../../src/shared/types';
 import { createTestCore, restart, type TestCore } from '../support/core';
@@ -144,6 +145,50 @@ describe('Commit und Rollback', { timeout: 60_000 }, () => {
     expect(status(await call(test, windowId, 'git.refresh'), 'a.txt')).toMatchObject({ conflict: true });
   });
 
+  it('meldet Ordner ohne versionierte Dateien als nicht versioniert, die Dateien darin einzeln (Ticket 29)', async () => {
+    const { test, windowId, at, run } = await setup();
+    const write = (relative: string) => {
+      fs.mkdirSync(path.dirname(at(relative)), { recursive: true });
+      fs.writeFileSync(at(relative), 'x\n');
+    };
+    fs.writeFileSync(at('.gitignore'), '*.log\nbuild/\n');
+    write('gemischt/alt.txt');
+    write('Entwürfe 1/fest.txt');
+    run('add', '.');
+    run('commit', '-m', 'gemischt');
+    // Nur nicht versioniert, verschachtelt und mit Klammern und Umlaut im Namen; darin eine ignorierte Datei und ein
+    // ignorierter Ordner.
+    write('drafts/ideas.md');
+    write('drafts/old/notes.txt');
+    write('drafts/x.log');
+    write('drafts/build/out.class');
+    write('Entwürfe [1]/a_b.txt');
+    // Gemischt: versioniert und neu; ein Ordner, der wie „Entwürfe [1]“ heisst, wenn man die Klammern als Muster liest.
+    // Nur ignoriert: kein nicht versionierter Ordner. Leer: kommt nicht vor.
+    write('gemischt/neu.txt');
+    write('Entwürfe 1/neu.txt');
+    write('logs/server.log');
+    fs.mkdirSync(at('leer'));
+
+    const state = await call(test, windowId, 'git.refresh');
+    expect(state.untrackedDirs?.slice().sort()).toEqual([at('drafts'), at('Entwürfe [1]')].sort());
+    expect(state.files.filter((f) => f.index === '?').map((f) => f.path)).toEqual(
+      [at('drafts', 'ideas.md'), at('drafts', 'old', 'notes.txt'), at('Entwürfe [1]', 'a_b.txt'), at('Entwürfe 1', 'neu.txt'), at('gemischt', 'neu.txt')].sort((a, b) =>
+        a < b ? -1 : 1,
+      ),
+    );
+    expect(state.ignored).toEqual(
+      expect.arrayContaining([{ path: at('drafts', 'x.log') }, { path: at('drafts', 'build'), directory: true }, { path: at('logs', 'server.log') }]),
+    );
+    // Commit einer Datei aus einem nicht versionierten Ordner wie bisher.
+    await call(test, windowId, 'git.commit', { paths: [at('drafts', 'old', 'notes.txt')], message: 'Notizen' });
+    expect(run('show', '--name-only', '--format=', 'HEAD')).toBe('drafts/old/notes.txt');
+    const after = await call(test, windowId, 'git.refresh');
+    // drafts hat jetzt eine versionierte Datei: nicht mehr als Ganzes nicht versioniert.
+    expect(after.untrackedDirs).toEqual([at('Entwürfe [1]')]);
+    expect(after.files.find((f) => f.path === at('drafts', 'ideas.md'))).toMatchObject({ index: '?' });
+  });
+
   it('nimmt Dateinamen mit [ ] wörtlich (* und ? sind unter Windows keine gültigen Namen): Rollback, Commit und .gitignore treffen nur sie (Review von Ticket 16)', async () => {
     const { test, windowId, at, run } = await setup({ '[ab].txt': 'x\n', 'a.txt': 'a\n', 'b.txt': 'b\n', '[x]y.txt': 's\n' });
     fs.writeFileSync(at('[ab].txt'), 'geändert\n');
@@ -163,6 +208,26 @@ describe('Commit und Rollback', { timeout: 60_000 }, () => {
     const state = await call(test, windowId, 'git.refresh');
     expect(state.ignored).toEqual(expect.arrayContaining([{ path: at('[cd].log') }]));
     expect(state.files.find((f) => f.path === at('c.log'))).toMatchObject({ index: '?' });
+  });
+
+  it('liest auch sehr viele nicht versionierte Ordner, in Teilen über die Befehlszeile (Ticket 29)', async () => {
+    expect(pathChunks(['aaa/', 'bbb/', 'ccc/'], 10)).toEqual([['aaa/', 'bbb/'], ['ccc/']]);
+    expect(pathChunks(['ein-sehr-langer-pfad/'], 5)).toEqual([['ein-sehr-langer-pfad/']]);
+    expect(pathChunks([])).toEqual([]);
+
+    const { test, windowId, at } = await setup();
+    // 400 Ordner mit je 46 Zeichen: über 16'000 Zeichen, also mindestens zwei Aufrufe.
+    const dirs = Array.from({ length: 400 }, (_, i) => at(`generierter-ordner-mit-langem-namen-nr-${String(i).padStart(4, '0')}`));
+    for (const dir of dirs) {
+      fs.mkdirSync(dir);
+      fs.writeFileSync(path.join(dir, 'datei.txt'), 'x\n');
+    }
+    const state = await call(test, windowId, 'git.refresh');
+    expect(state.untrackedDirs).toHaveLength(400);
+    expect(state.files.filter((f) => f.index === '?').map((f) => f.path)).toEqual(dirs.map((d) => path.join(d, 'datei.txt')));
+    // Die Dateien in den Ordnern kamen in mehreren Aufrufen nur für diese Ordner.
+    const inner = (await call(test, windowId, 'git.console')).filter((e) => e.command.includes('--literal-pathspecs'));
+    expect(inner.length).toBeGreaterThanOrEqual(2);
   });
 
   it('committet sehr viele neue Dateien (Pfade über stdin statt über die Befehlszeile)', async () => {

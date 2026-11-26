@@ -104,6 +104,8 @@ describe('Git-Dienst', { timeout: 60_000 }, () => {
     expect(st).toMatchObject({ root: repo, branch: 'main' });
     // Nur Dateien im Projektordner, mit Umlauten und Leerzeichen unverändert.
     expect(st.files).toEqual([{ path: path.join(sub, 'Datei ä.txt'), index: '?', worktree: '?' }]);
+    // Der Projektordner selbst enthält keine versionierte Datei (Ticket 29).
+    expect(st.untrackedDirs).toEqual([sub]);
     // Ein Wechsel von aussen: Das Git-Verzeichnis liegt ausserhalb des Projekts, der Dienst beobachtet es selbst.
     run('checkout', '-b', 'aussen');
     await until(() => second.test.events.sent.filter((e) => e.name === 'git.stateChanged').map((e) => (e.payload as GitState).branch), (b) => b.includes('aussen'), 'Wechsel von aussen');

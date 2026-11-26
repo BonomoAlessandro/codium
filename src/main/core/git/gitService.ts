@@ -185,13 +185,28 @@ export class GitService {
     this.gitDir = path.normalize(gitDir);
     // Worktrees: HEAD und Index im eigenen Git-Verzeichnis, Refs im gemeinsamen des Haupt-Repositorys.
     this.watchGitDir([...new Set([this.gitDir, path.normalize(common)])]);
-    // Mit ignorierten Dateien (für die Farben im Dateibaum; ein ignorierter Ordner wie node_modules als ein Eintrag, nicht jede Datei darin).
-    const status = await this.run(['--no-optional-locks', 'status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all', '--ignored=matching', '--', '.'], {
+    // Mit ignorierten Dateien (für die Farben im Dateibaum; ein ignorierter Ordner wie node_modules als ein Eintrag, nicht
+    // jede Datei darin). Nicht versionierte Dateien mit `--untracked-files=normal` (Ticket 29): Einen Ordner, in dem keine
+    // versionierte Datei liegt, nennt Git dann als Ganzes; das braucht der Dateibaum für die Farbe des Ordners. Die
+    // Dateien darin (für die Änderungsansicht und den Commit) liefert danach ein zweiter Aufruf nur für diese Ordner.
+    const status = await this.run(['--no-optional-locks', 'status', '--porcelain=v2', '--branch', '-z', '--untracked-files=normal', '--ignored=matching', '--', '.'], {
       background: true,
     });
-    if (status.code !== 0) return this.publish({ ...NO_REPOSITORY, repository: true, root: this.root });
+    const repoRoot = this.root;
+    const failed = () => this.publish({ ...NO_REPOSITORY, repository: true, root: repoRoot });
+    if (status.code !== 0) return failed();
+    const state = parseStatus(status.stdout, repoRoot);
+    // Pfade relativ zur Wurzel des Repositorys (wie in der Ausgabe von Git), wörtlich genommen.
+    for (const chunk of pathChunks((state.untrackedDirs ?? []).map((dir) => `${path.relative(repoRoot, dir).split(path.sep).join('/')}/`))) {
+      const inner = await this.run(['--no-optional-locks', '-C', repoRoot, '--literal-pathspecs', 'status', '--porcelain=v2', '-z', '--untracked-files=all', '--', ...chunk], {
+        background: true,
+      });
+      if (inner.code !== 0) return failed();
+      state.files.push(...parseStatus(inner.stdout, repoRoot).files.filter((f) => f.index === '?'));
+    }
+    if (state.untrackedDirs) state.files = inGitOrder(state.files);
     await this.checkRefs();
-    return this.publish({ ...parseStatus(status.stdout, this.root), ...(this.operation() ? { operation: this.operation()! } : {}) });
+    return this.publish({ ...state, ...(this.operation() ? { operation: this.operation()! } : {}) });
   }
 
   private operation(): GitState['operation'] | undefined {
@@ -1036,6 +1051,33 @@ function isInside(target: string, dir: string): boolean {
   return t === d || t.startsWith(d + path.sep);
 }
 
+/** Höchstlänge der Pfade je Git-Aufruf auf der Befehlszeile (`git status` liest keine Pfade über stdin). */
+const PATH_CHUNK_CHARS = 16_000;
+
+/** Teilt Pfade für die Befehlszeile auf, je Teil höchstens `PATH_CHUNK_CHARS` Zeichen (mindestens ein Pfad). */
+export function pathChunks(paths: readonly string[], limit = PATH_CHUNK_CHARS): string[][] {
+  const chunks: string[][] = [];
+  let current: string[] = [];
+  let length = 0;
+  for (const p of paths) {
+    if (current.length > 0 && length + p.length + 1 > limit) {
+      chunks.push(current);
+      current = [];
+      length = 0;
+    }
+    current.push(p);
+    length += p.length + 1;
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
+
+/** Wie Git selbst: erst die versionierten Einträge, dann die nicht versionierten, diese nach Pfad. */
+function inGitOrder(files: GitFileStatus[]): GitFileStatus[] {
+  const untracked = files.filter((f) => f.index === '?').sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return [...files.filter((f) => f.index !== '?'), ...untracked];
+}
+
 /** Liest die Ausgabe von `git status --porcelain=v2 --branch -z`. */
 export function parseStatus(output: string, root: string): GitState {
   const state: GitState = { repository: true, root, branch: null, ahead: 0, behind: 0, files: [] };
@@ -1072,7 +1114,11 @@ export function parseStatus(output: string, root: string): GitState {
       const parts = line.split(' ');
       state.files.push({ path: path.join(root, parts.slice(10).join(' ')), index: 'U', worktree: 'U', conflict: true });
     } else if (line.startsWith('? ')) {
-      state.files.push({ path: path.join(root, line.slice(2)), index: '?', worktree: '?' });
+      // Ein Ordner endet mit „/“: ohne versionierte Dateien darin (`--untracked-files=normal`, Ticket 29) oder ein
+      // eigenes Repository im Projekt.
+      const name = line.slice(2);
+      if (name.endsWith('/')) (state.untrackedDirs ??= []).push(path.join(root, name.slice(0, -1)));
+      else state.files.push({ path: path.join(root, name), index: '?', worktree: '?' });
     } else if (line.startsWith('! ')) {
       // Ignoriert, getrennt von den Änderungen (Review von Ticket 16); ein Ordner endet mit „/“.
       const name = line.slice(2);

@@ -13,7 +13,8 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { CodiumError, ErrorCode } from '../../shared/types';
 import { BranchPopup, type BranchActions } from '../git/BranchPopup';
 import { GitToolWindow } from '../git/GitToolWindow';
-import { CommitToolWindow, changeKind } from '../git/CommitToolWindow';
+import { CommitToolWindow } from '../git/CommitToolWindow';
+import { changeKind, gitStatusLookup } from '../git/fileStatus';
 import { DatabaseToolWindow } from '../database/DatabaseToolWindow';
 import { GIT_NOT_FOUND_TEXT, useGitState } from '../git/gitState';
 import { useGitAvailable } from '../CloneDialog';
@@ -482,29 +483,9 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
     if (current && gitState?.repository) showAndFocus(current, 'commit');
   };
 
-  // Git-Farben im Dateibaum (Ticket 16): Zustand je Pfad, ignorierte Ordner färben alles darin grau.
-  const gitStatusOf = useMemo(() => {
-    const byPath = new Map<string, string>();
-    for (const file of gitState?.files ?? []) {
-      const known = byPath.get(file.path.toLowerCase());
-      if (!known || known === 'unversioned') byPath.set(file.path.toLowerCase(), changeKind(file));
-    }
-    // Ignorierte: eigene Einträge, und alles unter einem ignorierten Ordner (über die Elternordner nachgeschlagen,
-    // statt jede Zeile gegen alle ignorierten Einträge zu prüfen; Review von Ticket 16).
-    const ignoredDirs = new Set<string>();
-    for (const entry of gitState?.ignored ?? []) {
-      byPath.set(entry.path.toLowerCase(), 'ignored');
-      if (entry.directory) ignoredDirs.add(entry.path.toLowerCase());
-    }
-    return (filePath: string): string | undefined => {
-      const k = filePath.toLowerCase();
-      const own = byPath.get(k);
-      if (own) return own;
-      if (ignoredDirs.size === 0) return undefined;
-      for (let i = k.lastIndexOf('\\'); i > 0; i = k.lastIndexOf('\\', i - 1)) if (ignoredDirs.has(k.slice(0, i))) return 'ignored';
-      return undefined;
-    };
-  }, [gitState]);
+  // Git-Farben im Dateibaum und in den Datei-Tabs (Tickets 16 und 29): Zustand je Pfad, auch für ignorierte und nicht
+  // versionierte Ordner samt Inhalt.
+  const gitStatusOf = useMemo(() => gitStatusLookup(gitState), [gitState]);
 
   /** „Open in Terminal“ aus dem Dateibaum: ein weiteres Terminal im Ordner, das Werkzeugfenster mit dem Fokus darin. */
   const openInTerminal = useCallback(
@@ -933,7 +914,8 @@ export function ProjectWindow({ api, project, actions, work, notify }: ProjectWi
                 fontSize={settings.fontSize}
                 onActiveFileChange={setActiveFile}
                 onStatusChange={setStatus}
-            onShowUsages={showUsages}
+                onShowUsages={showUsages}
+                gitStatusOf={gitStatusOf}
                 empty={<CodeHints />}
               />
             </main>

@@ -55,6 +55,8 @@ describe('Git-Log', () => {
       await list.getByRole('option', { name: 'Change a' }).click();
       const files = page.getByRole('tree', { name: 'Changed Files' });
       await files.getByRole('treeitem', { name: 'a.txt' }).waitFor({ timeout: 15_000 });
+      // Dieselben Farben wie im Dateibaum und in der Änderungsansicht (Ticket 29): geändert blau.
+      expect(await files.getByRole('treeitem', { name: 'a.txt' }).evaluate((el) => getComputedStyle(el).color)).toBe('rgb(112, 174, 255)');
       await files.getByRole('treeitem', { name: 'a.txt' }).dblclick();
       const diff = page.getByRole('region', { name: `Diff a.txt (${changeA.slice(0, 8)})` });
       await diff.waitFor({ timeout: 15_000 });

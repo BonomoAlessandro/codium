@@ -86,8 +86,8 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
 ### Dateibaum
 
 25. Als Nutzer möchte ich im Werkzeugfenster „Project“ alle Dateien und Ordner des Projekts als Baum sehen, damit ich mich im Projekt zurechtfinde.
-26. Als Nutzer möchte ich, dass Dateien nach ihrem Git-Zustand eingefärbt sind (geändert blau, neu grün, nicht versioniert rotbraun, ignoriert grau), damit ich Änderungen schon im Baum erkenne.
-27. Als Nutzer möchte ich, dass ignorierte Ordner wie node_modules oder target sichtbar bleiben, aber grau sind, damit ich sie bei Bedarf öffnen kann.
+26. Als Nutzer möchte ich, dass Dateien nach ihrem Git-Zustand eingefärbt sind (geändert blau, neu grün, nicht versioniert lachsrot, ignoriert orange; Farben wie im neuen IntelliJ-Design „Dark“, Ticket 29), damit ich Änderungen schon im Baum erkenne.
+27. Als Nutzer möchte ich, dass ignorierte Ordner wie node_modules oder target sichtbar bleiben, aber orange markiert sind (bis Ticket 29 grau), damit ich sie bei Bedarf öffnen kann.
 28. Als Nutzer möchte ich, dass sich der Baum selbst aktualisiert, wenn sich auf der Festplatte etwas ändert, damit er nie veraltet ist.
 29. Als Nutzer möchte ich mit einem Einfachklick eine Datei nur auswählen und mit Doppelklick oder Enter öffnen, damit ich wie in IntelliJ durch den Baum gehen kann.
 30. Als Nutzer möchte ich per Rechtsklick eine neue Datei oder einen neuen Ordner anlegen, damit ich ohne Explorer arbeiten kann.
@@ -364,6 +364,7 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
   - Die bestehenden Design-Variablen werden auf ein einziges dunkles Schema reduziert.
   - Die Fensterfarbe beim Öffnen ist immer die dunkle Hintergrundfarbe dieses Schemas, unabhängig vom Windows-Design; das Grundgerüst wechselt heute bei hellem Windows auf Weiss, das entfällt.
   - Scrollbalken in allen Monaco-Editoren (Code-Bereich, Vergleich, Vorschau der Projektsuche, Zelleditor) wie im neuen IntelliJ (Ticket 28): rechts ein 16 px breiter Rand, darin links eine Kapsel (6 px, beim Darüberfahren und Ziehen 9 px, gegriffen wird auf 10 px) und ganz rechts ein eigener Streifen von 5 px mit allen Markierungen (Fehler, Warnungen, Suchtreffer, Git-Änderungen, Cursorzeile) in voller Breite. Keine Spur, kein Schatten; Farben wie IntelliJ „Dark“. Die Kapsel ist ausgeblendet, solange nicht gescrollt wird, und erscheint beim Scrollen, beim Darüberfahren und beim Ziehen; der Streifen bleibt sichtbar und anklickbar. In der Vergleichsansicht entfällt der eckige Kasten in Monacos Vergleichsübersicht; deren rote und grüne Markierungen bleiben, und mit der Maus über der Übersicht erscheint die Kapsel des rechten Editors. Die Werte stehen in `src/renderer/editor/theme.ts`. Die Scrollbalken ausserhalb von Monaco (Listen, Baum, Terminal, Markdown-Vorschau) sehen anders aus.
+  - Git-Farben (Ticket 29) wie im neuen IntelliJ-Design „Dark“ (Farbschema `expUI_darkScheme.xml`, gleich in „Islands Dark“): geändert und umbenannt `#70AEFF`, neu `#73BD79`, gelöscht `#6F737A`, nicht versioniert `#E88F89`, ignoriert `#D69A6B` (orange), Konflikt `#DE6A66`. Sie stehen als Design-Variablen `--git-*` in `tokens.css`; Dateibaum, Änderungsansicht, Dateiliste des Git-Logs und Datei-Tabs nutzen nur diese. Der Titel eines Datei-Tabs trägt die Farbe des Git-Zustands seiner Datei, wie in IntelliJ; unveränderte Dateien bleiben in der normalen Farbe.
 - **Code-Farben:** Ein Monaco-Farbschema nach dem IntelliJ-Editorschema „Dark“ deckt die Wortarten ab (Schlüsselwörter, Strings, Zahlen, Kommentare, Annotationen, Typen). Die semantischen Token der Sprachserver werden auf dieselben Farben abgebildet (Felder violett, statische Member kursiv, Methodendeklarationen blau, Parameter und lokale Variablen in der Grundfarbe, Konstanten violett kursiv), so wie IntelliJ sie zeigt.
 - **Schrift:**
   - JetBrains Mono wird mitgeliefert (freie Lizenz OFL), Standardgrösse 13 wie in IntelliJ (Monaco-Schriftgrösse 13).
@@ -424,7 +425,11 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
 ### Dateien, Dateiüberwachung und Suche
 
 - **Dateibaum:** Der Datei-Dienst liefert Ordnerinhalte auf Anfrage (nur aufgeklappte Ordner), sortiert Ordner vor Dateien, alphabetisch ohne Unterscheidung der Gross-/Kleinschreibung. Der Ordner `.git` wird nicht angezeigt.
-- **Git-Farben im Baum** kommen aus dem Zustand des Git-Dienstes (geändert, neu, nicht versioniert, ignoriert, Konflikt). Ein Ordner erbt die Farbe nicht, das bleibt wie in IntelliJ den Dateien vorbehalten; ignorierte Ordner sind grau.
+  - **Zuklappen** eines Ordners klappt auch alle Ordner darin zu, auf jedem Weg (Pfeil, Doppelklick, Pfeil links) und im gespeicherten Zustand; beim nächsten Aufklappen ist nur die erste Ebene offen, wie im Branch-Menü (Ticket 29). Ein älterer gespeicherter Zustand mit Ordnern unter zugeklappten wird beim Laden bereinigt. „Select Opened File“ klappt die nötigen Elternordner wieder auf.
+- **Git-Farben im Baum** kommen aus dem Zustand des Git-Dienstes (geändert, umbenannt, neu, nicht versioniert, ignoriert, Konflikt), mit den Farben wie im neuen IntelliJ-Design „Dark“ (siehe „Oberfläche“, Design). Ordner bekommen eine Farbe nur als Ganzes, wie in IntelliJ:
+  - Ein ignorierter Ordner ist samt Inhalt orange.
+  - Ein Ordner, in dem keine versionierte Datei liegt, ist samt Unterordnern „nicht versioniert“ (Ticket 29). Ein Ordner mit versionierten Dateien und einer, in dem nur ignorierte Dateien liegen, bleibt ohne Farbe.
+  - Nachgeschlagen wird je Zeile über die Elternordner (der nächste entscheidet), nicht gegen alle Einträge.
 - **Dateiüberwachung:**
   - Rekursive Überwachung des Projektordners mit den Mitteln von Node. Ereignisse werden kurz gesammelt und gebündelt gemeldet; danach wird geprüft, was wirklich existiert.
   - Kommt ein Ereignis ohne Dateinamen (etwa bei übergelaufenem Puffer unter Windows), liest der Dienst die betroffenen Ordner neu ein.
@@ -489,6 +494,7 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
 - **Git-Konsole:** Jeder Aufruf wird mit Zeitpunkt, Befehl, Ausgabe und Exit-Code festgehalten, die letzten 1'000 pro Projektfenster, nicht gespeichert. Angezeigt werden standardmässig die vom Nutzer ausgelösten, schreibenden und Netzwerk-Befehle. Automatische Abfragen im Hintergrund (Zustand, Refs, Inhalte für die Änderungsbalken) blendet der Schalter „Show background commands“ dazu.
 - Schreibende Git-Aktionen eines Projekts laufen nacheinander, nie gleichzeitig.
 - **Zustand:** Der Git-Dienst ermittelt aktuellen Branch oder abgekoppelten Commit, Upstream, voraus/zurück, laufenden Merge oder Rebase und den Zustand jeder Datei: geändert, hinzugefügt, gelöscht, umbenannt, nicht versioniert, ignoriert, Konflikt. Er aktualisiert ihn nach eigenen Aktionen, nach Dateiereignissen (gebündelt) und wenn das Fenster den Fokus bekommt.
+  - Ignorierte Einträge liest er mit `--ignored=matching` (ein ignorierter Ordner als ein Eintrag), nicht versionierte mit `--untracked-files=normal`: Einen Ordner ohne versionierte Dateien nennt Git dann als Ganzes (für die Farbe im Dateibaum, Ticket 29). Die Dateien darin liest ein zweiter Aufruf nur für diese Ordner (Pfade wörtlich, bei sehr vielen Ordnern in Teilen), damit Änderungsansicht und Commit sie einzeln haben.
 - **Kein Repository:** Ist der Projektordner kein Git-Repository und liegt auch in keinem, fehlen Branch-Menü und Git-Farben, und die Werkzeugfenster „Commit“ und „Git“ zeigen „Not a Git repository“.
 - **Branches:**
   - Lokale und Remote-Branches mit Upstream und voraus/zurück liest der Git-Dienst aus den Refs.

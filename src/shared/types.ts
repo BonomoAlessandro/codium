@@ -351,6 +351,12 @@ export interface GitState {
   files: GitFileStatus[];
   /** Ignorierte Dateien und Ordner (für die Farben im Dateibaum); ein Ordner wie node_modules als ein Eintrag. */
   ignored?: Array<{ path: string; directory?: true }>;
+  /**
+   * Nicht versionierte Ordner, in denen keine versionierte Datei liegt (für die Farben im Dateibaum, Ticket 29): nur der
+   * oberste, wie Git ihn mit `--untracked-files=normal` nennt; die Ordner darin sind ebenfalls nicht versioniert. Die
+   * Dateien darin stehen einzeln unter `files`.
+   */
+  untrackedDirs?: string[];
 }
 
 /**

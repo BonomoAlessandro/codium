@@ -103,29 +103,123 @@ Quelle: die Farbschemata in den öffentlichen Quellen von JetBrains (intellij-co
 
 Für die gedämpfte Fassung der ignorierten Einträge gibt es keinen Wert von IntelliJ; vorgeschlagen ist dessen Orange zu 70 % auf der Fläche der Werkzeugfenster, `#A37959`.
 
+## Entscheidung (Nutzer, 2026-11-26)
+
+Vorgelegt wurden Dateibaum, Änderungsansicht und Datei-Tabs eines erfundenen Projekts mit allen Zuständen, heute und mit den Werten von IntelliJ „Dark“; dazu drei Fassungen für ignorierte Einträge (orange wie IntelliJ, gedämpft `#A37959`, olivgelb wie Darcula) und die Tabs mit und ohne Farbe. Die Seite lag nach den Spielregeln unversioniert unter `entwuerfe/29-git-farben/`.
+
+Rückmeldung des Nutzers, wörtlich: „deine empfehlung für alle 3 offenen fragen“
+
+Er antwortete auf die drei Fragen mit den Empfehlungen des Koordinators:
+1. **Farben:** alle genau wie IntelliJ „Dark“ (`expUI_darkScheme.xml`): geändert und umbenannt `#70AEFF`, neu `#73BD79`, gelöscht `#6F737A`, nicht versioniert `#E88F89`, ignoriert `#D69A6B`, Konflikt `#DE6A66`.
+2. **Ignorierte Einträge:** orange wie IntelliJ (`#D69A6B`), nicht gedämpft und nicht olivgelb.
+3. **Datei-Tabs:** werden wie in IntelliJ eingefärbt.
+
 ## Akzeptanzkriterien
 
-- [ ] Ein Playwright-Test im Testmodus prüft:
+- [x] Ein Playwright-Test im Testmodus prüft:
   - `a` auf, `a/b` auf, `a` zu, `a` wieder auf: `a/b` ist zu.
   - Dasselbe mit der Tastatur (Pfeil nach links bzw. rechts).
   - Nach erneutem Öffnen des Projekts ist `a/b` ebenfalls zu.
-- [ ] Ein Test prüft, dass das Anzeigen einer Datei in einem zugeklappten Unterordner die Elternordner weiter aufklappt.
-- [ ] Die Bilder (heute, neu, nach Möglichkeit IntelliJ) wurden dem Nutzer vorgelegt; seine Entscheidung und die Herkunft der Farbwerte stehen im Ticket.
-- [ ] Die Git-Farben stehen als Design-Variablen in `tokens.css`. In `app.css` gibt es keine fest eingetragenen Git-Farben mehr.
-- [ ] Ein Playwright-Test prüft im Dateibaum die freigegebenen Farben einer nicht versionierten Datei, eines nicht versionierten Ordners und eines ignorierten Eintrags. Dazu prüft er eine geänderte Datei in der Änderungsansicht.
-- [ ] Einheitstests prüfen die Färbung von Ordnern:
+- [x] Ein Test prüft, dass das Anzeigen einer Datei in einem zugeklappten Unterordner die Elternordner weiter aufklappt.
+- [x] Die Bilder (heute, neu, nach Möglichkeit IntelliJ) wurden dem Nutzer vorgelegt; seine Entscheidung und die Herkunft der Farbwerte stehen im Ticket. (Ein Bildschirmfoto aus IntelliJ lag nicht vor; die Werte stammen aus dessen Farbschema.)
+- [x] Die Git-Farben stehen als Design-Variablen in `tokens.css`. In `app.css` gibt es keine fest eingetragenen Git-Farben mehr.
+- [x] Ein Playwright-Test prüft im Dateibaum die freigegebenen Farben einer nicht versionierten Datei, eines nicht versionierten Ordners und eines ignorierten Eintrags. Dazu prüft er eine geänderte Datei in der Änderungsansicht.
+- [x] Einheitstests prüfen die Färbung von Ordnern:
   - nur nicht versionierte Dateien: Farbe „nicht versioniert“;
   - gemischt mit versionierten Dateien: keine Farbe;
   - ignoriert: Farbe „ignoriert“.
-- [ ] Werden die Datei-Tabs eingefärbt: ein Test, dass ein Tab einer geänderten bzw. nicht versionierten Datei die Farbe trägt.
-- [ ] `npm run typecheck`, `npm test` und `npm run test:ui` sind grün.
+- [x] Werden die Datei-Tabs eingefärbt: ein Test, dass ein Tab einer geänderten bzw. nicht versionierten Datei die Farbe trägt.
+- [x] `npm run typecheck`, `npm test` und `npm run test:ui` sind grün (siehe Umsetzung, Testläufe).
 
 ## Abnahme von Hand
 
 - [ ] Zuklappen und Aufklappen eines Ordners zeigt die Unterordner zu, wie erwartet.
 - [ ] Nicht getrackte Dateien und Ordner sind auf einen Blick orange erkennbar, die Farben wirken so satt wie in IntelliJ.
+- [ ] Die Titel der Datei-Tabs tragen die Farbe des Git-Zustands und folgen ihm, etwa nach einem Commit oder Rollback. (ergänzt bei der Umsetzung)
+- [ ] In einem grossen Repository, auch mit einem grossen nicht versionierten Ordner, folgen Baum und Änderungsansicht Änderungen so flüssig wie bisher. (ergänzt bei der Umsetzung)
 
 ## Hinweise
 
 - Die Spielregeln gelten: Die App nur über die Testläufe bzw. `launchCodium` starten, nie direkt. Aufnahmen nur vom verborgenen Testfenster über Playwright, nie vom Desktop. Keine echten Eingaben an den Desktop.
 - Ticket 28 (Scrollbalken) arbeitet ebenfalls an Farben im Design. Werden beide nacheinander umgesetzt, baut das spätere auf den Design-Variablen des früheren auf.
+
+## Umsetzung (Agent, 2026-11-26)
+
+### Zuklappen
+
+- **Reine Funktionen** in `src/renderer/project/fileTree.ts`:
+  - `collapseFolder(expanded, folder)` nimmt den Ordner samt allen aufgeklappten Ordnern darin aus den aufgeklappten.
+  - `withoutHiddenFolders(expanded, root)` lässt nur Ordner stehen, deren Eltern bis zum Projektordner alle aufgeklappt sind.
+- **`ProjectView.tsx`:**
+  - `collapse` benutzt `collapseFolder`; das gilt für Pfeil, Doppelklick, Pfeil links und Enter. Der gespeicherte Zustand bekommt dieselbe Liste.
+  - Beim Laden räumt `withoutHiddenFolders` einen Zustand von vor diesem Ticket auf, in dem etwa `a/b` unter dem zugeklappten `a` gemerkt ist. Gespeichert wird das erst mit der nächsten Änderung durch den Nutzer, wie bisher nur bei Aktionen des Nutzers.
+  - Auswahl, „Collapse All“ und „Select Opened File“ sind unverändert. „Select Opened File“ klappt die Elternordner auf, auch wenn sie mit einem zugeklappten Ordner vergessen wurden.
+
+### Git-Farben
+
+- **Design-Variablen** in `tokens.css`: `--git-modified`, `--git-renamed` (gleich `--git-modified`), `--git-added`, `--git-deleted`, `--git-unversioned`, `--git-ignored`, `--git-conflict`, mit den freigegebenen Werten.
+- **`app.css`:** Im Abschnitt „Commit und Git-Farben“ setzt jede Klasse `git-<Zustand>` nur noch `color: var(--git-<Zustand>)`; es gibt keine fest eingetragenen Git-Farben mehr. Dateibaum (Name der Zeile), Änderungsansicht und Dateiliste des Git-Logs (Zeile samt Symbol) und Datei-Tabs (Titel) nutzen dieselben Klassen.
+- **Ein Ort für den Zustand je Pfad:** `src/renderer/git/fileStatus.ts`, ohne DOM.
+  - `changeKind` ist aus `CommitToolWindow.tsx` hierher umgezogen.
+  - `gitStatusLookup(state)` liefert den Zustand für Dateien und Ordner und ersetzt die Funktion in `ProjectWindow.tsx`.
+  - Ignorierte Ordner und nicht versionierte Ordner gelten für alles darin. Nachgeschlagen wird über die Elternordner, vom nächsten aufwärts: Der nächste entscheidet, etwa bei einem ignorierten Ordner in einem nicht versionierten.
+- **Tabs:**
+  - `EditorArea` bekommt `gitStatusOf` vom Projektfenster.
+  - Der Titel eines Datei-Tabs trägt die Klasse `git-<Zustand>`, der Tab selbst `data-git`.
+  - Symbol, Hinweis bei gleichnamigen Dateien und Schliessknopf behalten ihre Farben.
+  - Unveränderte Dateien und Tabs ohne Datei im Repository bleiben in der normalen Farbe.
+
+### Nicht versionierte Ordner: Statusabfrage umgebaut statt zweiter voller Aufruf
+
+- **Woher die Ordner kommen:** Mit `--untracked-files=all` nennt Git nur Dateien. Welcher Ordner keine versionierte Datei enthält, weiss nur Git; aus der Statusausgabe allein geht das nicht hervor, weil unveränderte versionierte Dateien darin fehlen.
+- **Erster Aufruf:** Der bestehende Aufruf läuft jetzt mit `--untracked-files=normal`. Dann nennt Git einen solchen Ordner als Ganzes (`? drafts/`, nur den obersten). Der Git-Dienst führt diese Ordner im Zustand als `untrackedDirs`.
+- **Zweiter Aufruf, nur bei Bedarf:** Gibt es solche Ordner, liest ein zweiter `git status --untracked-files=all` nur für sie die Dateien darin. Änderungsansicht und Commit haben sie so weiter einzeln.
+  - Die Pfade gehen relativ zur Wurzel des Repositorys mit `-C <Wurzel>` und `--literal-pathspecs` hinein.
+  - `git status` liest keine Pfade über stdin; deshalb gehen sie auf der Befehlszeile hinein, in Teilen zu höchstens 16'000 Zeichen.
+  - Ignorierte Einträge in solchen Ordnern meldet schon der erste Aufruf.
+- **Warum so:**
+  - Die Arbeitskopie wird weiterhin nur einmal ganz durchsucht. Der zweite Aufruf durchsucht nur die nicht versionierten Ordner, und es gibt ihn nur, wenn es solche gibt.
+  - Die Alternativen hätten mehr gekostet: ein zweiter voller Aufruf daneben (etwa `git ls-files --others --directory`) hätte die Suche nach nicht versionierten Dateien bei jeder Aktualisierung verdoppelt; die Ordner aus der Liste aller versionierten Dateien (`git ls-files`) abzuleiten, hiesse, in grossen Repositorys bei jeder Änderung am Index alle Dateien zu lesen.
+- **Nebenwirkungen:**
+  - Ein eigenes Repository in einem Unterordner meldet Git als `? sub/`. Es erschien bisher als namenlose Datei in der Änderungsansicht; jetzt gilt es als nicht versionierter Ordner.
+  - Ist der Projektordner selbst ein Unterordner des Repositorys ohne versionierte Dateien, trägt auch seine Zeile die Farbe.
+
+### Abweichungen und Hinweise
+
+- Das Ticket nannte für ignorierte Einträge „olivgelb“; das ist der Wert aus „Darcula“ (`#848504`). Im neuen „Dark“ sind sie orange, und so ist es freigegeben.
+- Ein Ordner, in dem nur ignorierte Dateien liegen, bleibt ohne Farbe; Git nennt ihn nicht als ignoriert.
+- Spezifikation nachgeführt:
+  - User Stories 26 und 27 (Farben);
+  - „Oberfläche“, Design (Git-Farben und Tabs);
+  - Dateibaum (Zuklappen, Färbung der Ordner);
+  - „Git“, Zustand (zwei Aufrufe).
+- Bilder des eingebauten Stands liegen unversioniert unter `entwuerfe/29-git-farben/` (Abschnitt „Eingebaut“), aufgenommen mit `AUFNAHME_EINGEBAUT=1`.
+
+### Tests
+
+- **Einheitstests:**
+  - `test/renderer/fileTree.test.ts`, Abschnitt „Zuklappen schliesst die Ordner darin“: 3 Tests (Zuklappen samt Unterordnern, unverändert ohne Unterordner, älterer Zustand).
+  - `test/renderer/gitColors.test.ts`: 8 Tests.
+    - Ordner nur mit nicht versionierten Dateien: „nicht versioniert“, samt Unterordnern.
+    - Gemischt mit versionierten Dateien: keine Farbe.
+    - Ignoriert samt Inhalt; Ordner nur mit ignorierten Dateien: keine Farbe.
+    - Der nächste Ordner entscheidet; doppelte Einträge; Zuordnung der Zustände.
+    - `tokens.css` hat die freigegebenen Werte; `app.css` färbt jede Klasse nur über ihre Variable.
+- **Kern mit echtem Git** (`test/main/gitCommit.test.ts`):
+  - Ordner ohne versionierte Dateien als `untrackedDirs`, verschachtelt und mit Klammern und Umlaut im Namen, die Dateien darin einzeln. Gemischte, nur ignorierte und leere Ordner gehören nicht dazu. Ignorierte Einträge darin bleiben gemeldet. Nach dem Commit einer Datei daraus ist der Ordner nicht mehr dabei.
+  - 400 nicht versionierte Ordner, gelesen in mindestens zwei Aufrufen, dazu `pathChunks`.
+  - In `test/main/git.test.ts` ist der Projektordner als nicht versionierter Unterordner eines Repositorys geprüft.
+- **Oberfläche:**
+  - `test/ui/fileTree.test.ts`: 2 neue Tests. Der erste prüft Maus, Tastatur, den älteren Zustand und den Neustart, der zweite „Select Opened File“ bei einem zugeklappten Unterordner.
+  - `test/ui/commit.test.ts`: neuer Test zu den Farben.
+    - Im Baum: geänderte und nicht versionierte Datei, nicht versionierter Ordner und Unterordner, versionierter Ordner ohne Farbe, ignorierter Ordner samt Inhalt und ignorierte Datei.
+    - Tabs: geänderte und nicht versionierte Datei mit Farbe, unveränderte ohne; nach `git add` wechselt der Tab auf „neu“.
+    - Änderungsansicht mit denselben Farben.
+    - Die bestehende Farbprüfung im Rollback-Test erwartet die neuen Werte.
+  - `test/ui/gitLog.test.ts`: Die Datei in der Dateiliste des Git-Logs hat das Blau von „geändert“.
+
+### Testläufe (2026-11-26, nacheinander, allein auf dem Rechner)
+
+- `npm run typecheck`: sauber.
+- `npm test`: 56 Dateien, 497 Tests grün.
+- `npm run test:ui` (ab 09:59): 28 Dateien, 101 Tests grün, 682 s. Kein Standby: Das letzte Kernel-Power-Ereignis davor war 507 um 09:07:55, während des Laufs und danach kam kein 506. Keine Meldung der Schlussprüfung, keine übrigen Prozesse.
