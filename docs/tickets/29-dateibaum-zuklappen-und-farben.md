@@ -70,6 +70,39 @@ Typ HITL wegen der Farben. Der Agent legt zuerst Bilder vor, der Nutzer gibt fre
    Die Entscheidung kommt ins Ticket.
 6. **Spezifikation:** Im Abschnitt „Oberfläche“ (Design) und bei den Git-Farben nachführen.
 
+## Befund und Farbwerte (Agent, 2026-11-26)
+
+Vor den Bildern geklärt, nach Schritt 1 und 2 oben. Die Bilder zur Freigabe liegen unter `entwuerfe/29-git-farben/` (Seite `index.html`, Aufnahmeskript in `aufnahmen/`); nicht versioniert, nach Abschluss gelöscht.
+
+### Was heute grau erscheint
+
+Geprüft am Code (`gitStatusOf` in `ProjectWindow.tsx`, `parseStatus` im Git-Dienst, Abschnitt „Commit und Git-Farben“ in `app.css`) und mit einem Temp-Repository mit allen Zuständen. Das Aufnahmeskript liest vor den Bildern jede Zeile des Baums mit Git-Zustand und berechneter Farbe (Protokoll `bilder/analyse.txt` bei den Entwürfen); das Ergebnis steht hier.
+
+- **Grau sind nur die ignorierten Einträge:** Ordner, die eine Regel in `.gitignore` trifft (etwa `node_modules`, `target`), alles darin und ignorierte Dateien (etwa `.env`, `*.log`). Git meldet sie mit `!` (`--ignored=matching`). Codium zeigt sie in `#6f737a`, derselben Farbe wie gedämpfter Text (`--text-faint`); deshalb wirken sie wie deaktiviert.
+- **Nicht versionierte Dateien sind nicht grau,** sondern rotbraun `#d1675a`, auch in einem nicht versionierten Ordner.
+- **Ordner ohne Farbe:** Ein Ordner, in dem nur nicht versionierte Dateien liegen, zeigt den Namen in der normalen Schriftfarbe `#dfe1e5`; das Ordnersymbol ist wie bei allen Ordnern grau (`--folder`, `#a5a8ae`). Git nennt mit `--untracked-files=all` nur die Dateien darin. Ebenso ohne Farbe bleibt ein Ordner, in dem nur ignorierte Dateien liegen (Git nennt mit `--ignored=matching` nur die Dateien).
+- Gelöschte Dateien sind ebenfalls grau, aber nur in der Änderungsansicht.
+- **Folgerung:** Was der Nutzer als „nicht getrackt, ausgegraut“ sieht, sind die ignorierten Einträge. Genau die sind im neuen IntelliJ-Design „Dark“ orange (`#D69A6B`). Nicht versionierte Einträge sind dort hell lachsrot (`#E88F89`), in Codium heute dunkler rotbraun. Das Olivgelb (`#848504`) stammt aus dem älteren Design „Darcula“.
+
+### Farbwerte von IntelliJ
+
+Quelle: die Farbschemata in den öffentlichen Quellen von JetBrains (intellij-community auf GitHub), gelesen am 2026-11-26. Übernommen werden nur die Werte.
+- Neues Design „Dark“: `platform/platform-resources/src/themes/expUI/expUI_darkScheme.xml` (Schema „Dark“, vom Theme `expUI_dark.theme.json` als `editorScheme` genannt), Commit `4eaa9b64`, Zeilen 55 bis 74.
+- „Islands Dark“: `platform/platform-resources/src/themes/islands/IslandSchemeDark.xml`, gleicher Commit, Zeilen 20 bis 36, dieselben Werte.
+- „Darcula“ als Grundlage: `platform/platform-resources/src/DefaultColorSchemesManager.xml`, Schema „Darcula“, Commit `2e2fa9d6`, Zeilen 1580 bis 1597.
+
+| Zustand | Heute (Codium) | IntelliJ „Dark“ | Darcula | Schlüssel |
+|---|---|---|---|---|
+| geändert | `#6897bb` | `#70AEFF` | `#6897BB` | `FILESTATUS_MODIFIED` |
+| umbenannt | `#6897bb` | `#70AEFF` | `#3A8484` | `FILESTATUS_RENAMED` |
+| neu | `#629755` | `#73BD79` | `#629755` | `FILESTATUS_ADDED` |
+| gelöscht | `#6f737a` | `#6F737A` | `#6C6C6C` | `FILESTATUS_DELETED` |
+| nicht versioniert | `#d1675a` | `#E88F89` | `#D1675A` | `FILESTATUS_UNKNOWN` |
+| ignoriert | `#6f737a` | `#D69A6B` | `#848504` | `FILESTATUS_IDEA_FILESTATUS_IGNORED` |
+| Konflikt | `#f75464` | `#DE6A66` | `#D5756C` | `FILESTATUS_IDEA_FILESTATUS_MERGED_WITH_CONFLICTS` |
+
+Für die gedämpfte Fassung der ignorierten Einträge gibt es keinen Wert von IntelliJ; vorgeschlagen ist dessen Orange zu 70 % auf der Fläche der Werkzeugfenster, `#A37959`.
+
 ## Akzeptanzkriterien
 
 - [ ] Ein Playwright-Test im Testmodus prüft:
