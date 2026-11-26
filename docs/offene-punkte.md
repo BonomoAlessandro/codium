@@ -21,20 +21,7 @@ erklären die Hintergründe.
 5. **TypeScript fremder Projekte** (Ticket 12): Beim Öffnen eines Projekts startet Codium dessen eigenes TypeScript
    (`tsc.exe` bzw. `tsserver.js` aus `node_modules`) ohne Vertrauensabfrage. So spezifiziert, aber ein bewusstes Risiko
    bei fremden Repositories.
-6. **Absturz des nativen TypeScript-Servers** (Ticket 30): Die Ursache der wiederholten Abstürze im Projekt des Nutzers
-   ist nicht gefunden; kein Nachstellen brachte den Server 7.0.2 zum Absturz, auch nicht das Nachspielen über Codiums
-   Kern. Seit Ticket 30 steht jedes unerwartete Ende mit Exit-Code und dem Ende von stderr im Protokoll der
-   Sprachserver; beim nächsten Mal dort nachsehen.
-   Gefunden, aber nicht als Ursache belegt: Kommen bis zur nächsten Anfrage mehr als 1000 Dateiänderungen zusammen
-   (etwa bei einem Build), verliert der Server eine gleichzeitige Bearbeitung einer offenen Datei; Anfragen zu ihr
-   enden dann in Panics, die er abfängt (keine Vorschläge, keine Färbung). Ein Entwurf einer Meldung an typescript-go
-   steht im Ticket; sie geht nur mit Zustimmung des Nutzers hinaus.
-   Vorschlag: Codium meldet `didChangeWatchedFiles.dynamicRegistration: true`, damit der Server seine eigene, erst seit
-   Juni 2026 vorhandene Überwachung des ganzen Projektordners nicht startet (Codium meldet die Änderungen ohnehin
-   selbst, wie VS Code); die Schübe wären etwa halb so gross. Zusätzlich könnte Codium dem TypeScript-Server nur
-   Dateien mit Endungen melden, die er liest, und Ordner; erst das hielte Build-Ausgaben ganz fern. Nicht belegt, dass
-   das den Absturz behebt; Änderungen ausserhalb des Projekts sähe dann niemand mehr.
-7. **Gemeinsamer Typ-Zwischenspeicher** (Ticket 30): Bei Projekten ohne Konfiguration installiert der native Server
+6. **Gemeinsamer Typ-Zwischenspeicher** (Ticket 30): Bei Projekten ohne Konfiguration installiert der native Server
    Typen über `npm` nach `%LOCALAPPDATA%\Microsoft\TypeScript\7.0` (ATA), auch aus Tests heraus, und das mit der
    npm-Registry des Rechners. Der Ordner gehört auch anderen Editoren. Abschalten (Einstellung des Servers) oder
    bewusst so lassen?

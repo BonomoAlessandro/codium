@@ -1,6 +1,6 @@
 # 30 – TypeScript-Server stürzt in einem Java-Projekt mit Web-Oberfläche wiederholt ab
 
-Status: `teilweise erledigt` (2026-11-25: Protokoll, „Show Log“ und „Restart“ gebaut; Ursache offen, wartet auf das Protokoll beim nächsten Absturz) · Typ: AFK
+Status: `erledigt` (2026-11-26, auf Wunsch des Nutzers ohne gefundene Ursache abgeschlossen; siehe „Abschluss“) · Typ: AFK
 Blockiert durch: –
 User Stories: „Sprachverständnis“ (TypeScript und JavaScript, Neustart nach Absturz)
 Spezifikation: „Sprachverständnis“ (Wahl des TypeScript-Servers, Neustarts), „Einstellungen, Meldungen und Voraussetzungen“
@@ -60,8 +60,8 @@ Es ist ein Arbeitsprojekt des Nutzers. Name und Pfad stehen bewusst nicht im Tic
 
 ## Akzeptanzkriterien
 
-- [ ] Die Ursache des Absturzes steht im Ticket, mit Beleg. *Offen: nicht gefunden, kein Nachstellen brachte einen Absturz (siehe „Umsetzung“).*
-- [ ] Ein Test stellt die auslösende Lage nach, mit einem nachgebauten Testprojekt bzw. einem nachgemachten Server wie in `test/support/fakeLspServer.ts`. Ohne die Behebung ist er rot, mit ihr grün. Ein Test mit dem echten nativen Server kommt in den langsamen Lauf, falls er die Ursache besser belegt. *Offen: ohne Ursache keine auslösende Lage und keine Behebung.*
+- [ ] Die Ursache des Absturzes steht im Ticket, mit Beleg. *Entfallen: nicht gefunden, kein Nachstellen brachte einen Absturz (siehe „Umsetzung“); der Nutzer hat das Ticket trotzdem abschliessen lassen (siehe „Abschluss“).*
+- [ ] Ein Test stellt die auslösende Lage nach, mit einem nachgebauten Testprojekt bzw. einem nachgemachten Server wie in `test/support/fakeLspServer.ts`. Ohne die Behebung ist er rot, mit ihr grün. Ein Test mit dem echten nativen Server kommt in den langsamen Lauf, falls er die Ursache besser belegt. *Entfallen: ohne Ursache keine auslösende Lage und keine Behebung (siehe „Abschluss“).*
 - [x] Ein schneller Test prüft das Protokoll:
   - Ein Server, der etwas auf stderr schreibt und mit einem Exit-Code ungleich 0 endet, hinterlässt einen Eintrag mit Server, Exit-Code und den letzten stderr-Zeilen.
   - Der Ringpuffer und die Grössengrenze des Protokolls halten.
@@ -177,7 +177,7 @@ Gefunden wurde dabei ein anderer, wiederholbarer Fehler des Servers (siehe „Na
 ### Behebung
 
 - **An der Ursache:** keine, weil die Ursache fehlt. Eine Meldung an das TypeScript-Projekt zum Absturz gibt es ohne Ursache nicht vorzubereiten. Für den gefundenen Fehler mit den verlorenen Bearbeitungen steht unten ein Entwurf.
-- **Vorschlag, zu entscheiden** (nicht umgesetzt, `docs/offene-punkte.md`): Codium meldet `didChangeWatchedFiles.dynamicRegistration: true`, nimmt die Registrierungen des Servers an und meldet wie bisher alle Änderungen im Projekt. Dann startet der Server seine eigene Überwachung nicht, und Codium läuft wie VS Code auf dem viel benutzten Weg.
+- **Vorschlag, vom Nutzer am 2026-11-26 verworfen** (nicht umgesetzt): Codium meldet `didChangeWatchedFiles.dynamicRegistration: true`, nimmt die Registrierungen des Servers an und meldet wie bisher alle Änderungen im Projekt. Dann startet der Server seine eigene Überwachung nicht, und Codium läuft wie VS Code auf dem viel benutzten Weg.
   - Dafür spricht: Weniger doppelte Arbeit, und Dateiänderungen gehen durch die Anfrageschleife des Servers, die Panics abfängt. Geprüft: Der Server meldet dann „using LSP client-side watching“ und schickt `client/registerCapability`.
   - Dagegen spricht: Es ist nicht belegt, dass es den Absturz behebt. Änderungen ausserhalb des Projekts (Typ-Zwischenspeicher, `node_modules` über dem Projektordner) sähe dann niemand mehr.
   - Dazu (2026-11-25): Ohne die eigene Überwachung des Servers kämen nur Codiums Meldungen an, ohne `.git`; die Schübe wären etwa halb so gross. Die verlorenen Bearbeitungen verhindert das allein nicht, denn ein grosser Build im Projektordner meldet auch so über 1000 Änderungen. Das täte erst ein zusätzlicher Filter: Codium meldet dem TypeScript-Server nur Dateien mit Endungen, die er liest (TypeScript, JavaScript, JSON), und Ordner. Auch das ist nicht umgesetzt und zu entscheiden.
@@ -286,5 +286,15 @@ Nicht eingearbeitet: nichts. Bewusst so gelassen: Der Code-Commit des Vorgänger
 - Die geänderten Stellen laufen in diesen Tests nicht: Der offene Tab von „Show Log“ und das Protokoll kommen dort nicht vor, und das Warten beim Beenden endet ohne Einträge sofort. Einen Zusammenhang sehe ich nicht, belegt ist das aber nicht. Vor dem Review war derselbe UI-Lauf grün (90 von 90).
 - Laut Ereignisprotokoll war der Rechner während der Läufe nicht im Standby (ein Standby begann erst 30 s nach dem Ende des zweiten UI-Laufs); es lief kein fremder Build.
 - Danach: keine Prozesse aus dem Checkout, keine `codium-*`-Ordner, keine Meldung der Schlussprüfung, keine Verletzung des Testmodus. Das Vorlesen der gebauten App meldete `mermaid.js` mit 18,3 s bzw. 17,4 s.
-- Ein UI-Einzellauf schrieb `package-lock.json` im gemeinsamen Typ-Zwischenspeicher neu (gleiche Grösse), der bekannte Nebeneffekt aus `docs/offene-punkte.md`, Punkt 7.
+- Ein UI-Einzellauf schrieb `package-lock.json` im gemeinsamen Typ-Zwischenspeicher neu (gleiche Grösse), der bekannte Nebeneffekt aus `docs/offene-punkte.md`, „Gemeinsamer Typ-Zwischenspeicher“.
 - **Kriterium 5:** Nach den beiden roten Läufen war es zunächst wieder offen. Ein dritter UI-Lauf vor dem Merge war grün (90 von 90), samt `typecheck`; der hängende Doppelklick bleibt unter „Wackelige Tests“ in `docs/offene-punkte.md` zu beobachten.
+
+## Abschluss (2026-11-26)
+
+Der Nutzer hat entschieden, wörtlich: „vergiss den punkt6 und schliesse das ticket 30 vollständig ab. Falls wiedermal ein fehler auftaucht werde ich ein neues ticket erstellen“.
+
+- Die Ursache bleibt unbekannt; die Kriterien 1 und 2 entfallen.
+- Der Vorschlag zu `didChangeWatchedFiles.dynamicRegistration` und zum Filtern nach Endungen (bisher Punkt 6 in `docs/offene-punkte.md`) ist verworfen und dort gestrichen.
+- Der Entwurf einer Meldung an typescript-go bleibt unverschickt.
+- Gebaut und gemergt bleibt die Diagnose: Protokoll der Sprachserver, „Show Log“ und „Restart“. Sie ist ab Codium 0.3.0 im installierten Codium enthalten. Tritt der Absturz wieder auf, wird es ein neues Ticket, mit dem Inhalt von „Show Log“.
+- Die Punkte unter „Abnahme von Hand“ bleiben offen, bis der Nutzer sie prüft.
