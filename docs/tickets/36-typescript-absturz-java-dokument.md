@@ -1,6 +1,6 @@
 # 36 – TypeScript-Server stürzt ab, weil er beim Start offene Java-Dateien gemeldet bekommt
 
-Status: `ready-for-agent` · Typ: AFK
+Status: `erledigt` (2026-11-26) · Typ: AFK
 Blockiert durch: –
 User Stories: „Sprachverständnis“ (TypeScript und JavaScript, Neustart nach Absturz)
 Spezifikation: „Sprachverständnis“ (Dokumente, Wahl des TypeScript-Servers, Neustarts)
@@ -89,7 +89,7 @@ github.com/microsoft/typescript-go/internal/compiler.(*fileLoader).parseSourceFi
 ## Abnahme von Hand
 
 - [ ] Im Java-Projekt des Nutzers: Java-Dateien offen, dann eine `.jsx`- bzw. `.js`-Datei öffnen. Der TypeScript-Server bleibt stabil, die Sprachfunktionen in der `.jsx`-Datei gehen.
-- [ ] Auch nach „Restart“ des TypeScript-Servers mit offenen Java-Dateien bleibt er stabil.
+- [ ] Auch nach einem Neustart mit offenen Java-Dateien bleibt er stabil. „Restart“ gibt es nur an der Meldung nach dem Aufgeben; dafür `tsc.exe` unter Codium im Task-Manager viermal innerhalb von drei Minuten beenden. Codium startet ihn dreimal neu, nach dem vierten Mal kommt die Meldung, „Restart“ startet ihn wieder. In „Show Log“ enden die vier neuen Einträge (Zeitpunkt beachten, die Abstürze aus 0.3.0 stehen weiter darin) mit Exit-Code 1, und keiner zeigt die Panic „ScriptKind must be specified“. *(Präzisiert im Review.)*
 
 ## Hinweise
 
@@ -123,9 +123,9 @@ github.com/microsoft/typescript-go/internal/compiler.(*fileLoader).parseSourceFi
 ### Behebung
 
 - **`sendOpen` prüft selbst,** dass das Dokument zum Server gehört (`doc.server === server.id`). So kann kein Weg einem Server ein fremdes Dokument melden. Der Start meldet weiter über `sendOpen`, also nur noch die Dokumente seiner Sprachen; die Kommentare dort und am Kopf des Dienstes sind nachgeführt.
-- **Teststelle für den schnellen Lauf:** `BundledJava.testServer` (`javaServer.ts`) startet statt jdtls ein anderes Programm, hier den nachgemachten Server.
-  - Ohne sie liesse sich jdtls nicht ersetzen: Codium startet immer `java.exe` des JDK mit Argumenten der JVM, und die versteht Node nicht.
-  - Die App setzt das Feld nie. Der Dienst nimmt es erst, wenn der Ordner von jdtls und ein JDK ab 25 da sind, also unter denselben Bedingungen wie jdtls.
+- **Teststelle für den schnellen Lauf:** Der Testschalter `javaServerForTests` des App-Kerns (neben `languageClock`, weitergereicht an den Sprach-Dienst) startet statt jdtls ein anderes Programm, hier den nachgemachten Server. Bis zum Review hiess er `BundledJava.testServer`.
+  - Ohne ihn liesse sich jdtls nicht ersetzen: Codium startet immer `java.exe` des JDK mit Argumenten der JVM, und die versteht Node nicht.
+  - Die App setzt ihn nie. Der Dienst nimmt ihn erst, wenn der Ordner von jdtls und ein JDK ab 25 da sind, also unter denselben Bedingungen wie jdtls.
 - **`fakeLspServer.ts`** schreibt bei `didOpen` den Namen des Dokuments mit.
 
 ### Geprüfte Stellen
@@ -160,9 +160,9 @@ Alle Stellen in `languageService.ts`, die über alle Dokumente laufen oder etwas
   - keine Meldung „stopped“;
   - das Protokoll der Sprachserver bleibt leer, nach dem Absturz steht darin genau dessen Eintrag, ohne Panic.
 
-  Den Typ-Zwischenspeicher des Servers (ATA) legt der Test über `LOCALAPPDATA` in seinen Temp-Ordner. `%LOCALAPPDATA%\Microsoft\TypeScript\7.0` blieb in den Einzelläufen und in den vollen Läufen unverändert (keine Datei neuer als vor dem ersten Lauf).
+  - Typ-Erwerb (ATA): Der Server bekommt kein npm im PATH, also startet er dafür keinen Prozess, und sein Zwischenspeicher liegt über `LOCALAPPDATA` im Temp-Ordner des Tests. Am Schluss prüft der Test, dass dort kein `node_modules` entstand (seit dem Review, siehe dort).
 
-### Testläufe (2026-11-26, nacheinander und allein im Checkout)
+### Testläufe vor dem Review (2026-11-26, nacheinander und allein im Checkout; durch die Läufe im Abschnitt „Review“ ersetzt)
 
 | Lauf | Ergebnis | Dauer |
 |---|---|---|
@@ -173,3 +173,33 @@ Alle Stellen in `languageService.ts`, die über alle Dokumente laufen oder etwas
 
 - Laut Ereignisprotokoll kein Standby während der Läufe; das letzte Kernel-Power-Ereignis lag vor allen Läufen. Kein anderer Testlauf im Checkout; auf dem Rechner liefen daneben nur Sprachserver von Editoren und ein Entwicklungsserver eines anderen Projekts.
 - Danach: keine Prozesse aus dem Checkout, keine `codium-*`-Ordner im Temp-Ordner, keine Meldung der Schlussprüfung. Das Vorlesen der gebauten App meldete `mermaid.js` mit 18,1 s (Virenscanner).
+
+## Review
+
+Ein zweiter Agent hat den Branch am 2026-11-26 gegen Ticket, Spezifikation und Spielregeln geprüft. Er bestätigte Befund und Behebung und fand keinen weiteren Weg, auf dem ein Dokument beim falschen Server landet; Muss-Befunde gab es keine. Eingearbeitet:
+
+- **Abnahme von Hand:** „Show Log zeigt nur diese vier Enden“ träfe beim Nutzer nicht zu, denn sein Protokoll bleibt über Updates erhalten und enthält schon die vier Panics aus 0.3.0. Jetzt heisst es: Die vier neuen Einträge (Zeitpunkt beachten) enden mit Exit-Code 1, und keiner zeigt die Panic. Dazu „viermal innerhalb von drei Minuten“, sonst kommt die Meldung nach dem vierten Mal nicht. Geändert in `docs/abnahme.md` und oben unter „Abnahme von Hand“.
+- **Spezifikation, „Was einen guten Test ausmacht“:** Der Satz „Nachgemacht wird nur an den Ports … Sprachserver laufen echt“ widersprach den nachgemachten Sprachservern unter Teststelle 1. Ergänzt ist die Ausnahme: nachgemachte Sprachserver für Abläufe, die echte Server nicht verlässlich zeigen (Start, Abstürze, gemeldete Dokumente; Tickets 27, 30, 36).
+- **Typ-Erwerb (ATA) im langsamen Test,** vom Prüfer vermutet, geprüft und bestätigt:
+  - **Beobachtet:** Ein Beobachter zeichnete während des Tests alle 200 ms die Prozesse unter `tsc.exe` und den Zwischenspeicher im Temp-Ordner auf. Jeder der drei Server des Tests startete `cmd.exe /c npm install --ignore-scripts types-registry@latest`, zwei davon danach wegen der JSX-Datei zweimal `npm install --ignore-scripts @types/react@latest --save-dev`. Das lief mit der npm-Konfiguration des Rechners und bei jedem Lauf neu; im Zwischenspeicher entstand `node_modules\types-registry`. Nach dem Lauf war kein npm-Prozess übrig, das Risiko bestand aber.
+  - **Abschalten über den Server** ginge nur mit der Antwort auf `workspace/configuration` (`typescript.disableAutomaticTypeAcquisition` bzw. im Abschnitt `js/ts` `tsserver.automaticTypeAcquisition.enabled`; gelesen im öffentlichen Quelltext von 7.0.2). Das änderte Codium selbst, und ob ATA abgeschaltet wird, ist eine offene Entscheidung des Nutzers (`docs/offene-punkte.md`, „Gemeinsamer Typ-Zwischenspeicher“).
+  - **Stattdessen** bekommt der Server im Test eine Umgebung, deren PATH nur `System32` enthält. Er ruft npm über PATH auf (`exec.Command("npm", …)`) und startet ohne npm gar keinen Prozess dafür. Das Szenario bleibt gleich, weiter ohne tsconfig.json und jsconfig.json. `LOCALAPPDATA` zeigt wie bisher in den Temp-Ordner.
+  - **Danach:** Der Beobachter sah unter den drei Servern nur `conhost.exe`, das zu jedem Konsolenprogramm gehört, kein `cmd.exe` und kein npm. Im Zwischenspeicher entstand nur `package.json`. Der Test prüft am Schluss, dass dort kein `node_modules` entstand.
+  - **Gegenprobe mit dem geänderten Test ohne Behebung** (Prüfung in `sendOpen` entfernt, Datei danach aus einer Kopie zurückgeholt): weiterhin rot, mit vier Panics „ScriptKind must be specified“, Exit-Code 2 und beim vierten Mal „Not restarted“. Der schnelle Test war ebenfalls rot wie vorher.
+- **Teststelle verschoben:** `BundledJava.testServer` heisst jetzt `javaServerForTests` und steht als Testschalter in den Optionen des App-Kerns neben `languageClock`, weitergereicht an die Optionen des Sprach-Dienstes und mit „(Tests)“ vermerkt. `BundledJava` beschreibt wieder nur die mitgelieferten Werkzeuge. Nachgeführt sind das Testgerüst (`test/support/core.ts`), die Spezifikation unter Teststelle 1 und der Kommentar in `fakeLspServer.ts`.
+- **Ticket 30:** Die beiden fast gleichen Nachträge sind zu einem zusammengefasst.
+- **Kommentar im schnellen Test:** „Restart“ heisst dort jetzt „derselbe Weg wie der Knopf nach dem Aufgeben“.
+
+Nicht eingearbeitet: nichts.
+
+**Testläufe nach dem Review** (2026-11-26, nacheinander und allein im Checkout):
+
+| Lauf | Ergebnis | Dauer |
+|---|---|---|
+| `npm run typecheck` | grün | 5 s |
+| `npm test` | 579 von 579 grün (61 Dateien) | 154 s |
+| `npm run test:slow` | 41 von 41 grün (9 Dateien), nichts übersprungen | 264 s |
+| `npm run test:ui` | 106 von 106 grün (29 Dateien) | 805 s mit Bau |
+
+- Laut Ereignisprotokoll kein Standby während der Läufe; das letzte Kernel-Power-Ereignis lag vor allen Läufen. Kein anderer Testlauf im Checkout. Die Läufe dauerten länger als vor dem Review, ohne Fehler; auf dem Rechner liefen daneben Sprachserver von Editoren und ein Entwicklungsserver eines anderen Projekts.
+- Danach: keine Prozesse aus dem Checkout, keine `codium-*`-Ordner im Temp-Ordner, keine Meldung der Schlussprüfung. `%LOCALAPPDATA%\Microsoft\TypeScript\7.0` blieb unverändert (keine Datei neuer als vor dem ersten Lauf). Das Vorlesen der gebauten App meldete `mermaid.js` mit 18,9 s (Virenscanner).

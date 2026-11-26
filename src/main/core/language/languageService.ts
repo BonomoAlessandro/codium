@@ -65,6 +65,12 @@ export interface LanguageServiceOptions {
   log: (message: string) => void;
   /** Protokoll der Sprachserver (Ticket 30); ohne Angabe wird nichts protokolliert. */
   serverLog?: LanguageServerLog;
+  /**
+   * Statt jdtls dieses Programm, etwa den nachgemachten Server `test/support/fakeLspServer.ts` (Tests, Ticket 36). jdtls
+   * selbst lässt sich dort nicht ersetzen, denn Codium startet immer `java.exe` des JDK mit Argumenten der JVM. Es
+   * startet unter denselben Bedingungen wie jdtls (`java` angegeben, Ordner von jdtls und ein JDK ab 25 da).
+   */
+  javaServerForTests?: { command: string; args: string[]; env?: Record<string, string> };
 }
 
 type ServerId = LanguageServerId;
@@ -656,8 +662,8 @@ export class LanguageService {
     const java = this.options.java!;
     const jdk = this.javaJdk();
     if (!jdk) return null;
-    // Nur schnelle Tests: ein nachgemachter Server statt jdtls (Ticket 36).
-    const fake = java.bundled.testServer;
+    // Nur in Tests: ein nachgemachter Server statt jdtls (Ticket 36).
+    const fake = this.options.javaServerForTests;
     if (fake) return { kind: 'test-server', command: fake.command, args: fake.args, env: fake.env ?? {} };
     const mavenHome = this.options.env?.MAVEN_HOME ?? this.options.env?.M2_HOME ?? process.env.MAVEN_HOME ?? process.env.M2_HOME;
     const globalSettings = mavenHome ? path.join(mavenHome, 'conf', 'settings.xml') : null;

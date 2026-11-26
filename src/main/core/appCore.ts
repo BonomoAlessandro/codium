@@ -32,6 +32,7 @@ import { FolderQueries, type FolderStatus } from './folderQueries';
 import { startClone, type CloneJob } from './clone';
 import { detectShells, shellFor } from './shells';
 import type { BundledJava } from './language/javaServer';
+import type { LanguageServiceOptions } from './language/languageService';
 import type { BundledTypeScript } from './language/typescriptServer';
 import { LanguageServerLog, SERVER_LOG_FILE } from './language/serverLog';
 import { registerEditorCommands } from './editorCommands';
@@ -115,6 +116,8 @@ export interface AppCoreOptions {
   typescript?: BundledTypeScript;
   /** Uhr des Sprach-Dienstes für die Neustart-Regel (Tests). */
   languageClock?: () => number;
+  /** Statt jdtls dieses Programm, etwa ein nachgemachter Sprachserver (Tests, Ticket 36). */
+  javaServerForTests?: LanguageServiceOptions['javaServerForTests'];
   /** Mitgeliefertes jdtls und Lombok (Ticket 14); ohne Angabe gibt es keinen Java-Server. */
   java?: BundledJava;
   /** Eigene Maven-Einstellungen für jdtls (Tests: Maven Central und ein lokales Repository im Test-Zwischenspeicher). */
@@ -884,6 +887,7 @@ export class AppCore {
         env: this.options.processEnv,
         serverLog: this.serverLog,
         ...(this.options.languageClock ? { now: this.options.languageClock } : {}),
+        ...(this.options.javaServerForTests ? { javaServerForTests: this.options.javaServerForTests } : {}),
         ...(this.options.java
           ? {
               java: {

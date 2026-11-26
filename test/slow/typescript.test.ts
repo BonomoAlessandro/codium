@@ -220,12 +220,15 @@ describe('TypeScript-Sprachserver', () => {
     fs.writeFileSync(cart, CART);
     fs.writeFileSync(app, APP);
     const usage = { line: 5, character: APP.split('\n')[5].indexOf('total') + 1 };
+    // Ohne Konfiguration holt der Server Typen über npm (ATA): je Start `npm install types-registry`, bei JSX auch
+    // `@types/react`, mit der npm-Konfiguration des Rechners. Ohne npm im PATH seiner Umgebung startet er dafür keinen
+    // Prozess (er ruft `npm` über PATH auf); sonst bleibt der Ablauf gleich. Den Zwischenspeicher legt LOCALAPPDATA
+    // zusätzlich in den Temp-Ordner (docs/offene-punkte.md, „Gemeinsamer Typ-Zwischenspeicher“).
+    const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !['PATH', 'LOCALAPPDATA'].includes(name.toUpperCase())));
     const test = createTestCore(path.join(root, 'data'), {
       typescript: BUNDLED,
       cleanupTimeoutMs: 10_000,
-      // Ohne Konfiguration holt der Server Typen in einen Zwischenspeicher unter LOCALAPPDATA (ATA); hier in den
-      // Temp-Ordner statt in den gemeinsamen (docs/offene-punkte.md, „Gemeinsamer Typ-Zwischenspeicher“).
-      processEnv: { ...process.env, LOCALAPPDATA: path.join(root, 'local') },
+      processEnv: { ...env, Path: path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32'), LOCALAPPDATA: path.join(root, 'local') },
     });
     await test.core.start();
     await call(test, test.ports.windows.windowTitled(WELCOME), 'app.openProject', { path: project });
@@ -279,6 +282,8 @@ describe('TypeScript-Sprachserver', () => {
     expect(afterKill.match(/stopped unexpectedly/g)).toHaveLength(1);
     expect(afterKill).not.toContain('panic');
     await expectStable('nach dem Absturz', afterKill, 1);
+    // Kein Typ-Erwerb über npm (siehe oben): Der Zwischenspeicher im Temp-Ordner bekam kein node_modules.
+    expect(fs.existsSync(path.join(root, 'local', 'Microsoft', 'TypeScript', '7.0', 'node_modules'))).toBe(false);
   });
 
   it(`startet nach einem Absturz neu und gibt nach ${MAX_RESTARTS} Neustarts in drei Minuten auf`, async () => {

@@ -13,12 +13,6 @@ export interface BundledJava {
   /** Ordner von jdtls (mit `plugins` und `config_win`). */
   jdtls: string;
   lombok: string;
-  /**
-   * Nur für schnelle Tests (Ticket 36): startet statt jdtls dieses Programm, etwa den nachgemachten Server
-   * `test/support/fakeLspServer.ts`. jdtls selbst lässt sich nicht ersetzen, denn Codium startet immer `java.exe` des
-   * JDK mit Argumenten der JVM. Die App setzt es nie.
-   */
-  testServer?: { command: string; args: string[]; env?: Record<string, string> };
 }
 
 export interface JavaLaunchOptions {

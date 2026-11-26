@@ -2,7 +2,7 @@
 // Absturz und nach „Restart“. Vorher meldete Codium einem startenden Server alle offenen Dokumente; der native
 // TypeScript-Server bekam so offene Java-Dateien und stürzte daran ab („ScriptKind must be specified“), nach jedem
 // Neustart wieder. Zwei nachgemachte Server (fakeLspServer.ts) schreiben auf, welche Dokumente sie geöffnet bekommen:
-// einer als TypeScript-Server, einer statt jdtls (`BundledJava.testServer`).
+// einer als TypeScript-Server, einer statt jdtls (`javaServerForTests`).
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -74,11 +74,8 @@ describe('Dokumente je Sprachserver (Ticket 36)', () => {
         languageServerCli: FAKE_SERVER,
         node: { execPath: process.execPath, env: { NODE_NO_WARNINGS: '1', FAKE_LSP_LOG: typescriptLog } },
       },
-      java: {
-        jdtls: path.join(tools, 'jdtls'),
-        lombok: path.join(tools, 'lombok.jar'),
-        testServer: { command: process.execPath, args: [FAKE_SERVER, '--stdio'], env: { NODE_NO_WARNINGS: '1', FAKE_LSP_LOG: javaLog } },
-      },
+      java: { jdtls: path.join(tools, 'jdtls'), lombok: path.join(tools, 'lombok.jar') },
+      javaServerForTests: { command: process.execPath, args: [FAKE_SERVER, '--stdio'], env: { NODE_NO_WARNINGS: '1', FAKE_LSP_LOG: javaLog } },
     });
     await test.core.start();
     await call(test, test.ports.windows.windowTitled(WELCOME), 'app.openProject', { path: project });
@@ -121,7 +118,7 @@ describe('Dokumente je Sprachserver (Ticket 36)', () => {
     await expect.poll(() => opened(typescriptLog, second), { timeout: 15_000 }).toContain('util.js');
     expect(opened(typescriptLog, second)).toEqual(['app.jsx', 'util.js']);
 
-    // „Restart“ (Knopf an der Meldung nach dem Aufgeben): dasselbe.
+    // „Restart“ (derselbe Weg wie der Knopf nach dem Aufgeben): dasselbe.
     await call(test, windowId, 'language.restart', { server: 'typescript' });
     const third = language().typescriptPid!;
     expect(third).toBeDefined();

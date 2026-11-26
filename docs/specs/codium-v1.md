@@ -665,6 +665,7 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
 
 - Getestet wird **äusseres Verhalten** an einer der beiden Teststellen, nicht das Innenleben. Ein Test beschreibt, was ein Nutzer erleben würde („nach Commit mit zwei angehakten von drei geänderten Dateien bleibt die dritte geändert“), und bleibt grün, wenn der Kern intern umgebaut wird.
 - Nachgemacht wird nur an den Ports. Git, Dateisystem, ripgrep, Sprachserver, node-pty und PostgreSQL laufen echt.
+  - Ausnahme: nachgemachte Sprachserver im schnellen Lauf, für Abläufe, die echte Server nicht verlässlich zeigen, nämlich den Start, Abstürze und welche Dokumente ein Server gemeldet bekommt (Tickets 27, 30, 36). Was der Nutzer davon spürt, prüft zusätzlich ein langsamer Test mit dem echten Server, wo das geht.
 - Tests laufen in Temp-Ordnern mit eigenem Datenordner und hinterlassen weder Prozesse noch Temp-Ordner.
 - **Git in Tests:** Die globale und die systemweite Git-Konfiguration des Rechners werden abgeschirmt; Benutzername, E-Mail und Standardbranch setzen die Tests selbst, damit Hooks, Signierung oder Aliase des Nutzers nicht hineinwirken. Als Remote dient ein lokales Bare-Repository im Temp-Ordner; echte Git-Server werden nie angesprochen.
 - **Netz in Tests:** Downloads aus öffentlichen Paketquellen sind erlaubt (Maven Central, die Gradle-Verteilung). Tests, die sie brauchen, laufen nur im langsamen Testlauf und werden ohne Netz mit klarer Meldung übersprungen.
@@ -730,7 +731,7 @@ Für Teststelle 2 und jede automatische Prüfung der echten App gibt es einen Te
     - Speichern und Wirkung
     - Hinweise bei fehlendem Git und fehlendem JDK 25 (über das nachgemachte System)
     - JDK-Erkennung aus vorgegebenen Ordnern
-  - **Sprach-Dienst mit nachgemachten Sprachservern** (`test/support/fakeLspServer.ts`; für Java statt jdtls über `BundledJava.testServer`, das die App nie setzt):
+  - **Sprach-Dienst mit nachgemachten Sprachservern** (`test/support/fakeLspServer.ts`; für Java statt jdtls über den Testschalter `javaServerForTests` des App-Kerns, den die App nie setzt):
     - nichts vor `initialized`, auch nach einem Neustart (Ticket 27)
     - Protokoll der Sprachserver, Aufgeben nach vier Abstürzen, „Restart“ (Ticket 30)
     - jeder Server nur mit Dokumenten seiner Sprachen, beim Start, nach Absturz und nach „Restart“ (Ticket 36)

@@ -2,7 +2,7 @@
 
 import * as path from 'node:path';
 import { ripgrepPath } from '../../src/main/ripgrepPath';
-import { AppCore } from '../../src/main/core/appCore';
+import { AppCore, type AppCoreOptions } from '../../src/main/core/appCore';
 import type { BundledJava } from '../../src/main/core/language/javaServer';
 import type { BundledTypeScript } from '../../src/main/core/language/typescriptServer';
 import { createFakePorts, FakeEventSink, type FakePorts, type FakeSystemOptions } from './fakePorts';
@@ -41,6 +41,8 @@ export interface TestCoreOptions {
   typescript?: BundledTypeScript;
   /** Uhr des Sprach-Dienstes für die Neustart-Regel. */
   languageClock?: () => number;
+  /** Statt jdtls dieses Programm, etwa der nachgemachte Sprachserver (Ticket 36). */
+  javaServerForTests?: AppCoreOptions['javaServerForTests'];
   /** jdtls und Lombok (nur im langsamen Lauf). */
   java?: BundledJava;
   mavenUserSettings?: string;
@@ -68,6 +70,7 @@ export function createTestCore(dataDir: string, options: TestCoreOptions = {}): 
     ...(options.windowsConpty ? { windowsConpty: true } : {}),
     ...(options.typescript ? { typescript: options.typescript } : {}),
     ...(options.languageClock ? { languageClock: options.languageClock } : {}),
+    ...(options.javaServerForTests ? { javaServerForTests: options.javaServerForTests } : {}),
     ...(options.java ? { java: options.java } : {}),
     ...(options.mavenUserSettings ? { mavenUserSettings: options.mavenUserSettings } : {}),
     ...(options.dbConnectTimeoutMs ? { dbConnectTimeoutMs: options.dbConnectTimeoutMs } : {}),

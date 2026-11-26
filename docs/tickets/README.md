@@ -69,7 +69,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 
 ## Übersicht
 
-Stand 2026-11-26: Codium 1 ist abgeschlossen, Tickets 01 bis 23 erledigt. Die Abnahme von Hand macht der Nutzer im Alltag ([Prüfliste](../abnahme.md)); Abweichungen werden neue Tickets. Auch die später dazugekommenen Tickets 24 bis 32 sind erledigt. Bei Ticket 30 (Absturz des TypeScript-Servers) blieb die Ursache offen; dank seines Protokolls ist sie inzwischen gefunden, die Behebung folgt in Ticket 36. Offen sind Ticket 36 (zuerst, Absturz des TypeScript-Servers bei offenen Java-Dateien), Ticket 33 (Branch-Dropdown per Klick), Ticket 34 (Scrollbalken überall) und Ticket 35 (Dateisymbole für JSON, JavaScript, JSX und Markdown). Offene Punkte, Entscheide und bekannte Grenzen: [offene-punkte.md](../offene-punkte.md).
+Stand 2026-11-26: Codium 1 ist abgeschlossen, Tickets 01 bis 23 erledigt. Die Abnahme von Hand macht der Nutzer im Alltag ([Prüfliste](../abnahme.md)); Abweichungen werden neue Tickets. Auch die später dazugekommenen Tickets 24 bis 32 sind erledigt. Bei Ticket 30 (Absturz des TypeScript-Servers) blieb die Ursache offen; dank seines Protokolls ist sie inzwischen gefunden und in Ticket 36 behoben. Offen sind Ticket 33 (Branch-Dropdown per Klick), Ticket 34 (Scrollbalken überall) und Ticket 35 (Dateisymbole für JSON, JavaScript, JSX und Markdown). Offene Punkte, Entscheide und bekannte Grenzen: [offene-punkte.md](../offene-punkte.md).
 
 | Nr. | Ticket | Typ | Blockiert durch | Etappe | Stand |
 |---|---|---|---|---|---|
@@ -108,7 +108,7 @@ Stand 2026-11-26: Codium 1 ist abgeschlossen, Tickets 01 bis 23 erledigt. Die Ab
 | 33 | [Branch-Dropdown: Untermenü erst per Klick, Schliessen bei jedem Klick daneben](33-branch-dropdown-klick.md) | AFK | – | – | offen |
 | 34 | [Scrollbalken in der ganzen App wie im Code-Bereich, 9 px breit](34-scrollbalken-ueberall.md) | AFK | – | – | offen |
 | 35 | [Symbole für JSON-, JavaScript-, JSX- und Markdown-Dateien wie in IntelliJ](35-dateisymbole-json-js-md.md) | HITL | – | – | offen |
-| 36 | [TypeScript-Server stürzt ab, weil er beim Start offene Java-Dateien gemeldet bekommt](36-typescript-absturz-java-dokument.md) | AFK | – | – | offen |
+| 36 | [TypeScript-Server stürzt ab, weil er beim Start offene Java-Dateien gemeldet bekommt](36-typescript-absturz-java-dokument.md) | AFK | – | – | erledigt |
 
 ```mermaid
 flowchart LR

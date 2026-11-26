@@ -6,7 +6,7 @@
 // Umgebung: FAKE_LSP_LOG (Protokolldatei), FAKE_LSP_INIT_DELAY_MS (Verzögerung der Antwort auf `initialize`).
 //
 // Derselbe Server dient als nachgemachter TypeScript-Server (über `BundledTypeScript.languageServerCli`) und als
-// nachgemachter Java-Server (über `BundledJava.testServer`, Ticket 36).
+// nachgemachter Java-Server (über den Testschalter `javaServerForTests` des App-Kerns, Ticket 36).
 //
 // Abstürze auf Bestellung (Ticket 30): Solange die Datei FAKE_LSP_CRASH_FILE existiert, schreibt der Server nach einer
 // Nachricht mit der Methode FAKE_LSP_CRASH_ON (Standard `textDocument/didOpen`) etwas auf stderr und endet mit dem
