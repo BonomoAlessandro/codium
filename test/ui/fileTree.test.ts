@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import type { Locator, Page } from 'playwright-core';
 import { describe, expect, it } from 'vitest';
 import { dataFolder } from '../../src/main/dataFolder';
-import { launchCodium, prepareAppState, type LaunchedApp } from '../support/launchApp';
+import { launchCodium, prepareAppState, prepareProjectState, type LaunchedApp } from '../support/launchApp';
 import { useTempDirs } from '../support/tempDir';
 
 const ALPHA = 'Alpha – Codium';
@@ -331,6 +331,96 @@ describe('Dateibaum', () => {
       await item(page, 'Main.java').waitFor();
       expect(await item(page, 'src').getAttribute('aria-expanded')).toBe('true');
       expect(await item(page, 'main').getAttribute('aria-expanded')).toBe('true');
+    });
+  });
+
+  describe('Zuklappen schliesst die Ordner darin (Ticket 29)', () => {
+    const NESTED = { 'a/b/c/deep.txt': 'tief', 'a/b/note.txt': 'Notiz', 'README.md': '# Alpha' };
+
+    const expanded = (page: Page, name: string) => item(page, name).getAttribute('aria-expanded');
+
+    /** Klick auf den Pfeil der Zeile; er klappt auf bzw. zu und lässt die Auswahl stehen. */
+    async function clickArrow(page: Page, name: string, after: 'true' | 'false'): Promise<void> {
+      await item(page, name).locator('.file-tree-arrow').click();
+      await expect.poll(() => expanded(page, name)).toBe(after);
+    }
+
+    it('mit Maus und Tastatur, auch aus einem älteren Zustand und nach einem Neustart', async () => {
+      const { alpha, dataRoot } = setup(NESTED);
+      // Ein Zustand von vor Ticket 29: a zu, a/b gemerkt. Auch daraus geht a nur mit der ersten Ebene auf.
+      prepareProjectState(dataRoot, alpha, { expandedFolders: ['', 'a/b'] });
+      let { codium, page } = await launchAlpha(dataRoot);
+      await withApp(codium, async () => {
+        expect(await expanded(page, 'a')).toBe('false');
+        await clickArrow(page, 'a', 'true');
+        await item(page, 'b').waitFor();
+        expect(await expanded(page, 'b')).toBe('false');
+
+        // Maus: b auf, a zu, a wieder auf: b ist zu, c nicht zu sehen.
+        await clickArrow(page, 'b', 'true');
+        await item(page, 'c').waitFor();
+        await clickArrow(page, 'a', 'false');
+        await expect.poll(() => item(page, 'b').count()).toBe(0);
+        await clickArrow(page, 'a', 'true');
+        await item(page, 'b').waitFor();
+        expect(await expanded(page, 'b')).toBe('false');
+        expect(await item(page, 'c').count()).toBe(0);
+
+        // Tastatur: Pfeil rechts klappt b auf, Pfeil links klappt a zu, Pfeil rechts wieder auf: b ist zu.
+        await item(page, 'b').click();
+        await page.keyboard.press('ArrowRight');
+        await expect.poll(() => expanded(page, 'b')).toBe('true');
+        await item(page, 'c').waitFor();
+        await page.keyboard.press('ArrowUp');
+        expect(await selectedNames(page)).toEqual(['a']);
+        await page.keyboard.press('ArrowLeft');
+        await expect.poll(() => expanded(page, 'a')).toBe('false');
+        await page.keyboard.press('ArrowRight');
+        await expect.poll(() => expanded(page, 'a')).toBe('true');
+        await item(page, 'b').waitFor();
+        expect(await expanded(page, 'b')).toBe('false');
+        expect(await item(page, 'c').count()).toBe(0);
+
+        // Für den Neustart: b auf, dann a zu; so beendet.
+        await clickArrow(page, 'b', 'true');
+        await clickArrow(page, 'a', 'false');
+        await page.getByRole('button', { name: 'Alpha', exact: true }).click();
+        await page.getByRole('menuitem', { name: 'Exit' }).click();
+        await codium.exited();
+      });
+
+      ({ codium, page } = await launchAlpha(dataRoot));
+      await withApp(codium, async () => {
+        await item(page, 'README.md').waitFor();
+        expect(await expanded(page, 'a')).toBe('false');
+        await clickArrow(page, 'a', 'true');
+        await item(page, 'b').waitFor();
+        expect(await expanded(page, 'b')).toBe('false');
+      });
+    });
+
+    it('„Select Opened File“ klappt die Ordner bis zu einer Datei in einem zugeklappten Unterordner wieder auf', async () => {
+      const { dataRoot } = setup(NESTED);
+      const { codium, page } = await launchAlpha(dataRoot);
+      await withApp(codium, async () => {
+        await clickArrow(page, 'a', 'true');
+        await clickArrow(page, 'b', 'true');
+        await clickArrow(page, 'c', 'true');
+        await item(page, 'deep.txt').click();
+        await page.keyboard.press('Enter');
+        await expect.poll(() => openTabs(page)).toEqual(['deep.txt']);
+
+        // a zu: b und c gelten jetzt auch als zu.
+        await clickArrow(page, 'a', 'false');
+        await clickArrow(page, 'a', 'true');
+        expect(await expanded(page, 'b')).toBe('false');
+        await clickArrow(page, 'a', 'false');
+
+        await page.getByRole('button', { name: 'Select Opened File' }).click();
+        await expect.poll(() => item(page, 'deep.txt').getAttribute('aria-selected')).toBe('true');
+        expect([await expanded(page, 'a'), await expanded(page, 'b'), await expanded(page, 'c')]).toEqual(['true', 'true', 'true']);
+        expect(await selectedNames(page)).toEqual(['deep.txt']);
+      });
     });
   });
 

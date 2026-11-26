@@ -2,7 +2,7 @@
 // Taste bewirkt (wie in IntelliJ) und wie Auswahl und aufgeklappte Ordner Umbenennen und Löschen überstehen.
 
 import type { FileEntry } from '../../shared/types';
-import { isSameOrInside, movedPath, pathKey } from './filePaths';
+import { isSameOrInside, movedPath, parentPath, pathKey } from './filePaths';
 
 /** Ein gelesener Ordner: sein Pfad und seine Einträge in der Reihenfolge des Kerns. */
 export interface Listing {
@@ -28,8 +28,8 @@ export interface TreeRow {
 
 /**
  * Die sichtbaren Zeilen: der Projektordner, darunter der Inhalt jedes aufgeklappten Ordners, dessen Inhalt schon
- * gelesen ist. Ein aufgeklappter Ordner, dessen Eltern zugeklappt sind, bleibt aufgeklappt, ist aber nicht sichtbar
- * (wie in IntelliJ: Er zeigt sich wieder, sobald die Eltern aufgehen). Ordner in `unavailable` (gerade nicht lesbar)
+ * gelesen ist. Ein aufgeklappter Ordner, dessen Eltern zugeklappt sind, ist nicht sichtbar; das Zuklappen nimmt
+ * solche Ordner aus den aufgeklappten (`collapseFolder`, Ticket 29). Ordner in `unavailable` (gerade nicht lesbar)
  * erscheinen zugeklappt, bleiben aber unter den aufgeklappten.
  */
 export function visibleRows(
@@ -134,6 +134,38 @@ export function rangeKeys(rows: readonly TreeRow[], from: number, to: number): s
 export function withoutSubtree<V>(map: ReadonlyMap<string, V>, target: string, keep?: string): Map<string, V> {
   const result = new Map<string, V>();
   for (const [key, value] of map) if (key === keep || !isSameOrInside(key, target)) result.set(key, value);
+  return result;
+}
+
+/**
+ * Zuklappen (Ticket 29): Der Ordner und alle aufgeklappten Ordner darin gelten danach als zugeklappt, wie im
+ * Branch-Menü. Klappt der Nutzer ihn wieder auf, ist nur die erste Ebene offen. Unverändert (dasselbe Objekt), wenn
+ * nichts darunter aufgeklappt war.
+ */
+export function collapseFolder(expanded: ReadonlyMap<string, string>, folder: string): ReadonlyMap<string, string> {
+  for (const key of expanded.keys()) if (isSameOrInside(key, folder)) return withoutSubtree(expanded, folder);
+  return expanded;
+}
+
+/**
+ * Die aufgeklappten Ordner ohne die, unter deren Eltern einer zugeklappt ist; der Projektordner zählt mit. Ein
+ * gespeicherter Zustand von vor Ticket 29 kann solche Ordner enthalten, weil das Zuklappen sie damals behielt; sie
+ * wären beim nächsten Aufklappen der Eltern wieder offen. Pfade ausserhalb des Projekts bleiben, wie sie sind.
+ * Unverändert (dasselbe Objekt), wenn nichts wegfällt.
+ */
+export function withoutHiddenFolders(expanded: ReadonlyMap<string, string>, root: string): ReadonlyMap<string, string> {
+  const rootKey = pathKey(root);
+  const hidden = (key: string) => {
+    if (key === rootKey || !isSameOrInside(key, rootKey)) return false;
+    for (let dir = parentPath(key); ; dir = parentPath(dir)) {
+      if (!expanded.has(dir)) return true;
+      if (dir === rootKey || parentPath(dir) === dir) return false;
+    }
+  };
+  const keys = [...expanded.keys()].filter(hidden);
+  if (keys.length === 0) return expanded;
+  const result = new Map(expanded);
+  for (const key of keys) result.delete(key);
   return result;
 }
 

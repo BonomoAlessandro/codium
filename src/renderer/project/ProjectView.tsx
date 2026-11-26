@@ -2,7 +2,7 @@
 //
 // - Ordner werden erst beim Aufklappen gelesen und beim Zuklappen vergessen; bei Dateiereignissen liest der Baum nur
 //   die betroffenen, aufgeklappten Ordner neu. Aufgeklappte Ordner und Auswahl hängen an Pfaden und überstehen das
-//   Neueinlesen.
+//   Neueinlesen. Zuklappen klappt auch alle Ordner darin zu (Ticket 29).
 // - Gezeichnet werden nur die sichtbaren Zeilen (feste Zeilenhöhe), damit auch ein aufgeklapptes node_modules
 //   flüssig bleibt.
 // - Einfachklick wählt aus (Ctrl und Shift wie üblich für mehrere), Doppelklick oder Enter klappt Ordner auf und zu
@@ -50,6 +50,7 @@ import { useAsk, useAskText } from '../popup/Dialogs';
 import { Menu, type MenuEntry } from '../popup/Menu';
 import { baseName, isSameOrInside, parentPath, pathKey, relativeLabel } from './filePaths';
 import {
+  collapseFolder,
   followPaths,
   moveSubtree,
   movedKey,
@@ -58,6 +59,7 @@ import {
   selectionAfterDelete,
   treeKey,
   visibleRows,
+  withoutHiddenFolders,
   withoutSubtree,
   type Listing,
   type TreeRow,
@@ -214,7 +216,9 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile, openedFi
     let active = true;
     const apply = (paths: string[]) => {
       if (!active || expandedRef.current) return;
-      const map = new Map(paths.map((p) => [pathKey(p), p]));
+      // Ein älterer Zustand kann Ordner unter zugeklappten enthalten; sie bleiben zu (Ticket 29). Gespeichert wird das
+      // erst mit der nächsten Änderung durch den Nutzer.
+      const map = withoutHiddenFolders(new Map(paths.map((p) => [pathKey(p), p])), root);
       expandedRef.current = map;
       setExpandedState(map);
     };
@@ -495,12 +499,8 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile, openedFi
   };
 
   const collapse = (row: TreeRow) => {
-    setExpanded((current) => {
-      if (!current.has(row.key)) return current;
-      const next = new Map(current);
-      next.delete(row.key);
-      return next;
-    });
+    // Auch die Ordner darin gelten danach als zugeklappt, im gespeicherten Zustand ebenso (Ticket 29).
+    setExpanded((current) => collapseFolder(current, row.path));
     // Zugeklappt wird der Inhalt vergessen; beim nächsten Aufklappen wird er frisch gelesen.
     dropListings(row.path);
     // Ausgewählte Einträge darin verschwinden; die Auswahl geht auf den Ordner.

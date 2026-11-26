@@ -5,6 +5,7 @@ import { copyName, fileNameProblem, splitExtension, splitNewName } from '../../s
 import type { FileEntry } from '../../src/shared/types';
 import { baseName, isSameOrInside, joinPath, movedPath, parentPath, pathKey, relativeLabel } from '../../src/renderer/project/filePaths';
 import {
+  collapseFolder,
   followPaths,
   moveSubtree,
   parentRow,
@@ -12,6 +13,7 @@ import {
   selectionAfterDelete,
   treeKey,
   visibleRows,
+  withoutHiddenFolders,
   withoutSubtree,
   type Listing,
 } from '../../src/renderer/project/fileTree';
@@ -46,9 +48,9 @@ describe('Sichtbare Zeilen des Dateibaums', () => {
     expect(rows[0]).toMatchObject({ isRoot: true, path: ROOT, loading: false });
   });
 
-  it('merkt sich aufgeklappte Ordner unter einem zugeklappten und zeigt einen ungelesenen als „lädt“', () => {
+  it('zeigt aufgeklappte Ordner unter einem zugeklappten nicht und einen ungelesenen als „lädt“', () => {
     const { listings, expanded } = sample();
-    // src zu: main bleibt aufgeklappt, ist aber nicht sichtbar.
+    // src zu, main aufgeklappt: nicht sichtbar. (Beim Zuklappen vergisst der Baum main ohnehin, siehe Ticket 29.)
     expect(visibleRows(ROOT, 'Alpha', listings, expanded(ROOT, `${ROOT}\\src\\main`)).map((r) => r.name)).toEqual([
       'Alpha',
       'src',
@@ -172,6 +174,43 @@ describe('Auswahl und aufgeklappte Ordner bei Löschen und Umbenennen', () => {
       [pathKey(`${ROOT}\\Source\\Main`), `${ROOT}\\Source\\Main`],
       [pathKey(ROOT), ROOT],
     ]);
+  });
+});
+
+describe('Zuklappen schliesst die Ordner darin (Ticket 29)', () => {
+  const A = `${ROOT}\\a`;
+  const AB = `${A}\\b`;
+  const ABC = `${AB}\\c`;
+  const map = (...paths: string[]) => new Map(paths.map((p) => [pathKey(p), p]));
+
+  it('nimmt beim Zuklappen alle aufgeklappten Ordner darunter mit, Namensvettern und Geschwister bleiben', () => {
+    const expanded = map(ROOT, A, AB, ABC, `${ROOT}\\a2`, `${ROOT}\\src`);
+    expect([...collapseFolder(expanded, `${ROOT}\\A`).values()]).toEqual([ROOT, `${ROOT}\\a2`, `${ROOT}\\src`]);
+    // Wieder aufgeklappt ist nur die erste Ebene offen.
+    const reopened = new Map(collapseFolder(expanded, A)).set(pathKey(A), A);
+    const listings = new Map<string, Listing>([
+      [pathKey(ROOT), { path: ROOT, entries: [dir('a')] }],
+      [pathKey(A), { path: A, entries: [dir('b', A)] }],
+      [pathKey(AB), { path: AB, entries: [dir('c', AB)] }],
+    ]);
+    expect(visibleRows(ROOT, 'Alpha', listings, reopened).map((r) => `${r.name}${r.expanded ? '/' : ''}`)).toEqual(['Alpha/', 'a/', 'b']);
+    // Der Projektordner nimmt alles mit.
+    expect(collapseFolder(expanded, ROOT).size).toBe(0);
+  });
+
+  it('ändert nichts, wenn der Ordner schon zu war', () => {
+    const expanded = map(ROOT, `${ROOT}\\src`);
+    expect(collapseFolder(expanded, A)).toBe(expanded);
+  });
+
+  it('lässt aus einem älteren Zustand nur Ordner, deren Eltern bis zum Projektordner alle offen sind', () => {
+    // Vor Ticket 29 blieb a/b beim Zuklappen von a gemerkt.
+    expect([...withoutHiddenFolders(map(ROOT, AB, ABC, `${ROOT}\\src`), ROOT).values()]).toEqual([ROOT, `${ROOT}\\src`]);
+    // Ohne den Projektordner ist nichts darunter sichtbar.
+    expect([...withoutHiddenFolders(map(A, AB), ROOT).values()]).toEqual([]);
+    // Schreibweise egal; ein Pfad ausserhalb des Projekts bleibt, wie er ist.
+    const consistent = map(ROOT, `${ROOT}\\A`, `${ROOT}\\a\\B`, 'D:\\Other\\x');
+    expect(withoutHiddenFolders(consistent, ROOT.toUpperCase())).toBe(consistent);
   });
 });
 
