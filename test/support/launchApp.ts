@@ -257,11 +257,28 @@ export function prepareAppState(dataRoot: string, state: Partial<Omit<AppState, 
   fs.writeFileSync(file, `${JSON.stringify({ ...emptyAppState(), ...state }, null, 2)}\n`, 'utf8');
 }
 
+/** Die Datei mit dem Projekt-Zustand eines Projekts im Test-Datenordner. */
+function projectStateFile(dataRoot: string, projectPath: string): string {
+  return path.join(dataFolder(dataRoot, false), PROJECT_STATE_DIR, projectStateFileName(lexicalProjectKey(projectPath)));
+}
+
 /** Schreibt den Projekt-Zustand eines Projekts vor dem Start, etwa offene Tabs oder Werkzeugfenster. */
 export function prepareProjectState(dataRoot: string, projectPath: string, state: Partial<Omit<ProjectState, 'schemaVersion' | 'path'>>): void {
-  const file = path.join(dataFolder(dataRoot, false), PROJECT_STATE_DIR, projectStateFileName(lexicalProjectKey(projectPath)));
+  const file = projectStateFile(dataRoot, projectPath);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify({ schemaVersion: 1, path: projectPath, ...state }, null, 2)}\n`, 'utf8');
+}
+
+/**
+ * Liest den gespeicherten Projekt-Zustand, so wie der Kern ihn geschrieben hat (er speichert kurz verzögert); `null`,
+ * solange es keinen gibt oder die Datei gerade geschrieben wird.
+ */
+export function readProjectState(dataRoot: string, projectPath: string): ProjectState | null {
+  try {
+    return JSON.parse(fs.readFileSync(projectStateFile(dataRoot, projectPath), 'utf8')) as ProjectState;
+  } catch {
+    return null;
+  }
 }
 
 /** Wartet auf die Seite eines Fensters mit diesem Titel (die Oberfläche übernimmt den Titel vom Kern). */

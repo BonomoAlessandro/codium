@@ -32,6 +32,7 @@ import {
   type TextEncoding,
 } from '../../shared/types';
 import { errorText } from '../errors';
+import type { ChangeKind } from '../git/fileStatus';
 import { ChevronDownIcon, CloseIcon, FileIcon, PinIcon } from '../icons';
 import { shortcutLabel, type KeyCommand, type ToolWindowCommand } from '../keymap';
 import type { Notify } from '../Notices';
@@ -222,7 +223,7 @@ interface EditorAreaProps {
   /** Alt + F7: Verwendungen als Reiter im Werkzeugfenster „Find“. */
   onShowUsages: (title: string, matches: SearchMatch[]) => void;
   /** Git-Zustand einer Datei; der Titel ihres Tabs trägt dessen Farbe wie in IntelliJ (Ticket 29). */
-  gitStatusOf?: (path: string) => string | undefined;
+  gitStatusOf?: (path: string) => ChangeKind | undefined;
 }
 
 export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function EditorArea(

@@ -128,7 +128,7 @@ Geprüft wird die installierte App (`release\Codium Setup <version>.exe`), ausse
 - [ ] In einem echten Repository mit vielen Branches findet das Suchfeld den richtigen Branch. (15)
 - [ ] Die Farben in Änderungsansicht und Dateibaum entsprechen IntelliJ. (16)
 - [ ] Eine Datei per `git add` im Terminal vorbereiten, in Codium nicht anhaken, etwas anderes committen: Die vorbereitete Datei ist weiterhin im Index. (16)
-- [ ] Die Git-Farben stammen aus dem klassischen Darcula (#6897BB, #629755, #D1675A); mit dem neuen IntelliJ „Dark“ vergleichen. (16)
+- [ ] ~~Die Git-Farben stammen aus dem klassischen Darcula (#6897BB, #629755, #D1675A); mit dem neuen IntelliJ „Dark“ vergleichen.~~ Ersetzt durch Ticket 29: Die Farben sind jetzt die des neuen IntelliJ „Dark“; geprüft wird mit den Punkten (29) unter „Nach Codium 1“. (16)
 
 ## Git: Vergleich, Änderungsbalken, Fetch/Pull/Push und Log
 

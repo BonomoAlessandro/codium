@@ -46,8 +46,7 @@ erklären die Hintergründe.
 - **Ältere Java-Stände:** Auf dem Entwicklungsrechner gab es nur JDK 21 und 25; der Test „älterer Java-Stand“ (8, 11,
   17) wurde übersprungen.
 - **Farben:** Konstanten auf Modulebene und Globale wie `console` erscheinen in TypeScript in der Grundfarbe (IntelliJ
-  zeigt sie womöglich violett bzw. kursiv). Die Git-Farben stammen aus dem klassischen Darcula (#6897BB, #629755,
-  #D1675A), nicht aus dem neuen „Dark“.
+  zeigt sie womöglich violett bzw. kursiv). Die Git-Farben sind seit Ticket 29 die des neuen IntelliJ „Dark“.
 - **Maven mit Firmen-Mirror** in der eigenen (`~/.m2/settings.xml`) und in der globalen Einstellung
   (`%MAVEN_HOME%\conf\settings.xml`).
 - **Statusleiste bei Java:** Interne Arbeiten von jdtls („Building“, „Publish Diagnostics“) blinken kurz auf.
@@ -78,6 +77,8 @@ erklären die Hintergründe.
 - Im Branch-Dropdown sind Ordnerzeilen Einträge einer Liste (`role="option"`) mit `aria-expanded`, das ARIA 1.2 dort
   nicht vorsieht; ein Screenreader meldet „auf-“ bzw. „zugeklappt“ womöglich nicht. Ein möglicher Weg wäre das Muster
   tree/treeitem (mit `aria-level`) für die Branches, die Aktionen davor als eigene Liste (31).
+- Ein eigenes Repository oder ein Worktree in einem Unterordner des Projekts ist im Dateibaum samt Inhalt als „nicht
+  versioniert“ gefärbt; seine Dateien erscheinen nicht in der Änderungsansicht, wie bei Git selbst (29).
 
 ## Wackelige Tests (beobachten)
 

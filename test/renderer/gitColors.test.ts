@@ -1,6 +1,6 @@
 // Git-Farben (Tickets 16 und 29): welcher Zustand für eine Datei oder einen Ordner gilt, und dass die Farben als
 // Design-Variablen in tokens.css stehen, mit den Werten des neuen IntelliJ-Designs „Dark“. Wie es in der App aussieht,
-// prüfen die Oberflächentests (commit.test.ts, editor.test.ts).
+// prüfen die Oberflächentests (commit.test.ts, gitLog.test.ts).
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -118,5 +118,20 @@ describe('Git-Farben als Design-Variablen (Ticket 29)', () => {
     }
     // Die früheren Werte (Darcula) kommen in app.css nicht mehr vor.
     for (const old of ['#6897bb', '#629755', '#d1675a']) expect(app.toLowerCase()).not.toContain(old);
+  });
+
+  it('auch Änderungsbalken und Etiketten im Git-Log haben in app.css keine festen Farben, nur Variablen aus tokens.css', () => {
+    const css = app.replace(/\/\*[\s\S]*?\*\//g, '');
+    const rules = [...css.matchAll(/([^{}]*)\{([^}]*)\}/g)].filter(([, selector]) => /\.(git-|change-bar)/.test(selector));
+    expect(rules.length).toBeGreaterThan(10);
+    for (const [, selector, body] of rules) expect(body.match(/#[0-9a-f]{3,8}|rgba?\(|hsla?\(/gi), selector.trim()).toBeNull();
+    const used = new Set([...css.matchAll(/var\((--git-[\w-]+)\)/g)].map((m) => m[1]));
+    for (const name of ['--git-change-modified', '--git-change-added', '--git-change-deleted', '--git-ref-local', '--git-ref-remote', '--git-ref-tag']) {
+      expect(used.has(name), name).toBe(true);
+    }
+    // Jede benutzte Git-Variable ist in tokens.css definiert, die Werte der übrigen sind unverändert.
+    for (const name of used) expect(token(name.slice(2)), name).toBeDefined();
+    expect([token('git-change-modified'), token('git-change-added'), token('git-change-deleted')]).toEqual(['#375fad', '#549159', '#868a91']);
+    expect([token('git-ref-local'), token('git-ref-remote'), token('git-ref-tag')]).toEqual(['#4caf6a', '#c75cc2', '#4b8ce8']);
   });
 });

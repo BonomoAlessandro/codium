@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import type { Locator, Page } from 'playwright-core';
 import { describe, expect, it } from 'vitest';
 import { dataFolder } from '../../src/main/dataFolder';
-import { launchCodium, prepareAppState, prepareProjectState, type LaunchedApp } from '../support/launchApp';
+import { launchCodium, prepareAppState, prepareProjectState, readProjectState, type LaunchedApp } from '../support/launchApp';
 import { useTempDirs } from '../support/tempDir';
 
 const ALPHA = 'Alpha – Codium';
@@ -381,9 +381,14 @@ describe('Dateibaum', () => {
         expect(await expanded(page, 'b')).toBe('false');
         expect(await item(page, 'c').count()).toBe(0);
 
-        // Für den Neustart: b auf, dann a zu; so beendet.
+        // Für den Neustart: b auf, dann a zu; so beendet. Der gespeicherte Zustand vergisst a/b mit a, nicht erst beim
+        // nächsten Laden. Der Kern speichert kurz verzögert; abgefragt werden nur Stände, die ein neues Speichern
+        // braucht (der Zustand vom Start enthält a/b ohne a).
+        const saved = () => [...(readProjectState(dataRoot, alpha)?.expandedFolders ?? [])].sort();
         await clickArrow(page, 'b', 'true');
+        await expect.poll(saved).toEqual(['', 'a', 'a/b']);
         await clickArrow(page, 'a', 'false');
+        await expect.poll(saved).toEqual(['']);
         await page.getByRole('button', { name: 'Alpha', exact: true }).click();
         await page.getByRole('menuitem', { name: 'Exit' }).click();
         await codium.exited();

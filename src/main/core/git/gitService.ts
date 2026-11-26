@@ -46,6 +46,11 @@ interface RunOptions {
   write?: boolean;
   /** Pfade für `--pathspec-from-file=- --pathspec-file-nul` (über stdin, ohne Grenze der Befehlszeile). */
   pathspecs?: string[];
+  /**
+   * Pfade auf der Befehlszeile nach `--`, für Befehle, die keine Pfade über stdin lesen (`git status`, Ticket 29). Die
+   * Aufrufer teilen sie selbst auf (`pathChunks`); die Konsole zeigt wie bei `pathspecs` bei mehreren nur die Zahl.
+   */
+  commandLinePaths?: string[];
 }
 
 /** So viele Commits liest der Log je Seite. */
@@ -189,22 +194,33 @@ export class GitService {
     // jede Datei darin). Nicht versionierte Dateien mit `--untracked-files=normal` (Ticket 29): Einen Ordner, in dem keine
     // versionierte Datei liegt, nennt Git dann als Ganzes; das braucht der Dateibaum für die Farbe des Ordners. Die
     // Dateien darin (für die Änderungsansicht und den Commit) liefert danach ein zweiter Aufruf nur für diese Ordner.
+    // Kosten (gemessen im Review): Wegen `--ignored=matching` steigt schon der erste Aufruf in diese Ordner ab, der zweite
+    // liest sie noch einmal und kostet je Aufruf einen Prozessstart; bei 20'000 Dateien etwa 30 % mehr mit einem solchen
+    // Ordner, etwa doppelt so lang mit 400.
     const status = await this.run(['--no-optional-locks', 'status', '--porcelain=v2', '--branch', '-z', '--untracked-files=normal', '--ignored=matching', '--', '.'], {
       background: true,
     });
     const repoRoot = this.root;
-    const failed = () => this.publish({ ...NO_REPOSITORY, repository: true, root: repoRoot });
-    if (status.code !== 0) return failed();
+    if (status.code !== 0) return this.publish({ ...NO_REPOSITORY, repository: true, root: repoRoot });
     const state = parseStatus(status.stdout, repoRoot);
-    // Pfade relativ zur Wurzel des Repositorys (wie in der Ausgabe von Git), wörtlich genommen.
-    for (const chunk of pathChunks((state.untrackedDirs ?? []).map((dir) => `${path.relative(repoRoot, dir).split(path.sep).join('/')}/`))) {
-      const inner = await this.run(['--no-optional-locks', '-C', repoRoot, '--literal-pathspecs', 'status', '--porcelain=v2', '-z', '--untracked-files=all', '--', ...chunk], {
+    // Ein eigenes Repository oder ein Worktree im Projekt (mit `.git` als Ordner oder Datei) nennt Git ebenfalls als
+    // Ordner; der zweite Aufruf fände darin nichts.
+    const plainDirs = (state.untrackedDirs ?? []).filter((dir) => !fs.existsSync(path.join(dir, '.git')));
+    // Pfade relativ zur Wurzel des Repositorys (wie in der Ausgabe von Git). `--literal-pathspecs` doppelt
+    // GIT_LITERAL_PATHSPECS (gilt für jeden Aufruf, siehe `run`), macht aber in der Konsole sichtbar, dass die Pfade
+    // wörtlich gelten.
+    for (const chunk of pathChunks(plainDirs.map((dir) => `${path.relative(repoRoot, dir).split(path.sep).join('/')}/`))) {
+      const inner = await this.run(['--no-optional-locks', '-C', repoRoot, '--literal-pathspecs', 'status', '--porcelain=v2', '-z', '--untracked-files=all'], {
         background: true,
+        commandLinePaths: chunk,
       });
-      if (inner.code !== 0) return failed();
+      if (inner.code !== 0) {
+        // Ohne die Dateien dieser Ordner weiter: Baum und Ordnerfarben stimmen, nur die Änderungsansicht kennt sie nicht.
+        this.options.log(`Nicht versionierte Dateien in ${chunk.length} Ordnern nicht gelesen (Exit-Code ${inner.code}): ${gitMessage(inner.stderr) || inner.stderr.trim()}`);
+        continue;
+      }
       state.files.push(...parseStatus(inner.stdout, repoRoot).files.filter((f) => f.index === '?'));
     }
-    if (state.untrackedDirs) state.files = inGitOrder(state.files);
     await this.checkRefs();
     return this.publish({ ...state, ...(this.operation() ? { operation: this.operation()! } : {}) });
   }
@@ -942,11 +958,12 @@ export class GitService {
   run(args: string[], options: RunOptions = {}): Promise<GitRun> {
     const git = this.options.git;
     if (!git) return Promise.reject(new CommandError('Git not found. Install Git to use Git functions.', ErrorCode.gitNotFound));
+    const paths = options.pathspecs ?? options.commandLinePaths;
     const task = async (): Promise<GitRun> => {
       const entry: GitConsoleEntry = {
         id: this.nextEntryId++,
         time: Date.now(),
-        command: ['git', ...args, ...(options.pathspecs ? [`-- ${options.pathspecs.length === 1 ? options.pathspecs[0] : `(${options.pathspecs.length} paths)`}`] : [])]
+        command: ['git', ...args, ...(paths ? [`-- ${paths.length === 1 ? paths[0] : `(${paths.length} paths)`}`] : [])]
           .map(quote)
           .join(' '),
         output: '',
@@ -959,7 +976,12 @@ export class GitService {
       // Pfade immer wörtlich: Ein Name wie „[id].tsx“ ist sonst ein Muster und träfe andere Dateien (Review von
       // Ticket 16). Viele Pfade kommen über stdin statt über die Befehlszeile (Grenze von Windows).
       const env = { ...(this.options.env ?? process.env), GIT_LITERAL_PATHSPECS: '1' };
-      const call = runGit(git, options.pathspecs ? [...args, '--pathspec-from-file=-', '--pathspec-file-nul'] : args, {
+      const fullArgs = options.pathspecs
+        ? [...args, '--pathspec-from-file=-', '--pathspec-file-nul']
+        : options.commandLinePaths
+          ? [...args, '--', ...options.commandLinePaths]
+          : args;
+      const call = runGit(git, fullArgs, {
         cwd: this.project.path,
         env,
         ...(options.pathspecs ? { input: options.pathspecs.join('\0') } : {}),
@@ -1070,12 +1092,6 @@ export function pathChunks(paths: readonly string[], limit = PATH_CHUNK_CHARS): 
   }
   if (current.length > 0) chunks.push(current);
   return chunks;
-}
-
-/** Wie Git selbst: erst die versionierten Einträge, dann die nicht versionierten, diese nach Pfad. */
-function inGitOrder(files: GitFileStatus[]): GitFileStatus[] {
-  const untracked = files.filter((f) => f.index === '?').sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  return [...files.filter((f) => f.index !== '?'), ...untracked];
 }
 
 /** Liest die Ausgabe von `git status --porcelain=v2 --branch -z`. */

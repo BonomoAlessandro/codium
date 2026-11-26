@@ -2434,11 +2434,11 @@ input[type='checkbox']:disabled {
 }
 
 .change-bar.modified {
-  border-left: 3px solid #375fad;
+  border-left: 3px solid var(--git-change-modified);
 }
 
 .change-bar.added {
-  border-left: 3px solid #549159;
+  border-left: 3px solid var(--git-change-added);
 }
 
 /* Gelöschte Zeilen: ein grauer Keil an der Grenze zur nächsten oder vorigen Zeile. */
@@ -2450,7 +2450,7 @@ input[type='checkbox']:disabled {
   height: 0;
   border-top: 4px solid transparent;
   border-bottom: 4px solid transparent;
-  border-left: 6px solid #868a91;
+  border-left: 6px solid var(--git-change-deleted);
 }
 
 .change-bar.deleted.below::after {
@@ -2612,15 +2612,15 @@ input[type='checkbox']:disabled {
 }
 
 .git-log-ref.local {
-  color: #4caf6a;
+  color: var(--git-ref-local);
 }
 
 .git-log-ref.remote {
-  color: #c75cc2;
+  color: var(--git-ref-remote);
 }
 
 .git-log-ref.tag {
-  color: #4b8ce8;
+  color: var(--git-ref-tag);
 }
 
 .git-log-author,

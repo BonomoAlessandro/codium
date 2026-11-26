@@ -103,4 +103,14 @@
   --git-unversioned: #e88f89;
   --git-ignored: #d69a6b;
   --git-conflict: #de6a66;
+
+  /* Weitere Git-Farben (seit Ticket 29 hier statt in app.css, Werte unverändert): Änderungsbalken im Editor (Ticket 17;
+     die Markierungen im Streifen rechts setzt changeBars.ts für Monaco mit denselben Werten) und Etiketten im Git-Log
+     (Ticket 19). */
+  --git-change-modified: #375fad;
+  --git-change-added: #549159;
+  --git-change-deleted: #868a91;
+  --git-ref-local: #4caf6a;
+  --git-ref-remote: #c75cc2;
+  --git-ref-tag: #4b8ce8;
 }

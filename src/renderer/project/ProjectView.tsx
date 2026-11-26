@@ -32,6 +32,7 @@ import {
   type ProjectInfo,
 } from '../../shared/types';
 import { errorText } from '../errors';
+import type { ChangeKind } from '../git/fileStatus';
 import {
   ChevronRightIcon,
   CollapseAllIcon,
@@ -94,8 +95,8 @@ interface ProjectViewProps {
   openedFile: string | null;
   /** „Open in Terminal“: ein Terminal im Ordner (bzw. im Ordner der Datei). */
   onOpenInTerminal: (path: string) => void;
-  /** Git-Zustand einer Datei für ihre Farbe (Ticket 16): modified, added, unversioned, ignored, conflict … */
-  gitStatusOf?: (path: string) => string | undefined;
+  /** Git-Zustand einer Datei oder eines Ordners für die Farbe (Tickets 16 und 29). */
+  gitStatusOf?: (path: string) => ChangeKind | undefined;
 }
 
 interface ContextMenu {
@@ -106,7 +107,7 @@ interface ContextMenu {
 
 export function ProjectView({ api, project, notify, onHide, onOpenFile, openedFile, onOpenInTerminal, gitStatusOf }: ProjectViewProps) {
   // Je Zeichnen einmal je Pfad (Review von Ticket 16).
-  const gitCache = new Map<string, string | undefined>();
+  const gitCache = new Map<string, ChangeKind | undefined>();
   const gitOf = (p: string) => {
     if (!gitCache.has(p)) gitCache.set(p, gitStatusOf?.(p));
     return gitCache.get(p);

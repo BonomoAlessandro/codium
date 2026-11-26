@@ -1,6 +1,6 @@
 # 29 – Dateibaum: Zuklappen schliesst Unterordner, Git-Farben wie in IntelliJ
 
-Status: `ready-for-agent` · Typ: HITL
+Status: `erledigt` (2026-11-26) · Typ: HITL
 Blockiert durch: –
 User Stories: ergänzt „Dateibaum“ (Auf- und Zuklappen) und „Git: Änderungen und Commit“ (Farben, Ticket 16)
 Spezifikation: „Oberfläche“ (Design), Dateibaum, Git-Farben
@@ -72,7 +72,7 @@ Typ HITL wegen der Farben. Der Agent legt zuerst Bilder vor, der Nutzer gibt fre
 
 ## Befund und Farbwerte (Agent, 2026-11-26)
 
-Vor den Bildern geklärt, nach Schritt 1 und 2 oben. Die Bilder zur Freigabe liegen unter `entwuerfe/29-git-farben/` (Seite `index.html`, Aufnahmeskript in `aufnahmen/`); nicht versioniert, nach Abschluss gelöscht.
+Vor den Bildern geklärt, nach Schritt 1 und 2 oben. Die Bilder zur Freigabe lagen unter `entwuerfe/29-git-farben/` (Seite `index.html`, Aufnahmeskript in `aufnahmen/`), nicht versioniert; nach dem Abschluss gelöscht (2026-11-26).
 
 ### Was heute grau erscheint
 
@@ -154,10 +154,11 @@ Er antwortete auf die drei Fragen mit den Empfehlungen des Koordinators:
   - `collapse` benutzt `collapseFolder`; das gilt für Pfeil, Doppelklick, Pfeil links und Enter. Der gespeicherte Zustand bekommt dieselbe Liste.
   - Beim Laden räumt `withoutHiddenFolders` einen Zustand von vor diesem Ticket auf, in dem etwa `a/b` unter dem zugeklappten `a` gemerkt ist. Gespeichert wird das erst mit der nächsten Änderung durch den Nutzer, wie bisher nur bei Aktionen des Nutzers.
   - Auswahl, „Collapse All“ und „Select Opened File“ sind unverändert. „Select Opened File“ klappt die Elternordner auf, auch wenn sie mit einem zugeklappten Ordner vergessen wurden.
+  - Der Datei-Dienst im Kern führt einen beim Laden bereinigten Ordner (etwa `a/b`) noch in seiner Liste der aufgeklappten Ordner, bis der Nutzer den Baum das nächste Mal ändert. Das ist harmlos: Er merkt sich nur den Inhalt gelesener Ordner, und `a/b` wird nicht gelesen, solange `a` zu ist.
 
 ### Git-Farben
 
-- **Design-Variablen** in `tokens.css`: `--git-modified`, `--git-renamed` (gleich `--git-modified`), `--git-added`, `--git-deleted`, `--git-unversioned`, `--git-ignored`, `--git-conflict`, mit den freigegebenen Werten.
+- **Design-Variablen** in `tokens.css`: `--git-modified`, `--git-renamed` (gleich `--git-modified`), `--git-added`, `--git-deleted`, `--git-unversioned`, `--git-ignored`, `--git-conflict`, mit den freigegebenen Werten. Seit dem Review stehen auch die übrigen Git-Farben aus `app.css` dort, mit unveränderten Werten: die Änderungsbalken im Editor (`--git-change-modified`, `--git-change-added`, `--git-change-deleted`) und die Etiketten im Git-Log (`--git-ref-local`, `--git-ref-remote`, `--git-ref-tag`). Die Markierungen der Änderungsbalken im Streifen rechts setzt `changeBars.ts` für Monaco mit denselben Werten; Monaco liest keine CSS-Variablen.
 - **`app.css`:** Im Abschnitt „Commit und Git-Farben“ setzt jede Klasse `git-<Zustand>` nur noch `color: var(--git-<Zustand>)`; es gibt keine fest eingetragenen Git-Farben mehr. Dateibaum (Name der Zeile), Änderungsansicht und Dateiliste des Git-Logs (Zeile samt Symbol) und Datei-Tabs (Titel) nutzen dieselben Klassen.
 - **Ein Ort für den Zustand je Pfad:** `src/renderer/git/fileStatus.ts`, ohne DOM.
   - `changeKind` ist aus `CommitToolWindow.tsx` hierher umgezogen.
@@ -165,7 +166,7 @@ Er antwortete auf die drei Fragen mit den Empfehlungen des Koordinators:
   - Ignorierte Ordner und nicht versionierte Ordner gelten für alles darin. Nachgeschlagen wird über die Elternordner, vom nächsten aufwärts: Der nächste entscheidet, etwa bei einem ignorierten Ordner in einem nicht versionierten.
 - **Tabs:**
   - `EditorArea` bekommt `gitStatusOf` vom Projektfenster.
-  - Der Titel eines Datei-Tabs trägt die Klasse `git-<Zustand>`, der Tab selbst `data-git`.
+  - Der Titel eines Datei-Tabs trägt die Klasse `git-<Zustand>`, der Tab selbst `data-git`. `gitStatusOf` ist in `EditorArea` und `ProjectView` als `ChangeKind` getypt (seit dem Review).
   - Symbol, Hinweis bei gleichnamigen Dateien und Schliessknopf behalten ihre Farben.
   - Unveränderte Dateien und Tabs ohne Datei im Repository bleiben in der normalen Farbe.
 
@@ -174,14 +175,19 @@ Er antwortete auf die drei Fragen mit den Empfehlungen des Koordinators:
 - **Woher die Ordner kommen:** Mit `--untracked-files=all` nennt Git nur Dateien. Welcher Ordner keine versionierte Datei enthält, weiss nur Git; aus der Statusausgabe allein geht das nicht hervor, weil unveränderte versionierte Dateien darin fehlen.
 - **Erster Aufruf:** Der bestehende Aufruf läuft jetzt mit `--untracked-files=normal`. Dann nennt Git einen solchen Ordner als Ganzes (`? drafts/`, nur den obersten). Der Git-Dienst führt diese Ordner im Zustand als `untrackedDirs`.
 - **Zweiter Aufruf, nur bei Bedarf:** Gibt es solche Ordner, liest ein zweiter `git status --untracked-files=all` nur für sie die Dateien darin. Änderungsansicht und Commit haben sie so weiter einzeln.
-  - Die Pfade gehen relativ zur Wurzel des Repositorys mit `-C <Wurzel>` und `--literal-pathspecs` hinein.
-  - `git status` liest keine Pfade über stdin; deshalb gehen sie auf der Befehlszeile hinein, in Teilen zu höchstens 16'000 Zeichen.
+  - Die Pfade gehen relativ zur Wurzel des Repositorys mit `-C <Wurzel>` hinein, wörtlich: `--literal-pathspecs` doppelt `GIT_LITERAL_PATHSPECS`, das jeder Aufruf ohnehin hat, macht es aber in der Konsole sichtbar.
+  - `git status` liest keine Pfade über stdin; deshalb gehen sie auf der Befehlszeile hinein, in Teilen zu höchstens 16'000 Zeichen (`pathChunks`). Die Konsole zeigt bei mehreren Pfaden nur ihre Zahl, etwa `-- (400 paths)`, wie bei den Pfaden über stdin.
+  - Ordner mit eigenem `.git` (Ordner oder Datei, also ein eigenes Repository oder ein Worktree im Projekt) gehen nicht in den zweiten Aufruf; Git fände darin nichts (seit dem Review).
   - Ignorierte Einträge in solchen Ordnern meldet schon der erste Aufruf.
-- **Warum so:**
-  - Die Arbeitskopie wird weiterhin nur einmal ganz durchsucht. Der zweite Aufruf durchsucht nur die nicht versionierten Ordner, und es gibt ihn nur, wenn es solche gibt.
-  - Die Alternativen hätten mehr gekostet: ein zweiter voller Aufruf daneben (etwa `git ls-files --others --directory`) hätte die Suche nach nicht versionierten Dateien bei jeder Aktualisierung verdoppelt; die Ordner aus der Liste aller versionierten Dateien (`git ls-files`) abzuleiten, hiesse, in grossen Repositorys bei jeder Änderung am Index alle Dateien zu lesen.
+  - Scheitert der zweite Aufruf, bleibt der Zustand des ersten ohne die Dateien dieser Ordner; der Fehler steht im Protokoll (seit dem Review). Baum und Ordnerfarben stimmen dann, nur die Änderungsansicht kennt diese Dateien nicht.
+- **Kosten** (berichtigt nach dem Review, gemessen vom Prüfer):
+  - Wegen `--ignored=matching` steigt schon der erste Aufruf in die nicht versionierten Ordner ab; der zweite liest sie noch einmal und kostet je Aufruf einen Prozessstart. Die Arbeitskopie wird also nicht nur einmal durchsucht, wie hier zuerst stand.
+  - Bei 20'000 Dateien dauerte das Lesen des Zustands mit einem nicht versionierten Ordner etwa 30 % länger als vorher, mit 400 solchen Ordnern etwa doppelt so lang. Ohne solche Ordner gibt es keinen zweiten Aufruf und keine Mehrkosten.
+- **Warum trotzdem so:**
+  - Die Kosten fallen nur an, wenn es nicht versionierte Ordner gibt, und wachsen mit ihnen, nicht mit der Grösse des Repositorys.
+  - Die Alternativen kosten in jedem Fall: ein zweiter voller Aufruf daneben (etwa `git ls-files --others --directory`) hätte die Suche nach nicht versionierten Dateien bei jeder Aktualisierung verdoppelt, auch ohne solche Ordner; die Ordner aus der Liste aller versionierten Dateien (`git ls-files`) abzuleiten, hiesse, in grossen Repositorys bei jeder Änderung am Index alle Dateien zu lesen.
 - **Nebenwirkungen:**
-  - Ein eigenes Repository in einem Unterordner meldet Git als `? sub/`. Es erschien bisher als namenlose Datei in der Änderungsansicht; jetzt gilt es als nicht versionierter Ordner.
+  - Ein eigenes Repository oder ein Worktree in einem Unterordner meldet Git als `? sub/`. Es erschien bisher als namenlose Datei in der Änderungsansicht; jetzt ist es samt Inhalt als „nicht versioniert“ gefärbt und erscheint nicht in der Änderungsansicht (Spezifikation und „Bekannte Grenzen“ in `offene-punkte.md`).
   - Ist der Projektordner selbst ein Unterordner des Repositorys ohne versionierte Dateien, trägt auch seine Zeile die Farbe.
 
 ### Abweichungen und Hinweise
@@ -193,24 +199,26 @@ Er antwortete auf die drei Fragen mit den Empfehlungen des Koordinators:
   - „Oberfläche“, Design (Git-Farben und Tabs);
   - Dateibaum (Zuklappen, Färbung der Ordner);
   - „Git“, Zustand (zwei Aufrufe).
-- Bilder des eingebauten Stands liegen unversioniert unter `entwuerfe/29-git-farben/` (Abschnitt „Eingebaut“), aufgenommen mit `AUFNAHME_EINGEBAUT=1`.
+- Bilder des eingebauten Stands lagen unversioniert unter `entwuerfe/29-git-farben/` (Abschnitt „Eingebaut“), aufgenommen mit `AUFNAHME_EINGEBAUT=1`; nach dem Abschluss gelöscht.
 
 ### Tests
 
 - **Einheitstests:**
   - `test/renderer/fileTree.test.ts`, Abschnitt „Zuklappen schliesst die Ordner darin“: 3 Tests (Zuklappen samt Unterordnern, unverändert ohne Unterordner, älterer Zustand).
-  - `test/renderer/gitColors.test.ts`: 8 Tests.
+  - `test/renderer/gitColors.test.ts`: 9 Tests (einer seit dem Review).
     - Ordner nur mit nicht versionierten Dateien: „nicht versioniert“, samt Unterordnern.
     - Gemischt mit versionierten Dateien: keine Farbe.
     - Ignoriert samt Inhalt; Ordner nur mit ignorierten Dateien: keine Farbe.
     - Der nächste Ordner entscheidet; doppelte Einträge; Zuordnung der Zustände.
     - `tokens.css` hat die freigegebenen Werte; `app.css` färbt jede Klasse nur über ihre Variable.
+    - Auch Änderungsbalken und Etiketten im Git-Log haben in `app.css` keine festen Farben; ihre Variablen stehen mit unveränderten Werten in `tokens.css` (seit dem Review).
 - **Kern mit echtem Git** (`test/main/gitCommit.test.ts`):
   - Ordner ohne versionierte Dateien als `untrackedDirs`, verschachtelt und mit Klammern und Umlaut im Namen, die Dateien darin einzeln. Gemischte, nur ignorierte und leere Ordner gehören nicht dazu. Ignorierte Einträge darin bleiben gemeldet. Nach dem Commit einer Datei daraus ist der Ordner nicht mehr dabei.
-  - 400 nicht versionierte Ordner, gelesen in mindestens zwei Aufrufen, dazu `pathChunks`.
+  - Ein eigenes Repository und ein Worktree im Projekt sind `untrackedDirs`, gehen aber nicht in den zweiten Aufruf; dessen Konsolenzeile nennt nur die beiden übrigen Ordner (`-- (2 paths)`). Die Reihenfolge der Dateien wird nicht mehr geprüft (seit dem Review).
+  - 400 nicht versionierte Ordner, gelesen in mindestens zwei Aufrufen; jeder davon bleibt unter 16'000 Zeichen (seit dem Review, statt nur die Aufrufe zu zählen), dazu `pathChunks`.
   - In `test/main/git.test.ts` ist der Projektordner als nicht versionierter Unterordner eines Repositorys geprüft.
 - **Oberfläche:**
-  - `test/ui/fileTree.test.ts`: 2 neue Tests. Der erste prüft Maus, Tastatur, den älteren Zustand und den Neustart, der zweite „Select Opened File“ bei einem zugeklappten Unterordner.
+  - `test/ui/fileTree.test.ts`: 2 neue Tests. Der erste prüft Maus, Tastatur, den älteren Zustand und den Neustart, seit dem Review auch die gespeicherte Datei: Nach dem Zuklappen von `a` fehlt `a/b` dort sofort, nicht erst beim nächsten Laden. Der zweite prüft „Select Opened File“ bei einem zugeklappten Unterordner.
   - `test/ui/commit.test.ts`: neuer Test zu den Farben.
     - Im Baum: geänderte und nicht versionierte Datei, nicht versionierter Ordner und Unterordner, versionierter Ordner ohne Farbe, ignorierter Ordner samt Inhalt und ignorierte Datei.
     - Tabs: geänderte und nicht versionierte Datei mit Farbe, unveränderte ohne; nach `git add` wechselt der Tab auf „neu“.
@@ -223,3 +231,35 @@ Er antwortete auf die drei Fragen mit den Empfehlungen des Koordinators:
 - `npm run typecheck`: sauber.
 - `npm test`: 56 Dateien, 497 Tests grün.
 - `npm run test:ui` (ab 09:59): 28 Dateien, 101 Tests grün, 682 s. Kein Standby: Das letzte Kernel-Power-Ereignis davor war 507 um 09:07:55, während des Laufs und danach kam kein 506. Keine Meldung der Schlussprüfung, keine übrigen Prozesse.
+
+## Review
+
+Ein zweiter Agent hat den Branch gegen Ticket, Spezifikation und Spielregeln geprüft; keine Muss-Befunde, alle Kriterien erfüllt. Eingearbeitet ist alles, verworfen nichts. Die Tests sind jeweils mit Gegenprobe geprüft (mit dem alten Verhalten rot).
+
+Sollte behoben werden:
+- **S1, Doku:** In `docs/abnahme.md` ist der Punkt zu den Darcula-Farben (16) als durch Ticket 29 ersetzt gekennzeichnet, mit Verweis auf die Punkte (29). In `docs/offene-punkte.md` nennt der Satz zu den Git-Farben jetzt Ticket 29.
+- **S2, Leistung:**
+  - Die Begründung unter „Umsetzung“ ist berichtigt, samt den gemessenen Kosten: Schon der erste Aufruf steigt in nicht versionierte Ordner ab, der zweite hat feste Kosten.
+  - Ordner mit eigenem `.git` (Ordner oder Datei) gehen nicht mehr in den zweiten Aufruf. Test in `gitCommit.test.ts` mit einem eigenen Repository und einem Worktree; Gegenprobe ohne den Filter: rot (4 statt 2 Pfade).
+- **S3, Test:** `test/ui/fileTree.test.ts` liest nach dem Zuklappen die gespeicherte Projekt-Zustandsdatei (`readProjectState` in `test/support/launchApp.ts`): `a/b` fehlt.
+  - Erste Fassung: Sie wartete auf „enthält `a/b`“ und dann auf „ohne `a`“. Der erste volle UI-Lauf nach dem Review war deshalb rot (100 von 101, `[ '', 'a/b' ]`). Der Kern speichert 200 ms nach der letzten Änderung; folgen die Schritte im Test schneller aufeinander, liegt noch der Zustand vom Start in der Datei, und der enthält `a/b` ohne `a`. Beide Abfragen trafen so auf die alte Datei. Damit war auch die erste Gegenprobe nicht aussagekräftig.
+  - Jetzt wartet der Test auf Stände, die nur ein neues Speichern ergibt: erst `['', 'a', 'a/b']`, nach dem Zuklappen `['']`. Einzeln zweimal grün. Neue Gegenprobe mit einem Stand, der den Baum richtig zeigt, `a/b` aber weiter speichert: Die erste Abfrage wird erfüllt, die zweite bleibt rot (`[ '', 'a/b' ]`).
+- **S4, Test:** Der Test mit 400 Ordnern prüft jetzt für jeden zweiten Aufruf, dass seine Pfade höchstens 16'000 Zeichen lang sind. Gegenprobe ohne Aufteilung: rot.
+
+Hinweise:
+- **H1:** Scheitert der zweite Aufruf, bleibt der Zustand des ersten ohne die Dateien dieser Ordner, und der Fehler geht mit `this.options.log` ins Protokoll. Ohne Test: Ein scheiternder zweiter Aufruf lässt sich mit echtem Git nicht verlässlich herbeiführen, und der Git-Dienst ist im Kern-Test nicht von aussen erreichbar.
+- **H2:** Die Konsole kürzt den zweiten Aufruf wie die Pfade über stdin (`-- (400 paths)`), über die neue Laufoption `commandLinePaths`.
+- **H3:** `inGitOrder` ist gestrichen; die Änderungsansicht sortiert selbst. Die Erwartungen in `gitCommit.test.ts` sortieren selbst.
+- **H4:** `--literal-pathspecs` bleibt, mit Kommentar (doppelt zu `GIT_LITERAL_PATHSPECS`, in der Konsole erkennbar).
+- **H5:** Eigene Repositorys und Worktrees im Projekt sind in der Spezifikation („Git“, Zustand) und unter „Bekannte Grenzen“ in `offene-punkte.md` beschrieben: samt Inhalt „nicht versioniert“ gefärbt, nicht in der Änderungsansicht.
+- **H6:** Auch die Änderungsbalken und die Etiketten im Git-Log nutzen Design-Variablen aus `tokens.css` (`--git-change-*`, `--git-ref-*`, Werte unverändert). Der Test sucht in allen Regeln mit `.git-` oder `.change-bar` nach festen Farben; Gegenprobe mit einem festen Wert: rot.
+- **H7:** Kommentar in `gitColors.test.ts` richtiggestellt; `gitStatusOf` als `ChangeKind` getypt; Enter in der Spezifikation beim Zuklappen ergänzt; der Satz zu `FileService.expandedKeys` steht unter „Umsetzung“.
+
+Bilder: Am Aussehen hat sich nichts geändert, die Bilder des eingebauten Stands bleiben.
+
+
+Testläufe nach dem Review (2026-11-26, nacheinander, allein auf dem Rechner):
+- `npm run typecheck`: sauber, auch nach der letzten Änderung am Test zu S3.
+- `npm test`: 56 Dateien, 498 Tests grün.
+- `npm run test:ui`, erster Lauf (ab 10:43): 100 von 101; rot war der neue Prüfpunkt zu S3 (siehe oben). Der Rechner war zudem von 10:47:49 bis 10:50:34 im Standby (Kernel-Power 506 und 507), der Lauf zählt also ohnehin nicht.
+- `npm run test:ui`, zweiter Lauf mit dem berichtigten Test (ab 10:57, letztes Kernel-Power-Ereignis davor 507 um 10:50:34, während des Laufs und danach kein 506): 28 Dateien, 101 Tests grün, 486 s. Keine Meldung der Schlussprüfung, keine übrigen Prozesse.

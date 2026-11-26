@@ -146,7 +146,7 @@ describe('Commit und Rollback', { timeout: 60_000 }, () => {
   });
 
   it('meldet Ordner ohne versionierte Dateien als nicht versioniert, die Dateien darin einzeln (Ticket 29)', async () => {
-    const { test, windowId, at, run } = await setup();
+    const { test, windowId, at, run, env } = await setup();
     const write = (relative: string) => {
       fs.mkdirSync(path.dirname(at(relative)), { recursive: true });
       fs.writeFileSync(at(relative), 'x\n');
@@ -169,14 +169,23 @@ describe('Commit und Rollback', { timeout: 60_000 }, () => {
     write('Entwürfe 1/neu.txt');
     write('logs/server.log');
     fs.mkdirSync(at('leer'));
+    // Ein eigenes Repository und ein Worktree im Projekt: als Ordner gemeldet, aber ohne zweiten Aufruf.
+    write('eigenes-repo/innen.txt');
+    git(at('eigenes-repo'), env, 'init', '--quiet');
+    run('worktree', 'add', '--quiet', 'wt', '-b', 'wt-zweig');
 
     const state = await call(test, windowId, 'git.refresh');
-    expect(state.untrackedDirs?.slice().sort()).toEqual([at('drafts'), at('Entwürfe [1]')].sort());
-    expect(state.files.filter((f) => f.index === '?').map((f) => f.path)).toEqual(
-      [at('drafts', 'ideas.md'), at('drafts', 'old', 'notes.txt'), at('Entwürfe [1]', 'a_b.txt'), at('Entwürfe 1', 'neu.txt'), at('gemischt', 'neu.txt')].sort((a, b) =>
-        a < b ? -1 : 1,
-      ),
-    );
+    expect(state.untrackedDirs?.slice().sort()).toEqual([at('drafts'), at('eigenes-repo'), at('Entwürfe [1]'), at('wt')].sort());
+    // Die Reihenfolge der Dateien ist egal, die Änderungsansicht sortiert selbst.
+    expect(
+      state.files
+        .filter((f) => f.index === '?')
+        .map((f) => f.path)
+        .sort(),
+    ).toEqual([at('drafts', 'ideas.md'), at('drafts', 'old', 'notes.txt'), at('Entwürfe [1]', 'a_b.txt'), at('Entwürfe 1', 'neu.txt'), at('gemischt', 'neu.txt')].sort());
+    // Der zweite Aufruf nur für die beiden Ordner ohne eigenes Repository.
+    const inner = (await call(test, windowId, 'git.console')).filter((e) => e.command.includes('--literal-pathspecs'));
+    expect(inner.at(-1)?.command).toMatch(/"?-- \(2 paths\)"?$/);
     expect(state.ignored).toEqual(
       expect.arrayContaining([{ path: at('drafts', 'x.log') }, { path: at('drafts', 'build'), directory: true }, { path: at('logs', 'server.log') }]),
     );
@@ -185,7 +194,7 @@ describe('Commit und Rollback', { timeout: 60_000 }, () => {
     expect(run('show', '--name-only', '--format=', 'HEAD')).toBe('drafts/old/notes.txt');
     const after = await call(test, windowId, 'git.refresh');
     // drafts hat jetzt eine versionierte Datei: nicht mehr als Ganzes nicht versioniert.
-    expect(after.untrackedDirs).toEqual([at('Entwürfe [1]')]);
+    expect(after.untrackedDirs?.slice().sort()).toEqual([at('eigenes-repo'), at('Entwürfe [1]'), at('wt')].sort());
     expect(after.files.find((f) => f.path === at('drafts', 'ideas.md'))).toMatchObject({ index: '?' });
   });
 
@@ -216,18 +225,27 @@ describe('Commit und Rollback', { timeout: 60_000 }, () => {
     expect(pathChunks([])).toEqual([]);
 
     const { test, windowId, at } = await setup();
-    // 400 Ordner mit je 46 Zeichen: über 16'000 Zeichen, also mindestens zwei Aufrufe.
-    const dirs = Array.from({ length: 400 }, (_, i) => at(`generierter-ordner-mit-langem-namen-nr-${String(i).padStart(4, '0')}`));
-    for (const dir of dirs) {
-      fs.mkdirSync(dir);
-      fs.writeFileSync(path.join(dir, 'datei.txt'), 'x\n');
+    // 400 Ordner, je 44 Zeichen mit „/“: zusammen über 16'000 Zeichen, also mindestens zwei Aufrufe.
+    const names = Array.from({ length: 400 }, (_, i) => `generierter-ordner-mit-langem-namen-nr-${String(i).padStart(4, '0')}`);
+    for (const name of names) {
+      fs.mkdirSync(at(name));
+      fs.writeFileSync(at(name, 'datei.txt'), 'x\n');
     }
     const state = await call(test, windowId, 'git.refresh');
     expect(state.untrackedDirs).toHaveLength(400);
-    expect(state.files.filter((f) => f.index === '?').map((f) => f.path)).toEqual(dirs.map((d) => path.join(d, 'datei.txt')));
-    // Die Dateien in den Ordnern kamen in mehreren Aufrufen nur für diese Ordner.
-    const inner = (await call(test, windowId, 'git.console')).filter((e) => e.command.includes('--literal-pathspecs'));
-    expect(inner.length).toBeGreaterThanOrEqual(2);
+    expect(
+      state.files
+        .filter((f) => f.index === '?')
+        .map((f) => f.path)
+        .sort(),
+    ).toEqual(names.map((n) => at(n, 'datei.txt')).sort());
+    // Jeder zweite Aufruf bleibt unter der Grenze (je Pfad die Länge plus ein Trennzeichen); die Konsole nennt nur die
+    // Zahl der Pfade.
+    const counts = (await call(test, windowId, 'git.console'))
+      .filter((e) => e.command.includes('--literal-pathspecs'))
+      .map((e) => Number(/\((\d+) paths\)/.exec(e.command)?.[1] ?? 1));
+    expect(counts.length).toBeGreaterThanOrEqual(2);
+    for (const count of counts) expect(count * (names[0].length + 2), String(count)).toBeLessThanOrEqual(16_000);
   });
 
   it('committet sehr viele neue Dateien (Pfade über stdin statt über die Befehlszeile)', async () => {
