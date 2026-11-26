@@ -1,12 +1,13 @@
 // Teststelle 1: Art von Java-Dateien für ihr Symbol im Dateibaum (Ticket 32) am Vertrag, mit echtem Dateisystem:
 // Anfrage je Ordner, Lesen des Dateianfangs, Zwischenspeicher je Pfad mit Änderungszeit und Grösse und neues Bestimmen
-// nach Änderungen von aussen und nach dem Speichern.
+// nach Änderungen von aussen und nach dem Speichern. Dazu der Dienst allein mit Dateien im Speicher, für grosse Zahlen
+// und Abläufe, die sich auf der Platte nicht verlässlich herbeiführen lassen (Review).
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { CommandArgs, CommandName, CommandResult, FileChange, JavaKindEntry } from '../../src/shared/types';
-import { decodeHead, JAVA_HEAD_BYTES } from '../../src/main/core/javaKinds';
+import type { CommandArgs, CommandName, CommandResult, FileChange, FilesChangedEvent, JavaKindEntry } from '../../src/shared/types';
+import { decodeHead, JAVA_HEAD_BYTES, JavaKinds, type JavaFileSystem } from '../../src/main/core/javaKinds';
 import { createTestCore, type TestCore } from '../support/core';
 import { useTempDirs } from '../support/tempDir';
 
@@ -203,5 +204,182 @@ describe('Art von Java-Dateien im Kern', () => {
     expect(decodeHead(Buffer.from('a\u0000b'), false)).toBeNull();
     const utf16 = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('class A {}', 'utf16le')]);
     expect(decodeHead(utf16.subarray(0, utf16.length - 1), true)).toBe('class A {');
+  });
+
+  it('nur die Schreibweise umbenannt (etwa git mv): Die Art wird mit dem neuen Namen neu bestimmt', async () => {
+    const { test, windowId, at } = await openShop({ 'orderService.java': 'public class OrderService {}\n' });
+    expect(await call(test, windowId, 'files.javaKinds', { paths: [at('orderService.java')] })).toEqual([
+      { path: at('orderService.java'), kind: 'java' },
+    ]);
+    fs.renameSync(at('orderService.java'), at('OrderService.java'));
+    expect(await call(test, windowId, 'files.javaKinds', { paths: [at('OrderService.java')] })).toEqual([
+      { path: at('OrderService.java'), kind: 'class' },
+    ]);
+  });
+
+  it('ein Ordner über eine Junction nach draussen ergibt nur für seine Dateien „Java-Datei“', async () => {
+    const { test, windowId, at } = await openShop({ 'A.java': 'class A {}\n' });
+    const outside = path.join(path.dirname(path.dirname(at('A.java'))), 'outside');
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(outside, 'B.java'), 'class B {}\n');
+    fs.symlinkSync(outside, at('ext'), 'junction');
+    expect(await call(test, windowId, 'files.javaKinds', { paths: [at('ext', 'B.java'), at('A.java')] })).toEqual([
+      { path: at('ext', 'B.java'), kind: 'java' },
+      { path: at('A.java'), kind: 'class' },
+    ]);
+  });
+});
+
+/** Dateien im Speicher für den Dienst allein (ohne Platte), mit Zählern und einer Sperre vor dem Lesen. */
+function memoryFiles() {
+  const files = new Map<string, { text: string; mtimeMs: number; locked?: boolean }>();
+  const counts = { lstat: 0, read: 0 };
+  let gate: Promise<void> | null = null;
+  const missing = () => Object.assign(new Error('ENOENT: no such file'), { code: 'ENOENT' });
+  const fileSystem: JavaFileSystem = {
+    async lstat(target) {
+      counts.lstat++;
+      const file = files.get(target.toLowerCase());
+      if (!file) throw missing();
+      return { isFile: () => true, isSymbolicLink: () => false, mtimeMs: file.mtimeMs, size: Buffer.byteLength(file.text) };
+    },
+    stat: (target) => fileSystem.lstat(target),
+    async readHead(target, length) {
+      counts.read++;
+      const file = files.get(target.toLowerCase());
+      if (!file) throw missing();
+      // Der Inhalt zum Zeitpunkt des Lesens; die Sperre hält erst danach an (wie ein Lesen, das noch unterwegs ist).
+      const text = file.text;
+      if (gate) await gate;
+      if (file.locked) throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' });
+      return Buffer.from(text).subarray(0, length);
+    },
+  };
+  const write = (target: string, text: string, mtimeMs: number) => files.set(target.toLowerCase(), { text, mtimeMs });
+  return {
+    files,
+    counts,
+    write,
+    hold() {
+      let release!: () => void;
+      gate = new Promise<void>((resolve) => (release = resolve));
+      return () => {
+        gate = null;
+        release();
+      };
+    },
+    service() {
+      const changes: JavaKindEntry[] = [];
+      const kinds = new JavaKinds({
+        io: (work) => work(),
+        isRealInside: async () => true,
+        onChanged: (entries) => changes.push(...entries),
+        log: () => {},
+        fileSystem,
+      });
+      return { kinds, changes };
+    },
+  };
+}
+
+describe('Art von Java-Dateien im Kern, mit Dateien im Speicher', () => {
+  const root = 'C:\\shop\\src';
+
+  it('eine Meldung mit 2’000 Pfaden bei 20’000 gemerkten Dateien: Aufwand nach Pfaden, nicht Pfade × gemerkte Dateien', async () => {
+    const mem = memoryFiles();
+    const all: string[] = [];
+    for (let i = 0; i < 20_000; i++) {
+      const target = `${root}\\pkg${i % 200}\\sub\\F${i}.java`;
+      mem.write(target, `class F${i} {}`, 1);
+      all.push(target);
+    }
+    const { kinds, changes } = mem.service();
+    await kinds.kindsOf(all);
+    expect(mem.counts.read).toBe(20_000);
+
+    // 1'000 gemerkte Dateien (100 davon werden zum Interface), 990 nicht gemerkte, 10 neu angelegte Ordner mit Inhalt.
+    for (let i = 0; i < 100; i++) mem.write(all[i], `interface F${i} {}`, 2);
+    const changedFiles = all.slice(0, 1000);
+    const event: FilesChangedEvent = {
+      changes: [
+        ...changedFiles.map((p): FileChange => ({ path: p, kind: 'changed' })),
+        ...Array.from({ length: 990 }, (_, i): FileChange => ({ path: `${root}\\build\\X${i}.class`, kind: 'created' })),
+        ...Array.from({ length: 10 }, (_, i): FileChange => ({ path: `${root}\\pkg${199 - i}`, kind: 'changed' })),
+      ],
+    };
+    const lstatsBefore = mem.counts.lstat;
+    const start = performance.now();
+    kinds.filesChanged(event);
+    const elapsed = performance.now() - start;
+    // Vorher lief je Pfad ein Durchlauf über alle gemerkten Dateien (vom Prüfer nachgebaut: etwa 21 s Blockade).
+    expect(elapsed).toBeLessThan(1000);
+    await expect.poll(() => changes.length).toBe(100);
+    expect(new Set(changes.map((c) => c.kind))).toEqual(new Set(['interface']));
+    // Neu bestimmt wurden genau die gemerkten Dateien unter den Pfaden: 1'000 direkt und je 100 in den 10 Ordnern,
+    // ohne die doppelten (Dateien mit Nummer < 1'000 in diesen Ordnern).
+    const inFolders = all.filter((p) => Array.from({ length: 10 }, (_, i) => `${root}\\pkg${199 - i}\\`).some((f) => p.startsWith(f)));
+    const expected = new Set([...changedFiles, ...inFolders]).size;
+    await expect.poll(() => mem.counts.lstat - lstatsBefore).toBe(expected);
+  });
+
+  it('vergisst gelöschte Dateien und Ordner in einem Durchlauf', async () => {
+    const mem = memoryFiles();
+    const all = Array.from({ length: 2000 }, (_, i) => `${root}\\pkg${i % 20}\\F${i}.java`);
+    for (const target of all) mem.write(target, 'class X {}', 1);
+    const { kinds } = mem.service();
+    await kinds.kindsOf(all);
+    kinds.filesChanged({ changes: [{ path: all[0], kind: 'deleted' }, { path: `${root}\\pkg5`, kind: 'deleted' }, { path: `${root}\\none.java`, kind: 'deleted' }] });
+    // Vergessen heisst: Eine weitere Anfrage liest neu.
+    const readsBefore = mem.counts.read;
+    await kinds.kindsOf([all[0], all[5], all[1]]);
+    expect(mem.counts.read - readsBefore).toBe(2);
+  });
+
+  it('nach einem Neueinlesen der Überwachung werden alle gemerkten Dateien geprüft und geänderte gemeldet', async () => {
+    const mem = memoryFiles();
+    const [a, b, c] = ['A', 'B', 'C'].map((n) => `${root}\\${n}.java`);
+    mem.write(a, 'class A {}', 1);
+    mem.write(b, 'class B {}', 1);
+    mem.write(c, 'class C {}', 1);
+    const { kinds, changes } = mem.service();
+    await kinds.kindsOf([a, b, c]);
+    // Verpasste Ereignisse: B wurde zum Enum, C ist gelöscht und gemeldet, A unverändert.
+    mem.write(b, 'enum B { X }', 2);
+    mem.files.delete(c.toLowerCase());
+    kinds.filesChanged({ changes: [{ path: c, kind: 'deleted' }], rescanned: true });
+    await expect.poll(() => changes).toEqual([{ path: b, kind: 'enum' }]);
+    expect(mem.counts.lstat).toBe(3 + 2);
+  });
+
+  it('speichert Codium eine Datei, während sie noch mit dem alten Inhalt bestimmt wird, folgt die neue Art', async () => {
+    const mem = memoryFiles();
+    const a = `${root}\\OrderService.java`;
+    mem.write(a, 'class OrderService {}', 1);
+    const { kinds, changes } = mem.service();
+    const release = mem.hold();
+    const first = kinds.kindsOf([a]);
+    await expect.poll(() => mem.counts.read).toBe(1);
+    // Gespeichert, während das Lesen des alten Inhalts noch unterwegs ist.
+    mem.write(a, 'interface OrderService {}', 2);
+    kinds.saved(a);
+    release();
+    expect(await first).toEqual([{ path: a, kind: 'class' }]);
+    await expect.poll(() => changes).toEqual([{ path: a, kind: 'interface' }]);
+  });
+
+  it('eine gesperrte Datei ist „Java-Datei“ und wird mit ihrem Stand gemerkt, damit eine Änderung neu bestimmt', async () => {
+    const mem = memoryFiles();
+    const a = `${root}\\Locked.java`;
+    mem.write(a, 'class Locked {}', 1);
+    mem.files.get(a.toLowerCase())!.locked = true;
+    const { kinds, changes } = mem.service();
+    expect(await kinds.kindsOf([a])).toEqual([{ path: a, kind: 'java' }]);
+    // Ohne Änderung bleibt es dabei, ohne erneutes Lesen.
+    expect(await kinds.kindsOf([a])).toEqual([{ path: a, kind: 'java' }]);
+    expect(mem.counts.read).toBe(1);
+    // Freigegeben und geändert: Die Überwachung meldet die Änderung, der Kern meldet die neue Art.
+    mem.write(a, 'class Locked { }', 2);
+    kinds.filesChanged({ changes: [{ path: a, kind: 'changed' }] });
+    await expect.poll(() => changes).toEqual([{ path: a, kind: 'class' }]);
   });
 });

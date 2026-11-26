@@ -181,27 +181,30 @@ export class FileService {
 
   /**
    * Die Art von Java-Dateien für ihr Symbol im Baum (Ticket 32, javaKinds.ts). Jeder Pfad wird ohne Dateizugriff
-   * geprüft; dass der echte Pfad seines Ordners im Projekt liegt, einmal je Ordner. Fehlt ein Ordner (etwa gerade
-   * gelöscht), sind seine Dateien `java`.
+   * geprüft (sonst scheitert die ganze Anfrage); dass der echte Pfad seines Ordners im Projekt liegt, einmal je Ordner.
+   * Scheitert diese Prüfung (der Ordner fehlt, etwa gerade gelöscht, oder führt über eine Junction nach draussen), sind
+   * nur die Dateien dieses Ordners `java`, ungelesen; die übrigen bekommen ihre Art (Review).
    */
   async javaKinds(params: CommandParams<'files.javaKinds'>): Promise<JavaKindEntry[]> {
     const targets = requireList(field(params, 'paths')).map((value) => this.guard.lexical(value));
-    const notJava = targets.find((target) => !/\.java$/i.test(target));
+    const notJava = targets.find((target) => !isJavaPath(target));
     if (notJava !== undefined) throw invalidParams(`Not a Java file: ${notJava}`);
     const folders = new Map(targets.map((target) => [keyOf(path.dirname(target)), path.dirname(target)]));
-    const missing = new Set<string>();
+    const unusable = new Set<string>();
     await Promise.all(
       [...folders].map(async ([key, folder]) => {
         try {
           await this.guard.existing(folder);
         } catch (err) {
-          if (!(err instanceof CommandError && err.code === ErrorCode.fileNotFound)) throw err;
-          missing.add(key);
+          if (!(err instanceof CommandError && err.code === ErrorCode.fileNotFound)) {
+            this.options.log(`Ordner ${folder} für die Art von Java-Dateien nicht geprüft: ${(err as Error).message}`);
+          }
+          unusable.add(key);
         }
       }),
     );
-    const present = targets.filter((target) => !missing.has(keyOf(path.dirname(target))));
-    const kinds = new Map((await this.javaFileKinds.kindsOf(present)).map((entry) => [entry.path, entry.kind]));
+    const usable = targets.filter((target) => !unusable.has(keyOf(path.dirname(target))));
+    const kinds = new Map((await this.javaFileKinds.kindsOf(usable)).map((entry) => [entry.path, entry.kind]));
     return targets.map((target) => ({ path: target, kind: kinds.get(target) ?? 'java' }));
   }
 
@@ -858,4 +861,9 @@ function outermost(targets: string[]): string[] {
     if (!kept.some((k) => isKeyWithin(keyOf(target), keyOf(k)))) kept.push(target);
   }
   return targets.filter((t, i) => kept.includes(t) && targets.indexOf(t) === i);
+}
+
+/** Ob ein Pfad eine Java-Datei ist (nach der Endung). */
+function isJavaPath(target: string): boolean {
+  return /\.java$/i.test(target);
 }

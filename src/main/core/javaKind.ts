@@ -2,7 +2,7 @@
 // Electron und ohne Sprachserver. Sie liest nur so viel Struktur, wie das Symbol braucht. Lädt nie Electron.
 //
 // - Übersprungen werden Leerraum, Kommentare (auch Javadoc), Strings, Textblöcke und Zeichen, dazu `package`,
-//   `import` und Annotationen vor einem Typ.
+//   `import` (auch `import static` und `import module`) und Annotationen vor einem Typ.
 // - Gezählt werden die obersten Typen (class, interface, enum, record, @interface); was in ihrem Rumpf steht, zählt
 //   nicht. Wie in IntelliJ (ClassesTreeStructureProvider) bekommt eine Datei die Art ihres Typs nur, wenn sie genau
 //   einen obersten Typ hat und dieser so heisst wie die Datei, mit Gross-/Kleinschreibung. Sonst ist sie eine
@@ -120,7 +120,8 @@ class Parser {
           continue;
         }
         if (word === 'import' && canImport && !modifiers.any && types.length === 0) {
-          if (this.peekWord('static')) this.next();
+          // `import static a.B.c;` und, seit Java 25 (JEP 511), `import module java.base;`; `import module.Foo;` ist ein Paket.
+          if (this.peekWord('static') || this.isModuleImport()) this.next();
           if (!this.qualifiedName(true) || !this.punct(';')) return null;
           canPackage = false;
           continue;
@@ -232,6 +233,15 @@ class Parser {
     }
     this.pos = save;
     return false;
+  }
+
+  /** Nach `import`: `module` gefolgt von einem Wort (nicht von `.`) ist ein Modul-Import. */
+  private isModuleImport(): boolean {
+    const save = this.pos;
+    const first = this.next();
+    const second = this.next();
+    this.pos = save;
+    return first?.type === 'word' && first.text === 'module' && second?.type === 'word';
   }
 
   /** `record` ist nur vor `Name(` bzw. `Name<` ein Schlüsselwort. */

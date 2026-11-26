@@ -101,6 +101,12 @@ describe('Art einer Java-Datei', () => {
       expect(javaKindOf('public interface Ä$_1 {}', 'Ä$_1.java')).toBe('interface');
     });
 
+    it('mit Modul-Import (Java 25) und einem Paket namens module', () => {
+      expect(javaKindOf(['import module java.base;', 'import module java.sql;', 'public class A {}'].join('\n'), 'A.java')).toBe('class');
+      expect(javaKindOf(['package a;', 'import module.Foo;', 'import module.bar.*;', 'public interface A {}'].join('\n'), 'A.java')).toBe('interface');
+      expect(javaKindOf(['import module java.base', 'public class A {}'].join('\n'), 'A.java')).toBe('java');
+    });
+
     it('mit Endung in anderer Schreibweise', () => {
       expect(javaKindOf('class A {}', 'A.JAVA')).toBe('class');
     });

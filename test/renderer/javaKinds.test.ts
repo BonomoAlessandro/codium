@@ -53,13 +53,66 @@ describe('Art von Java-Dateien in der Oberfläche', () => {
 
     await requests[0].answer({ 'A.java': 'interface', 'B.JAVA': 'enum' });
     await flush();
-    expect(store.kindOf(`${P}\\a.JAVA`)).toBe('interface');
+    expect(store.kindOf(`${P}\\A.java`)).toBe('interface');
     expect(store.kindOf(`${P}\\B.JAVA`)).toBe('enum');
     expect(notified()).toBe(1);
 
     // Bekannt: nicht wieder, auch nicht nach dem Zu- und Wiederaufklappen; Änderungen meldet der Kern.
     store.ensure([`${P}\\A.java`, `${P}\\C.java`]);
     expect(requests.map((r) => r.paths)).toEqual([[`${P}\\A.java`, `${P}\\B.JAVA`], [`${P}\\C.java`]]);
+  });
+
+  it('gilt nur für die Schreibweise des Namens, für den die Art bestimmt wurde (Umbenennen nur in der Schreibweise)', async () => {
+    const { store, requests } = storeWithFakeCore();
+    store.apply([{ path: `${P}\\orderService.java`, kind: 'java' }]);
+    expect(store.kindOf(`${P}\\orderService.java`)).toBe('java');
+    // Etwa nach `git mv orderService.java OrderService.java`: unbekannt, also neu angefragt.
+    expect(store.kindOf(`${P}\\OrderService.java`)).toBeUndefined();
+    store.ensure([`${P}\\OrderService.java`]);
+    expect(requests.map((r) => r.paths)).toEqual([[`${P}\\OrderService.java`]]);
+    await requests[0].answer({ 'OrderService.java': 'class' });
+    await flush();
+    expect(store.kindOf(`${P}\\OrderService.java`)).toBe('class');
+    expect(store.kindOf(`${P}\\orderService.java`)).toBeUndefined();
+    // Die Ordner davor dürfen anders geschrieben sein; es zählt der Dateiname.
+    expect(store.kindOf(`${P.toUpperCase()}\\OrderService.java`)).toBe('class');
+  });
+
+  it('eine späte Antwort überschreibt keine neuere Meldung des Kerns', async () => {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    const api = { on: (name: string, listener: (payload: unknown) => void) => (listeners.set(name, listener), () => listeners.delete(name)) } as unknown as CodiumApi;
+    const { store, requests } = storeWithFakeCore();
+    store.connect(api);
+    store.ensure([`${P}\\A.java`]);
+    // Der Kern meldet die neue Art, bevor die Antwort auf die ältere Anfrage eintrifft.
+    listeners.get('files.javaKindsChanged')!({ kinds: [{ path: `${P}\\A.java`, kind: 'interface' }] });
+    await requests[0].answer({ 'A.java': 'class' });
+    await flush();
+    expect(store.kindOf(`${P}\\A.java`)).toBe('interface');
+  });
+
+  it('vergisst die Löschungen eines Ereignisses in einem Durchlauf, auch bei 20’000 bekannten Dateien', () => {
+    const { store } = storeWithFakeCore();
+    const known: JavaKindEntry[] = [];
+    for (let i = 0; i < 20_000; i++) known.push({ path: `${P}\\pkg${i % 200}\\sub\\F${i}.java`, kind: 'class' });
+    store.apply(known);
+    // 2'000 gelöschte Pfade: 1'000 bekannte Dateien, 990 unbekannte und 10 Ordner mit je 100 bekannten Dateien.
+    const deleted = [
+      ...known.slice(0, 1000).map((e) => e.path),
+      ...Array.from({ length: 990 }, (_, i) => `${P}\\gone\\X${i}.class`),
+      ...Array.from({ length: 10 }, (_, i) => `${P}\\pkg${199 - i}`),
+    ];
+    const start = performance.now();
+    store.forgetAll(deleted);
+    const elapsed = performance.now() - start;
+    // Vorher (je Löschung ein Durchlauf über alle bekannten Dateien) waren das Sekunden; jetzt ein Durchlauf.
+    expect(elapsed).toBeLessThan(1000);
+    const folders = deleted.slice(-10);
+    const deletedFiles = new Set(deleted);
+    const gone = (target: string) => deletedFiles.has(target) || folders.some((f) => target.startsWith(`${f}\\`));
+    expect(known.filter((e) => store.kindOf(e.path) !== undefined).length).toBe(known.filter((e) => !gone(e.path)).length);
+    expect(store.kindOf(`${P}\\pkg199\\sub\\F199.java`)).toBeUndefined();
+    expect(store.kindOf(`${P}\\pkg1\\sub\\F1001.java`)).toBe('class');
   });
 
   it('teilt einen grossen Ordner in Anfragen zu höchstens JAVA_KINDS_CHUNK Pfaden, nacheinander von oben', async () => {

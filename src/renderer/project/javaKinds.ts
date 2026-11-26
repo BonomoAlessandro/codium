@@ -7,12 +7,17 @@
 //   Ordners: Änderungen meldet der Kern selbst. (Ein neues Anfragen aller Dateien bei jedem Aufklappen staute sich in der
 //   Messung vor dem nächsten Ordner, siehe Ticket.)
 // - Solange eine Art nicht feststeht, zeigt die Oberfläche das allgemeine Symbol und den vollen Namen.
-// - Geänderte Arten meldet der Kern (`files.javaKindsChanged`). Gelöschtes wird vergessen; unter einem umbenannten Ordner
-//   wandert das Bekannte mit, eine umbenannte Datei wird neu angefragt, denn ihre Art hängt vom Namen ab.
+// - Bekannt ist eine Art samt der Schreibweise des Dateinamens, für den sie gilt: Die Art hängt vom Namen ab, und unter
+//   Windows behält ein Umbenennen nur in der Schreibweise (etwa `git mv`) denselben Schlüssel. Weicht der Name ab, gilt
+//   die Art als unbekannt und wird neu angefragt (Review).
+// - Geänderte Arten meldet der Kern (`files.javaKindsChanged`); eine Antwort, die danach noch eintrifft, zählt für diese
+//   Pfade nicht mehr. Gelöschtes wird vergessen, die Pfade eines Ereignisses in einem Durchlauf (Review). Unter einem
+//   umbenannten Ordner wandert das Bekannte mit, eine umbenannte Datei wird neu angefragt.
 
 import { createContext, useContext, useSyncExternalStore } from 'react';
+import { ancestorIn, FolderIndex, windowsParent } from '../../shared/folderIndex';
 import type { CodiumApi, JavaKind, JavaKindEntry } from '../../shared/types';
-import { isSameOrInside, movedPath, pathKey } from './filePaths';
+import { baseName, movedPath, pathKey } from './filePaths';
 
 /** Höchstens so viele Pfade je Anfrage: Bei einem grossen Ordner kommen die ersten Arten so früher an. */
 export const JAVA_KINDS_CHUNK = 200;
@@ -27,8 +32,16 @@ export function treeName(name: string, kind: JavaKind | undefined): string {
   return kind !== undefined && kind !== 'java' && isJavaFileName(name) ? name.slice(0, -'.java'.length) : name;
 }
 
+interface Known {
+  /** Der Dateiname in der Schreibweise, für die die Art gilt. */
+  name: string;
+  kind: JavaKind;
+}
+
 export class JavaKindStore {
-  private readonly kinds = new Map<string, JavaKind>();
+  private readonly kinds = new Map<string, Known>();
+  /** Je Ordner, wie viele bekannte Dateien darunter liegen (zum Vergessen ganzer Ordner). */
+  private readonly folders = new FolderIndex(windowsParent);
   /** Unterwegs angefragte Pfade (Schlüssel → Kennung der Anfrage); eine Antwort zählt nur, solange die Kennung gilt. */
   private readonly requested = new Map<string, number>();
   private readonly listeners = new Set<() => void>();
@@ -41,9 +54,10 @@ export class JavaKindStore {
     private readonly onError: (err: unknown) => void = () => {},
   ) {}
 
-  /** Die bekannte Art einer Datei; `undefined`, solange sie nicht feststeht. */
+  /** Die bekannte Art einer Datei; `undefined`, solange sie nicht feststeht oder nur für eine andere Schreibweise. */
   kindOf(path: string): JavaKind | undefined {
-    return this.kinds.get(pathKey(path));
+    const known = this.kinds.get(pathKey(path));
+    return known && known.name === baseName(path) ? known.kind : undefined;
   }
 
   /** Fragt die Art der Java-Dateien unter den Pfaden an, die noch nicht bekannt und nicht unterwegs sind. */
@@ -52,7 +66,7 @@ export class JavaKindStore {
     for (const path of paths) {
       if (!isJavaFileName(path)) continue;
       const key = pathKey(path);
-      if (this.requested.has(key) || wanted.has(key) || this.kinds.has(key)) continue;
+      if (this.requested.has(key) || wanted.has(key) || this.kindOf(path) !== undefined) continue;
       wanted.set(key, path);
     }
     if (wanted.size === 0) return;
@@ -63,7 +77,7 @@ export class JavaKindStore {
     const all = [...wanted];
     void (async () => {
       for (let start = 0; start < all.length; start += JAVA_KINDS_CHUNK) {
-        // Was inzwischen vergessen ist (gelöscht, umbenannt), wird nicht mehr angefragt.
+        // Was inzwischen vergessen oder vom Kern gemeldet ist, wird nicht mehr angefragt.
         const chunk = all.slice(start, start + JAVA_KINDS_CHUNK).filter(([key]) => this.requested.get(key) === id);
         if (chunk.length > 0) await this.send(chunk, id);
       }
@@ -90,8 +104,11 @@ export class JavaKindStore {
     let changed = false;
     for (const { path, kind } of entries) {
       const key = pathKey(path);
-      if (this.kinds.get(key) === kind) continue;
-      this.kinds.set(key, kind);
+      const name = baseName(path);
+      const known = this.kinds.get(key);
+      if (known?.kind === kind && known.name === name) continue;
+      if (!known) this.folders.add(key);
+      this.kinds.set(key, { name, kind });
       changed = true;
     }
     if (changed) this.notify();
@@ -99,13 +116,36 @@ export class JavaKindStore {
 
   /** Vergisst einen Pfad samt allem darunter; eine laufende Anfrage dafür zählt nicht mehr. */
   forget(target: string): void {
+    this.forgetAll([target]);
+  }
+
+  /**
+   * Vergisst Pfade samt allem darunter, in einem Durchlauf: Dateien direkt, Ordner mit bekanntem Inhalt über ihre
+   * Elternordner (Einträge × Tiefe, nicht Pfade × Einträge). Laufende Anfragen dafür zählen nicht mehr.
+   */
+  forgetAll(targets: readonly string[]): void {
+    const keys = new Set(targets.map(pathKey));
+    if (keys.size === 0) return;
     let changed = false;
-    for (const key of [...this.kinds.keys()]) {
-      if (!isSameOrInside(key, target)) continue;
-      this.kinds.delete(key);
-      changed = true;
+    const folders = new Set<string>();
+    for (const key of keys) {
+      if (this.kinds.delete(key)) {
+        this.folders.remove(key);
+        changed = true;
+      }
+      if (this.folders.hasEntriesBelow(key)) folders.add(key);
     }
-    for (const key of [...this.requested.keys()]) if (isSameOrInside(key, target)) this.requested.delete(key);
+    if (folders.size > 0) {
+      for (const key of [...this.kinds.keys()]) {
+        if (this.folders.ancestorIn(key, folders) === null) continue;
+        this.kinds.delete(key);
+        this.folders.remove(key);
+        changed = true;
+      }
+    }
+    for (const key of [...this.requested.keys()]) {
+      if (keys.has(key) || ancestorIn(key, keys, windowsParent) !== null) this.requested.delete(key);
+    }
     if (changed) this.notify();
   }
 
@@ -115,23 +155,32 @@ export class JavaKindStore {
       this.forget(from);
       return;
     }
-    const moved: Array<[string, JavaKind]> = [];
-    for (const [key, kind] of this.kinds) if (isSameOrInside(key, from)) moved.push([movedPath(key, from, to), kind]);
+    const fromKey = pathKey(from);
+    const within = new Set([fromKey]);
+    const moved: JavaKindEntry[] = [];
+    for (const [key, known] of this.kinds) {
+      if (this.folders.ancestorIn(key, within) === null) continue;
+      // Der Schlüssel ist klein geschrieben; der Dateiname behält seine Schreibweise, denn nach ihr fragt `kindOf`.
+      const target = movedPath(key, from, to);
+      moved.push({ path: target.slice(0, target.length - known.name.length) + known.name, kind: known.kind });
+    }
     this.forget(from);
-    this.apply(moved.map(([path, kind]) => ({ path, kind })));
+    this.apply(moved);
   }
 
   /** Meldet sich bei den Ereignissen des Kerns an; liefert eine Funktion zum Abmelden. */
   connect(api: CodiumApi): () => void {
     const offs = [
-      api.on('files.javaKindsChanged', (event) => this.apply(event.kinds)),
+      api.on('files.javaKindsChanged', (event) => {
+        // Eine Antwort auf eine ältere Anfrage, die danach noch eintrifft, darf die Meldung nicht überschreiben.
+        for (const entry of event.kinds) this.requested.delete(pathKey(entry.path));
+        this.apply(event.kinds);
+      }),
       api.on('files.operation', (op) => {
         if (op.kind === 'renamed') this.moved(op.from, op.to, op.isDirectory);
         else if (op.kind === 'deleted') this.forget(op.path);
       }),
-      api.on('files.changed', (event) => {
-        for (const change of event.changes) if (change.kind === 'deleted') this.forget(change.path);
-      }),
+      api.on('files.changed', (event) => this.forgetAll(event.changes.filter((c) => c.kind === 'deleted').map((c) => c.path))),
     ];
     return () => {
       for (const off of offs) off();

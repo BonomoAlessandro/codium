@@ -240,7 +240,11 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   // Die Art der Java-Dateien in den Tabs, für ihr Symbol (Ticket 32); angefragt wird nur, was noch nicht bekannt ist.
   // Neu zeichnet bei einer geänderten Art nur das Symbol (FileTypeIcon), nicht der ganze Code-Bereich.
   const javaKinds = useJavaKindStore();
-  const tabFiles = useMemo(() => tabs.filter((t) => !isDocumentTab(t.path) && !isJdtPath(t.path)).map((t) => t.path), [tabs]);
+  // Nur Dateien im Projekt; der Kern lehnt andere ab (Review).
+  const tabFiles = useMemo(
+    () => tabs.filter((t) => !isDocumentTab(t.path) && !isJdtPath(t.path) && isInside(t.path, project.path)).map((t) => t.path),
+    [tabs, project.path],
+  );
   useEffect(() => javaKinds?.ensure(tabFiles), [javaKinds, tabFiles]);
   /** Herkunft der schreibgeschützten Dokument-Tabs (Schlüssel des Pfads) für ihren Titel. */
   const documentOrigins = useRef(new Map<string, string>());

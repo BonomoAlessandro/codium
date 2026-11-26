@@ -595,7 +595,7 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile, openedFi
     if (!row || row.isRoot) return;
     const siblings = siblingsOf(parentPath(row.path));
     const { base } = splitExtension(row.name, row.isDirectory || !!row.blockedLink);
-    const isJava = !row.isDirectory && !row.blockedLink && /\.java$/i.test(row.name);
+    const isJava = !row.isDirectory && !row.blockedLink && isJavaFileName(row.name);
     await askText({
       title: 'Rename',
       message: `Rename ${kindOf(row)} “${row.name}” to:`,

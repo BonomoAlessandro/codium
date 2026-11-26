@@ -4,7 +4,8 @@
 // bedienbar (siehe auch folderQueries.ts und earlyStart.ts). Lädt nie Electron.
 //
 // Nachrangige Arbeit (etwa das Bestimmen der Art von Tausenden Java-Dateien, Ticket 32) teilt dieselbe Grenze, lässt
-// aber anderen Zugriffen den Vortritt: Sie beginnt nur, wenn kein anderer Zugriff wartet, und belegt nie alle Plätze.
+// aber anderen Zugriffen den Vortritt: Sie beginnt nur, wenn kein anderer Zugriff wartet, und belegt ab zwei Plätzen nie
+// alle.
 // So verzögert sie etwa das Lesen eines Ordners beim Aufklappen höchstens um einen laufenden Zugriff.
 
 export class IoLimiter {
@@ -12,7 +13,10 @@ export class IoLimiter {
   private activeBackground = 0;
   private readonly waiting: Array<() => void> = [];
   private readonly waitingBackground: Array<() => void> = [];
-  /** So viele Plätze darf nachrangige Arbeit höchstens belegen; mindestens einer bleibt für andere Zugriffe frei. */
+  /**
+   * So viele Plätze darf nachrangige Arbeit höchstens belegen: einen weniger als alle, damit einer für andere Zugriffe
+   * frei bleibt; bei nur einem Platz (`max` 1) diesen einen (Review).
+   */
   private readonly maxBackground: number;
 
   constructor(private readonly max: number) {

@@ -79,11 +79,12 @@ describe('Java-Symbole', () => {
     return { shop, dataRoot, at: (...parts: string[]) => path.join(shop, ...parts) };
   }
 
-  async function launch(dataRoot: string): Promise<{ codium: LaunchedApp; page: Page }> {
+  /** Startet Codium und wartet auf eine Zeile im Baum (Standard: die Klasse im aufgeklappten Paket). */
+  async function launch(dataRoot: string, firstRow = 'OrderService.java'): Promise<{ codium: LaunchedApp; page: Page }> {
     const codium = await launchCodium({ dataRoot });
     try {
       const page = await codium.page(TITLE);
-      await item(page, 'OrderService.java').waitFor({ timeout: 15_000 });
+      await item(page, firstRow).waitFor({ timeout: 15_000 });
       return { codium, page };
     } catch (err) {
       await codium.close();
@@ -183,8 +184,9 @@ describe('Java-Symbole', () => {
 
   it('zeigt in den Datei-Tabs das Symbol der Art, mit vollem Namen', async () => {
     const tabs = [`${PKG}/OrderService.java`, `${PKG}/Repository.java`, `${PKG}/Helpers.java`, 'README.md'];
-    const { dataRoot } = setup({ tabs, activeTab: tabs[0] });
-    const { codium, page } = await launch(dataRoot);
+    // Das Paket bleibt zu: Die Arten fragen die Tabs selbst an, nicht der Baum (Review).
+    const { dataRoot } = setup({ tabs, activeTab: tabs[0], expandedFolders: [''] });
+    const { codium, page } = await launch(dataRoot, 'src');
     await withApp(codium, async () => {
       await expect.poll(() => kindOf(tab(page, 'OrderService.java'))).toBe('class');
       await expect.poll(() => kindOf(tab(page, 'Repository.java'))).toBe('interface');
@@ -197,8 +199,9 @@ describe('Java-Symbole', () => {
 
   it('zeigt in „Recent Files“ das Symbol der Art, mit vollem Namen', async () => {
     const recentFiles = [`${PKG}/OrderStatus.java`, `${PKG}/Money.java`, 'README.md', `${PKG}/Helpers.java`];
-    const { dataRoot } = setup({ recentFiles });
-    const { codium, page } = await launch(dataRoot);
+    // Das Paket bleibt zu: Die Arten fragt die Liste selbst an, nicht der Baum (Review).
+    const { dataRoot } = setup({ recentFiles, expandedFolders: [''] });
+    const { codium, page } = await launch(dataRoot, 'src');
     await withApp(codium, async () => {
       await tree(page).focus();
       await page.keyboard.press('Control+e');
@@ -215,8 +218,9 @@ describe('Java-Symbole', () => {
   });
 
   it('zeigt in „Go to File“ das Symbol der Art, mit vollem Namen', async () => {
-    const { dataRoot } = setup();
-    const { codium, page } = await launch(dataRoot);
+    // Das Paket bleibt zu: Die Arten fragt die Liste selbst an, nicht der Baum (Review).
+    const { dataRoot } = setup({ expandedFolders: [''] });
+    const { codium, page } = await launch(dataRoot, 'src');
     await withApp(codium, async () => {
       await tree(page).focus();
       await page.keyboard.press('Control+Shift+N');

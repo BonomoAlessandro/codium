@@ -86,7 +86,8 @@ erklären die Hintergründe.
   `Throwable`), nicht an der ganzen Vererbung wie IntelliJ. Ein zweiter oberster Typ hinter den ersten 64 KB bleibt
   ungesehen. Codium kennt keine Quellordner und kürzt Namen überall (IntelliJ nur in Quellordnern). Ab 50'000
   verschiedenen Java-Dateien in einer Sitzung meldet der Kern Änderungen an den am längsten nicht angefragten nicht
-  mehr; deren Symbol stimmt dann erst nach dem nächsten Öffnen des Fensters.
+  mehr; deren Symbol stimmt dann erst nach dem nächsten Öffnen des Fensters. Links merkt der Kern nicht (ändert sich nur das
+  Ziel, bleibt das Symbol); eine gesperrte Datei ist „Java-Datei“, bis sie sich ändert.
 
 ## Wackelige Tests (beobachten)
 

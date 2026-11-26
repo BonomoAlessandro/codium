@@ -1,6 +1,6 @@
 # 32 – Java-Dateien im Dateibaum mit Symbol je Art, ohne Endung
 
-Status: `ready-for-agent` · Typ: HITL
+Status: `erledigt` (2026-11-26) · Typ: HITL
 Blockiert durch: –
 User Stories: ergänzt „Dateibaum“ und „Oberfläche und Werkzeugfenster“ (Stil des neuen IntelliJ)
 Spezifikation: „Oberfläche“ (Design), Dateibaum
@@ -137,7 +137,7 @@ Aus `platform/icons/src/expui/nodes/*_dark.svg`, alle 16 px, ein Kreis mit Radiu
   - Der eigene Name zählt nicht (`class OrderException` ohne `extends` ist eine Klasse), ebenso wenig Interfaces.
 - **64 KB:** Ein zweiter oberster Typ hinter den ersten 64 KB bleibt ungesehen; die Datei bekommt dann die Art des ersten.
 - **Fehlertoleranz:** Ein Syntaxfehler vor dem ersten Typ oder in seinem Kopf ergibt „Java-Datei“. Ein offener Rumpf (eine fehlende Klammer mitten im Tippen) oder Unerwartetes nach dem ersten vollständigen Typ beendet nur das Lesen; es zählen die Typen bis dahin. So springt das Symbol beim automatischen Speichern nicht bei jeder offenen Klammer auf „Java-Datei“; auch IntelliJ übergeht solche Fehler.
-- Unicode-Escapes im Quelltext (`class`) löst Codium nicht auf.
+- Unicode-Escapes im Quelltext (`\u0063lass`) löst Codium nicht auf.
 
 ## Stand der Erkennung (Agent, 2026-11-26)
 
@@ -164,7 +164,7 @@ Gebaut vor der Freigabe der Symbole, ohne Anzeige im Baum:
 
 ## Entscheidung (Nutzer, 2026-11-26)
 
-Vorgelegt wurden Dateibaum, Datei-Tabs, „Recent Files“ und „Go to File“ eines erfundenen Projekts, heute und mit zwei Fassungen der Symbole. Fassung A hat eine dunkle Fläche mit farbigem Ring und Zeichen wie IntelliJ, Fassung B einen vollen farbigen Kreis mit dunklem Zeichen. Dazu kamen das allgemeine Symbol als Tasse oder als „J“ im Kreis und jedes Symbol einzeln vergrössert. Die Seite lag nach den Spielregeln unversioniert unter `entwuerfe/32-java-symbole/` (Aufnahmeskript in `aufnahmen/`). Ein Bildschirmfoto aus IntelliJ lag nicht vor; Farben und Gestalt stammen aus dessen Symbolen (siehe Befund).
+Vorgelegt wurden Dateibaum, Datei-Tabs, „Recent Files“ und „Go to File“ eines erfundenen Projekts, heute und mit zwei Fassungen der Symbole. Fassung A hat eine dunkle Fläche mit farbigem Ring und Zeichen wie IntelliJ, Fassung B einen vollen farbigen Kreis mit dunklem Zeichen. Dazu kamen das allgemeine Symbol als Tasse oder als „J“ im Kreis und jedes Symbol einzeln vergrössert. Die Seite lag nach den Spielregeln unversioniert unter `entwuerfe/32-java-symbole/` (Aufnahmeskript in `aufnahmen/`); nach dem Abschluss gelöscht (2026-11-26). Ein Bildschirmfoto aus IntelliJ lag nicht vor; Farben und Gestalt stammen aus dessen Symbolen (siehe Befund).
 
 Rückmeldung des Nutzers, wörtlich: „deine empfehlung“
 
@@ -234,7 +234,7 @@ Damit gelten die sieben Empfehlungen des Agenten:
 
 ### Leistung
 
-Gemessen im verborgenen Testfenster (Playwright im Testmodus) mit einem Ordner aus 5'000 Java-Dateien von je etwa 1,5 KB. Zum Vergleich dienten ein gleich grosser Ordner mit Textdateien und ein kleiner Ordner mit 10 Dateien. Rechner: Intel Core i7-12800H, Windows 11. Gemessen wurde im Fenster vom Ereignis, das den Ordner aufklappt, bis die erste Zeile erscheint bzw. ihr Symbol wechselt. Die Zahlen stammen aus drei Läufen mit der eingebauten Fassung, Lauf 3 mit dem endgültigen Stand; das Messskript lag bei den Entwürfen.
+Gemessen im verborgenen Testfenster (Playwright im Testmodus) mit einem Ordner aus 5'000 Java-Dateien von je etwa 1,5 KB. Zum Vergleich dienten ein gleich grosser Ordner mit Textdateien und ein kleiner Ordner mit 10 Dateien. Rechner: Intel Core i7-12800H, Windows 11. Gemessen wurde im Fenster vom Ereignis, das den Ordner aufklappt, bis die erste Zeile erscheint bzw. ihr Symbol wechselt. Die Zahlen stammen aus drei Läufen. Lauf 1 und 2 liefen mit einer Zwischenfassung (Teile zu 200, nacheinander, noch ohne die Änderungen aus dem Review), Lauf 3 mit dem Stand vor dem Review; das Messskript lag bei den Entwürfen. Nicht gemessen sind ein kalter Zwischenspeicher des Betriebssystems (die Dateien waren gerade geschrieben) und viele Änderungen bei vielen gemerkten Dateien; das zweite deckt seit dem Review ein Einheitstest ab (siehe unten). Auf Wunsch des Nutzers gibt es keine weiteren Messungen mit Tausenden Dateien auf der Platte.
 
 | Messung | Lauf 1 | Lauf 2 | Lauf 3 |
 |---|---|---|---|
@@ -249,6 +249,7 @@ Gemessen im verborgenen Testfenster (Playwright im Testmodus) mit einem Ordner a
 | Kern allein: dieselben aus dem Zwischenspeicher (nur `lstat`) | 0,6 s | 0,4 s | 0,3 s |
 
 - **Folgerung:** Die erste Zeile eines Ordners mit 5'000 Java-Dateien erscheint 15 bis 55 ms später als bei 5'000 Textdateien (Anfragen der Arten und Zeichnen der Symbole), in allen Läufen unter 0,15 s; das ist nicht merklich. Die obersten Symbole wechseln nach 0,14 bis 0,26 s von der Tasse zur Art. Ein anderer Ordner, der währenddessen aufgeklappt wird, wartet nicht (3 bis 10 ms).
+- **Viele Änderungen bei vielen gemerkten Dateien** (seit dem Review): Eine Meldung der Überwachung mit 2'000 Pfaden bei 20'000 gemerkten Dateien dauert im Einheitstest (Dateien im Speicher) weit unter der Grenze von 1 s; vorher lief je Pfad ein Durchlauf über alle gemerkten Dateien, nach dem Nachbau des Prüfers etwa 21 s Blockade im Hauptprozess. In der Oberfläche dasselbe für 2'000 Löschungen bei 20'000 bekannten Dateien; die Gegenprobe mit dem alten Verfahren brauchte 6,7 s.
 - **Zwei Änderungen aus der Messung:**
   - Zuerst gingen die Teile eines Ordners (damals zu 500) gleichzeitig an den Kern. Dort reihten sie sich nach der Prüfung des Ordners in zufälliger Folge ein, und im zweiten kalten Ordner kam das erste Symbol erst nach 1,6 bis 2,1 s. Seit die Teile nacheinander gehen, sind es 0,14 bis 0,2 s.
   - Das erste Lesen eines Ordners fragte zuerst alle Arten neu an, als Schutz vor veralteten Arten. Das kostete bei jedem Wiederaufklappen 5'000 `lstat` und ist entfallen; der Kern meldet Änderungen selbst.
@@ -257,19 +258,20 @@ Gemessen im verborgenen Testfenster (Playwright im Testmodus) mit einem Ordner a
 ### Entscheidungen und Abweichungen
 
 - **Abstrakte Ausnahme** als eigene Art (`abstractException`), weil IntelliJ dafür ein eigenes Symbol hat.
+- **Annotation:** IntelliJ füllt mit dem „@“ den ganzen Kreis, ohne Rand; Codium zeichnet wie bei den übrigen Arten einen Ring mit dem „@“ darin, so wie freigegeben.
 - **Fehlertoleranz:** Ein offener Rumpf zählt den Typ, damit das Symbol beim automatischen Speichern nicht springt. Das Ticket verlangt „Java-Datei“ nur bei einem Syntaxfehler am Anfang.
 - **Tooltip:** Alle Java-Dateien im Baum zeigen den vollen Namen als Tooltip, auch die mit Endung; andere Dateien wie bisher keinen.
-- **Bilder:** Die Bilder des eingebauten Stands lagen unversioniert unter `entwuerfe/32-java-symbole/` (Abschnitt „Eingebaut“), aufgenommen mit `AUFNAHME_EINGEBAUT=1`.
-- **Grenzen:** wie unter „Grenzen der Annäherung“, dazu in `offene-punkte.md` unter „Bekannte Grenzen“: Codium kennt keine Quellordner und kürzt überall. Ab 50'000 verschiedenen Java-Dateien in einer Sitzung meldet der Kern Änderungen an den am längsten nicht angefragten nicht mehr; deren Symbol stimmt dann erst nach dem nächsten Öffnen des Fensters.
+- **Bilder:** Die Bilder des eingebauten Stands lagen unversioniert unter `entwuerfe/32-java-symbole/` (Abschnitt „Eingebaut“), aufgenommen mit `AUFNAHME_EINGEBAUT=1`; nach dem Abschluss gelöscht, ebenso die Mess- und Aufnahmeskripte.
+- **Grenzen:** wie unter „Grenzen der Annäherung“, dazu in `offene-punkte.md` unter „Bekannte Grenzen“: Codium kennt keine Quellordner und kürzt überall. Ab 50'000 verschiedenen Java-Dateien in einer Sitzung meldet der Kern Änderungen an den am längsten nicht angefragten nicht mehr; deren Symbol stimmt dann erst nach dem nächsten Öffnen des Fensters. Links merkt der Kern nicht; ändert sich nur das Ziel eines Links, bleibt das Symbol. Eine gesperrte Datei ist „Java-Datei“, bis sie sich ändert (seit dem Review).
 - **Spezifikation nachgeführt:** User Story 25; „Oberfläche“, Design (Java-Symbole); „Dateien, Dateiüberwachung und Suche“, Dateibaum (Java-Dateien im Baum).
 
 ### Tests
 
 - **Einheitstests:**
-  - `test/main/javaKind.test.ts`: 44 Tests zum Deuten.
-  - `test/main/javaKinds.test.ts`: 8 Tests am Vertrag, darunter Zwischenspeicher und neues Bestimmen.
+  - `test/main/javaKind.test.ts`: 45 Tests zum Deuten (einer seit dem Review, Modul-Import).
+  - `test/main/javaKinds.test.ts`: 15 Tests. 10 am Vertrag, darunter Zwischenspeicher und neues Bestimmen, seit dem Review auch Umbenennen nur in der Schreibweise und ein Ordner über eine Junction nach draussen. 5 mit Dateien im Speicher (seit dem Review): 2'000 Änderungen bei 20'000 gemerkten Dateien, Löschen von Dateien und Ordnern, Neueinlesen der Überwachung, Speichern während des Bestimmens, gesperrte Datei.
   - `test/main/ioLimiter.test.ts`: ein neuer Test zum Vorrang.
-  - `test/renderer/javaKinds.test.ts`: 10 Tests. Sie prüfen den Zwischenspeicher der Oberfläche (einmal anfragen, Teile nacheinander, Löschen, Umbenennen, Fehler, Ereignisse), den Namen im Baum, die Symbole (je Art verschieden, gestrichelt nur Abstraktes, nur Design-Variablen) und die Werte in `tokens.css`.
+  - `test/renderer/javaKinds.test.ts`: 13 Tests. Sie prüfen den Zwischenspeicher der Oberfläche (einmal anfragen, Teile nacheinander, Löschen, Umbenennen, Fehler, Ereignisse), den Namen im Baum, die Symbole (je Art verschieden, gestrichelt nur Abstraktes, nur Design-Variablen) und die Werte in `tokens.css`. Seit dem Review dazu: andere Schreibweise des Namens, späte Antwort nach einer Meldung, 2'000 Löschungen bei 20'000 bekannten Dateien.
 - **Oberfläche:** `test/ui/javaSymbols.test.ts`, 5 Tests.
   - Baum: Symbol je Art ohne `.java`, Java-Datei mit Endung und Tasse, Reihenfolge, Tooltip, Git-Farbe nur am Namen (das Symbol behält seine Farbe), „Rename“ mit vollem Namen, Markierung ohne Endung und Hinweis zu Java.
   - Speichern von `class` zu `interface`: Symbol im Baum und im Tab wechselt; danach von aussen zur Ausnahme.
@@ -287,3 +289,41 @@ Gemessen im verborgenen Testfenster (Playwright im Testmodus) mit einem Ordner a
   - Rot war der bekannte wackelige Test „TypeScript im Editor: springt mit Ctrl + Linksklick zur Definition, zeigt auf der Deklaration die Verwendungen …“ (`typescript.test.ts`, „expected 0 to be greater than 0“ nach 30 s).
   - Einzeln danach 3 von 3 grün; vermerkt in `offene-punkte.md` unter „Wackelige Tests“.
 - `npm run test:ui`, zweiter Lauf (ab 14:24, kein Kernel-Power-Ereignis seit 14:10:36): 29 Dateien, 106 Tests grün, 698 s. Keine Meldung der Schlussprüfung, keine übrigen Prozesse.
+
+## Review
+
+Ein zweiter Agent hat den Branch gegen Ticket, Spezifikation und Spielregeln geprüft. Eingearbeitet ist alles, verworfen nichts. Neue und geänderte Tests sind jeweils mit Gegenprobe geprüft: Mit dem alten Verhalten werden sie rot.
+
+Muss behoben werden:
+- **M1, Aufwand nach Änderungen × gemerkten Dateien:** Kern und Oberfläche suchten je geändertem oder gelöschtem Pfad in allen gemerkten Dateien; nach dem Nachbau des Prüfers blockierten 2'000 Änderungen bei 20'000 gemerkten Dateien den Hauptprozess etwa 21 s.
+  - Neu zählt ein Index je Ordner die gemerkten Dateien darunter (`src/shared/folderIndex.ts`). Dateien schlägt der Dienst direkt nach. Nur ein Ordner mit gemerktem Inhalt löst einen Durchlauf aus, einen je Meldung, der je Eintrag die Elternordner nachschlägt (Einträge × Tiefe).
+  - Nach einem Neueinlesen der Überwachung werden erst die Löschungen behandelt, dann direkt alle gemerkten Dateien geprüft.
+  - Die Oberfläche vergisst die gelöschten Pfade eines Ereignisses in einem Durchlauf, mit demselben Index.
+  - Einheitstests mit 20'000 gemerkten Dateien und 2'000 Änderungen im Kern bzw. Löschungen in der Oberfläche, Zeitgrenze 1 s; Gegenprobe mit dem alten Verfahren: rot (in der Oberfläche 6,7 s). Damit der Kern-Test ohne Platte läuft, sind die Dateizugriffe des Dienstes ersetzbar (`JavaFileSystem`). Der Index selbst hat eigene Tests (`test/main/folderIndex.test.ts`, 3 Tests).
+
+Sollte behoben werden:
+- **S1, `import module java.base;`** (Java 25, JEP 511) ergab „Java-Datei“. Folgt nach `import` das Wort `module` und dann wieder ein Wort, ist es ein Modul-Import; `import module.Foo;` bleibt ein Paket. Tests für beide Fälle; Gegenprobe: rot.
+- **S2, UI-Tests für Tabs, „Recent Files“ und „Go to File“** prüften die eigene Anfrage nicht, weil der aufgeklappte Baum die Arten schon lieferte. Jetzt bleibt das Paket dort zu. Gegenprobe ohne die Anfragen in `EditorArea.tsx` und `FilePopups.tsx`: die drei Tests rot.
+
+Hinweise:
+- **H1:** Meldet der Kern eine Art, zählt eine danach eintreffende Antwort auf eine ältere Anfrage für diesen Pfad nicht mehr. Test; Gegenprobe: rot.
+- **H2:** Gelingt `lstat`, scheitert aber das Lesen (gesperrt, ohne Rechte), merkt der Kern „Java-Datei“ mit Änderungszeit und Grösse; eine spätere Änderung bestimmt neu und meldet. Links merkt er weiterhin nicht (Grenze oben). Test mit einer gesperrten Datei im Speicher; Gegenprobe: rot.
+- **H3:** Umbenennen nur in der Schreibweise (etwa `git mv orderService.java OrderService.java`): Die Oberfläche merkt sich zur Art den Dateinamen in seiner Schreibweise; weicht er ab, gilt die Art als unbekannt und wird neu angefragt. Der Kern vergleicht ohnehin die Schreibweise des Pfads. Tests in Oberfläche und Kern; Gegenproben: rot.
+- **H4:**
+  - Die Tabs fragen nur Dateien im Projekt an.
+  - In `files.javaKinds` wirkt ein Fehler beim Prüfen eines Ordners (fehlt, Junction nach draussen) nur auf dessen Dateien, nicht auf die ganze Anfrage. Test mit einer Junction; Gegenprobe: rot.
+- **H5:**
+  - Der fehlende Rückstrich im Beispiel `\u0063lass` ist ergänzt.
+  - Die Abweichung beim „@“ steht unter „Entscheidungen und Abweichungen“.
+  - Unter „Leistung“ steht offen, mit welchem Stand die Läufe liefen und was nicht gemessen ist.
+  - Tests für das Neueinlesen und für Speichern während des Bestimmens (im Speicher, im schnellen Lauf).
+- **H6:** Der Dateibaum nimmt für den Hinweis beim Umbenennen `isJavaFileName`; der Kommentar in `ioLimiter.ts` nennt, dass ab zwei Plätzen einer frei bleibt.
+
+Bilder: Am Aussehen hat sich nichts geändert, die Bilder des eingebauten Stands bleiben.
+
+Testläufe nach dem Review (2026-11-26, nacheinander, allein auf dem Rechner):
+- `npm run typecheck`: sauber.
+- `npm test`: 60 Dateien, 577 Tests grün (152 s, länger als die üblichen 75 s; kein Standby).
+- `test/ui/javaSymbols.test.ts` einzeln: 5 von 5 grün, dazu die Gegenprobe zu S2.
+- `npm run test:ui` (ab 14:58, letztes Kernel-Power-Ereignis davor 507 um 14:10:36, während des Laufs und danach kein 506): 29 Dateien, 106 Tests grün, 719 s. Keine Meldung der Schlussprüfung, keine übrigen Prozesse.
+

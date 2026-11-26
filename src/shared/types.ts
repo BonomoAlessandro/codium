@@ -1048,7 +1048,8 @@ export interface Commands {
    * Die Art von Java-Dateien für ihr Symbol im Dateibaum (Ticket 32), gebündelt, etwa für alle Java-Dateien eines
    * aufgeklappten Ordners; in der Reihenfolge der Pfade. Jeder Pfad muss auf `.java` enden (sonst `INVALID_PARAMS`).
    * Gelesen werden höchstens die ersten 64 KB, nachrangig zu anderen Dateizugriffen; das Ergebnis merkt sich der Kern je
-   * Pfad mit Änderungszeit und Grösse. Eine Datei, die fehlt oder sich nicht lesen lässt, ist `java`, ohne Fehler.
+   * Pfad mit Änderungszeit und Grösse. Eine Datei, die fehlt oder sich nicht lesen lässt, ist `java`, ohne Fehler; ebenso
+   * die Dateien eines Ordners, der fehlt oder dessen echter Pfad ausserhalb des Projekts liegt (etwa über eine Junction).
    * Ändert sich eine gemerkte Datei (von aussen oder mit `files.write`), bestimmt der Kern sie neu und meldet eine
    * geänderte Art mit `files.javaKindsChanged`.
    */
