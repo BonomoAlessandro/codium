@@ -1,7 +1,7 @@
 {
   "name": "codium",
   "productName": "Codium",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Eine kleine eigene IDE im Stil von IntelliJ.",
   "main": "dist/main/main.js",
   "private": true,
