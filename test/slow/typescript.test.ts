@@ -3,6 +3,7 @@
 // - TypeScript 6 im Projekt (typescript-language-server mit dem tsserver des Projekts),
 // - ohne eigenes TypeScript (nativer Server des mitgelieferten TypeScript 7).
 // Das TypeScript der Beispielprojekte ist eine Junction auf die Pakete im Repository (typescript bzw. typescript6).
+// Dazu ein Java-Projekt mit Web-Oberfläche ohne eigenes TypeScript (Ticket 36): offene Java-Datei, dann eine JSX-Datei.
 
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -200,6 +201,84 @@ describe('TypeScript-Sprachserver', () => {
     expect(test.core.projectCore(windowId)?.language.typescriptKind).toBeNull();
     await call(test, windowId, 'language.didOpen', { path: path.join(project, 'a.ts'), text: 'export const a: number = 1;\n', version: 1 });
     expect(test.core.projectCore(windowId)?.language.typescriptKind).toBe('bundled-native');
+  });
+
+  it('stürzt nicht ab, wenn beim Start eine Java-Datei offen ist, auch nicht nach „Restart“ und Absturz (Ticket 36)', async () => {
+    // Ein Java-Projekt mit Web-Oberfläche, ohne eigenes TypeScript und ohne Kennzeichen für TypeScript: Der mitgelieferte
+    // native Server startet erst mit der JSX-Datei, während die Java-Datei schon offen ist. Vorher meldete Codium ihm
+    // auch die Java-Datei, und er endete mit „panic: ScriptKind must be specified when parsing source file: …Cart.java“,
+    // nach jedem Neustart wieder, bis Codium nach vier Abstürzen aufgab.
+    const root = tempDir();
+    const project = path.join(root, 'Shop');
+    const cart = path.join(project, 'src', 'main', 'java', 'shop', 'Cart.java');
+    const app = path.join(project, 'src', 'main', 'webapp', 'App.jsx');
+    fs.mkdirSync(path.dirname(cart), { recursive: true });
+    fs.mkdirSync(path.dirname(app), { recursive: true });
+    fs.writeFileSync(path.join(project, 'pom.xml'), '<project/>');
+    const CART = 'package shop;\n\npublic class Cart {\n  int total() { return 0; }\n}\n';
+    const APP = 'function total(a, b) {\n  return a + b;\n}\n\nexport function App() {\n  return <div className="cart">{total(1, 2)}</div>;\n}\n';
+    fs.writeFileSync(cart, CART);
+    fs.writeFileSync(app, APP);
+    const usage = { line: 5, character: APP.split('\n')[5].indexOf('total') + 1 };
+    const test = createTestCore(path.join(root, 'data'), {
+      typescript: BUNDLED,
+      cleanupTimeoutMs: 10_000,
+      // Ohne Konfiguration holt der Server Typen in einen Zwischenspeicher unter LOCALAPPDATA (ATA); hier in den
+      // Temp-Ordner statt in den gemeinsamen (docs/offene-punkte.md, „Gemeinsamer Typ-Zwischenspeicher“).
+      processEnv: { ...process.env, LOCALAPPDATA: path.join(root, 'local') },
+    });
+    await test.core.start();
+    await call(test, test.ports.windows.windowTitled(WELCOME), 'app.openProject', { path: project });
+    const windowId = test.ports.windows.windowTitled('Shop – Codium');
+    const language = () => test.core.projectCore(windowId)!.language;
+    const logFile = path.join(test.dataDir, 'logs', 'language-servers.log');
+    const serverLog = () => (fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '');
+    const crashes = () => test.logs.filter((l) => /abgestürzt/.test(l));
+    const stoppedNotices = () =>
+      test.events.forWindow(windowId).filter((e) => e.name === 'app.notice' && /stopped/.test((e.payload as { text: string }).text));
+
+    /** Der Server beantwortet Hover und Definition in der JSX-Datei und läuft danach weiter; das Protokoll bleibt, wie es war. */
+    const expectStable = async (what: string, logBefore: string, crashesBefore: number) => {
+      const pid = language().typescriptPid;
+      expect(pid, what).toBeDefined();
+      expect(language().typescriptKind, what).toBe('bundled-native');
+      // Bis der Hover kommt, hat der Server alle gemeldeten Dokumente verarbeitet; stürzt er ab, endet das Warten gleich.
+      const hover = await until(
+        async () => (crashes().length > crashesBefore ? null : await call(test, windowId, 'language.hover', { path: app, ...usage })),
+        (h) => crashes().length > crashesBefore || (h?.markdown ?? '').includes('total'),
+        `${what}: Hover`,
+      );
+      // Zeit für einen späteren Absturz und seinen Eintrag im Protokoll (der wartet bis 1 s auf den Rest von stderr).
+      await new Promise((r) => setTimeout(r, 2500));
+      expect(serverLog(), `${what}: Protokoll der Sprachserver`).toBe(logBefore);
+      expect(crashes(), what).toHaveLength(crashesBefore);
+      expect(stoppedNotices(), what).toEqual([]);
+      expect(language().typescriptPid, what).toBe(pid);
+      expect(hover?.markdown, what).toContain('function total');
+      const definition = await call(test, windowId, 'language.definition', { path: app, ...usage });
+      expect(definition, what).toMatchObject([{ path: app, range: { start: { line: 0, character: 9 } } }]);
+    };
+
+    await call(test, windowId, 'language.didOpen', { path: cart, text: CART, version: 1 });
+    expect(language().typescriptKind).toBeNull();
+    await call(test, windowId, 'language.didOpen', { path: app, text: APP, version: 1 });
+    await expectStable('Start mit offener Java-Datei', '', 0);
+
+    // „Restart“ mit weiterhin offener Java-Datei: Ein normales Beenden kommt nicht ins Protokoll.
+    const beforeRestart = language().typescriptPid;
+    await call(test, windowId, 'language.restart', { server: 'typescript' });
+    expect(language().typescriptPid).not.toBe(beforeRestart);
+    await expectStable('nach „Restart“', '', 0);
+
+    // Ein Absturz (hier beendet der Test den Server): genau dieser eine Eintrag, der neue Server bleibt stabil.
+    const killed = language().typescriptPid!;
+    process.kill(killed);
+    await until(() => language().typescriptPid, (p) => p !== undefined && p !== killed, 'Neustart nach dem Absturz');
+    await until(serverLog, (text) => /stopped unexpectedly[\s\S]*\n\n$/.test(text), 'Eintrag des Absturzes');
+    const afterKill = serverLog();
+    expect(afterKill.match(/stopped unexpectedly/g)).toHaveLength(1);
+    expect(afterKill).not.toContain('panic');
+    await expectStable('nach dem Absturz', afterKill, 1);
   });
 
   it(`startet nach einem Absturz neu und gibt nach ${MAX_RESTARTS} Neustarts in drei Minuten auf`, async () => {

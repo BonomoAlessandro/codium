@@ -5,6 +5,7 @@
 // - Höchstens ein Server je Sprache. Er startet beim Öffnen des Projekts, wenn Kennzeichen da sind (TypeScript:
 //   tsconfig.json, jsconfig.json, package.json; Java: Maven- oder Gradle-Baudatei), sonst mit dem ersten passenden
 //   Dokument. Java startet nur mit einem JDK ab 25; ohne gibt es keinen Java-Server (kein Absturz).
+// - Jeder Server bekommt nur die Dokumente seiner Sprachen, auch beim Start und nach einem Neustart (Ticket 36).
 // - Stürzt er ab, startet er neu, höchstens dreimal in drei Minuten; danach erscheint ein Fehlerhinweis mit den Knöpfen
 //   „Show Log“ und „Restart“. Jedes unerwartete Ende kommt mit Exit-Code und dem Ende von stderr ins Protokoll der
 //   Sprachserver (Ticket 30, `serverLog.ts`).
@@ -231,11 +232,15 @@ export class LanguageService {
     }
   }
 
-  /** Meldet ein Dokument dem Server, wenn er bereit ist und es noch nicht offen hat. */
+  /**
+   * Meldet ein Dokument dem Server, wenn es zu ihm gehört, er bereit ist und es noch nicht offen hat. Ein fremdes
+   * Dokument bekommt er nie (Ticket 36): Der native TypeScript-Server stürzte an einer offenen Java-Datei ab, die ihm
+   * der Start mit allen offenen Dokumenten meldete („ScriptKind must be specified“), nach jedem Neustart wieder.
+   */
   private sendOpen(server: Server, file: string): void {
     const k = key(file);
     const doc = this.documents.get(k);
-    if (!doc || !server.initialized || server.sent.has(k) || !server.connection?.running) return;
+    if (!doc || doc.server !== server.id || !server.initialized || server.sent.has(k) || !server.connection?.running) return;
     server.sent.add(k);
     server.connection.notify('textDocument/didOpen', { textDocument: { uri: uriOf(doc.path), languageId: doc.languageId, version: doc.version, text: doc.text } });
   }
@@ -651,6 +656,9 @@ export class LanguageService {
     const java = this.options.java!;
     const jdk = this.javaJdk();
     if (!jdk) return null;
+    // Nur schnelle Tests: ein nachgemachter Server statt jdtls (Ticket 36).
+    const fake = java.bundled.testServer;
+    if (fake) return { kind: 'test-server', command: fake.command, args: fake.args, env: fake.env ?? {} };
     const mavenHome = this.options.env?.MAVEN_HOME ?? this.options.env?.M2_HOME ?? process.env.MAVEN_HOME ?? process.env.M2_HOME;
     const globalSettings = mavenHome ? path.join(mavenHome, 'conf', 'settings.xml') : null;
     return javaLaunch(this.project.path, {
@@ -726,7 +734,8 @@ export class LanguageService {
         connection.notify('workspace/didChangeWatchedFiles', { changes: server.pendingWatched });
         server.pendingWatched = [];
       }
-      // Die offenen Dokumente melden (auch die, die während des Starts kamen, und nach einem Neustart).
+      // Die offenen Dokumente seiner Sprachen melden (auch die, die während des Starts kamen, und nach einem Neustart);
+      // `sendOpen` lässt die der anderen Server aus (Ticket 36).
       for (const doc of this.documents.values()) this.sendOpen(server, doc.path);
       this.scheduleAllDiagnostics();
       return !this.disposed;

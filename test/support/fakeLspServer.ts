@@ -5,6 +5,9 @@
 //
 // Umgebung: FAKE_LSP_LOG (Protokolldatei), FAKE_LSP_INIT_DELAY_MS (Verzögerung der Antwort auf `initialize`).
 //
+// Derselbe Server dient als nachgemachter TypeScript-Server (über `BundledTypeScript.languageServerCli`) und als
+// nachgemachter Java-Server (über `BundledJava.testServer`, Ticket 36).
+//
 // Abstürze auf Bestellung (Ticket 30): Solange die Datei FAKE_LSP_CRASH_FILE existiert, schreibt der Server nach einer
 // Nachricht mit der Methode FAKE_LSP_CRASH_ON (Standard `textDocument/didOpen`) etwas auf stderr und endet mit dem
 // Exit-Code FAKE_LSP_EXIT_CODE (Standard 2). Auf stderr kommen FAKE_LSP_STDERR_LINES nummerierte Zeilen (Standard 3)
@@ -53,8 +56,14 @@ let initialized = false;
 
 function handle(message: { id?: number; method?: string; params?: { changes?: Array<{ uri: string }>; textDocument?: { uri: string } } }): void {
   if (message.method === undefined) return;
-  // Bei Dateiänderungen auch die Dateinamen, in der gemeldeten Reihenfolge.
-  const names = message.method === 'workspace/didChangeWatchedFiles' ? (message.params?.changes ?? []).map((c) => c.uri.split('/').pop()).join(',') : '';
+  // Bei Dateiänderungen auch die Dateinamen, in der gemeldeten Reihenfolge; bei `didOpen` der Name des Dokuments
+  // (Ticket 36: welcher Server welche Dokumente bekommt).
+  const names =
+    message.method === 'workspace/didChangeWatchedFiles'
+      ? (message.params?.changes ?? []).map((c) => c.uri.split('/').pop()).join(',')
+      : message.method === 'textDocument/didOpen'
+        ? (message.params?.textDocument?.uri.split('/').pop() ?? '')
+        : '';
   note(names ? `${message.method} ${names}` : message.method);
   if (message.method === 'initialize') {
     setTimeout(() => send({ id: message.id, result: { capabilities: { textDocumentSync: 1, definitionProvider: true, diagnosticProvider: { interFileDependencies: true, workspaceDiagnostics: false } } } }), initDelay);
