@@ -25,6 +25,7 @@ export function registerFileCommands(register: RegisterProjectCommand): void {
   register('files.read', (project, params) => project.files.read(params));
   register('files.readImage', (project, params) => project.files.readImage(params));
   register('files.write', (project, params) => project.files.write(params));
+  register('files.javaKinds', (project, params) => project.files.javaKinds(params));
   register('files.findByName', (project, params) => project.search.findByName(params));
   register('search.start', (project, params) => project.search.startSearch(params));
   register('search.cancel', (project, params) => project.search.cancelSearch(params));

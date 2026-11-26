@@ -160,6 +160,29 @@ export type FileOperation =
   | { kind: 'deleted'; path: string; isDirectory: boolean }
   | { kind: 'copied'; from: string; to: string; isDirectory: boolean };
 
+/**
+ * Art des obersten Typs einer Java-Datei, für ihr Symbol (Ticket 32), so wie IntelliJ sie unterscheidet. `java` heisst
+ * „Java-Datei ohne eindeutige Art“: kein oberster Typ trägt den Namen der Datei, es gibt mehrere oberste Typen, oder die
+ * Datei lässt sich nicht lesen oder nicht deuten (auch `package-info.java` und `module-info.java`). Der Kern bestimmt sie
+ * aus dem Anfang der Datei, ohne Sprachserver; eine Ausnahme erkennt er am Namen der Oberklasse (siehe Ticket 32).
+ */
+export type JavaKind =
+  | 'class'
+  | 'abstractClass'
+  | 'interface'
+  | 'enum'
+  | 'record'
+  | 'annotation'
+  | 'exception'
+  | 'abstractException'
+  | 'java';
+
+/** Die Art einer Java-Datei (siehe `JavaKind`). */
+export interface JavaKindEntry {
+  path: string;
+  kind: JavaKind;
+}
+
 /** Kodierung einer Textdatei, wie der Datei-Dienst sie erkannt hat. */
 export type TextEncoding = 'utf-8' | 'utf-8-bom' | 'utf-16le' | 'utf-16be' | 'windows-1252';
 
@@ -1021,6 +1044,15 @@ export interface Commands {
     params: { path: string; text: string; encoding: TextEncoding; lineEnding: LineEnding; expectedStamp?: string };
     result: { stamp: string };
   };
+  /**
+   * Die Art von Java-Dateien für ihr Symbol im Dateibaum (Ticket 32), gebündelt, etwa für alle Java-Dateien eines
+   * aufgeklappten Ordners; in der Reihenfolge der Pfade. Jeder Pfad muss auf `.java` enden (sonst `INVALID_PARAMS`).
+   * Gelesen werden höchstens die ersten 64 KB, nachrangig zu anderen Dateizugriffen; das Ergebnis merkt sich der Kern je
+   * Pfad mit Änderungszeit und Grösse. Eine Datei, die fehlt oder sich nicht lesen lässt, ist `java`, ohne Fehler.
+   * Ändert sich eine gemerkte Datei (von aussen oder mit `files.write`), bestimmt der Kern sie neu und meldet eine
+   * geänderte Art mit `files.javaKindsChanged`.
+   */
+  'files.javaKinds': { params: { paths: string[] }; result: JavaKindEntry[] };
 }
 
 /** Alle Ereignisse: Name → Nutzlast. */
@@ -1045,6 +1077,11 @@ export interface Events {
   'files.changed': FilesChangedEvent;
   /** Codium hat eine Dateioperation ausgeführt. */
   'files.operation': FileOperation;
+  /**
+   * Die Art gemerkter Java-Dateien hat sich geändert, etwa nach dem Speichern von `class` zu `interface` (Ticket 32);
+   * nur die geänderten, gebündelt.
+   */
+  'files.javaKindsChanged': { kinds: JavaKindEntry[] };
   /**
    * Im Ordner `.git` des Projekts haben sich HEAD, der Index oder Refs geändert (gebündelt). Änderungen in `.git`
    * lösen sonst keine Dateiereignisse aus. Grundlage für den Git-Dienst (Ticket 15).

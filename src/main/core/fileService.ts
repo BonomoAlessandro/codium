@@ -10,6 +10,8 @@
 //   Zugriffen (ioLimiter.ts); ein hängendes Netzlaufwerk hält so weder den Hauptprozess noch andere Projekte auf.
 // - Jede Dateioperation meldet `files.operation`, sobald sie fertig ist. Die Überwachung meldet sie nicht noch einmal
 //   als Änderung von aussen. Dauert eine Operation länger als etwa eine Sekunde, zeigt die Statusleiste Fortschritt.
+// - Die Art von Java-Dateien für ihr Symbol im Baum bestimmt javaKinds.ts (Ticket 32), nachrangig zu den übrigen
+//   Zugriffen; der Dienst meldet ihm Änderungen, eigenes Speichern, Umbenennen und Löschen.
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -23,6 +25,7 @@ import {
   type Events,
   type FileContent,
   type FileEntry,
+  type JavaKindEntry,
   type LineEnding,
   type TextEncoding,
 } from '../../shared/types';
@@ -40,6 +43,7 @@ import {
 import { KnownDirs, OwnChanges, keyOf } from './fileTracking';
 import { FileWatcher } from './fileWatcher';
 import { IoLimiter } from './ioLimiter';
+import { JavaKinds } from './javaKinds';
 import { PathGuard, alreadyExists, fileError, isMissingError, isPathWithin } from './pathGuard';
 import type { ShellActionsPort } from './ports';
 import type { Progress, ProgressReporter } from './progress';
@@ -98,6 +102,8 @@ export class FileService {
   private readonly known = new KnownDirs();
   private readonly own = new OwnChanges();
   private readonly watcher: FileWatcher;
+  /** Art von Java-Dateien für ihr Symbol im Baum (Ticket 32). */
+  private readonly javaFileKinds: JavaKinds;
   /** Laufende Dateioperationen, auf die der Abbau wartet. */
   private readonly running = new Set<Promise<unknown>>();
   /** Kopien je Zielordner, nacheinander (Schlüssel des Zielordners → Ende der letzten). */
@@ -113,12 +119,21 @@ export class FileService {
     this.guard = new PathGuard(host.path, this.io);
     this.expandedKeys = new Set((options.expandedFolders ?? [host.path]).map(keyOf));
     this.progressDelayMs = options.progressDelayMs ?? PROGRESS_DELAY_MS;
+    this.javaFileKinds = new JavaKinds({
+      io: (work) => this.limiter.runInBackground(work),
+      isRealInside: (target) => fs.promises.realpath(target).then((real) => this.guard.isRealInside(real), () => false),
+      onChanged: (kinds) => host.emit('files.javaKindsChanged', { kinds }),
+      log: options.log,
+    });
     this.watcher = new FileWatcher({
       root: host.path,
       io: this.io,
       known: this.known,
       own: this.own,
-      onChanges: (event) => host.emit('files.changed', event),
+      onChanges: (event) => {
+        host.emit('files.changed', event);
+        this.javaFileKinds.filesChanged(event);
+      },
       onGitData: () => host.emit('git.dataChanged', {}),
       log: options.log,
       debounceMs: options.watchDebounceMs,
@@ -138,6 +153,7 @@ export class FileService {
    */
   dispose(): void {
     this.watcher.stop();
+    this.javaFileKinds.dispose();
   }
 
   /** Prüft einen Pfad nur lexikalisch: absolut und im Projekt (siehe `PathGuard.lexical`). */
@@ -161,6 +177,32 @@ export class FileService {
   setExpandedFolders(paths: string[]): void {
     this.expandedKeys = new Set(paths.map(keyOf));
     this.known.retain(this.expandedKeys);
+  }
+
+  /**
+   * Die Art von Java-Dateien für ihr Symbol im Baum (Ticket 32, javaKinds.ts). Jeder Pfad wird ohne Dateizugriff
+   * geprüft; dass der echte Pfad seines Ordners im Projekt liegt, einmal je Ordner. Fehlt ein Ordner (etwa gerade
+   * gelöscht), sind seine Dateien `java`.
+   */
+  async javaKinds(params: CommandParams<'files.javaKinds'>): Promise<JavaKindEntry[]> {
+    const targets = requireList(field(params, 'paths')).map((value) => this.guard.lexical(value));
+    const notJava = targets.find((target) => !/\.java$/i.test(target));
+    if (notJava !== undefined) throw invalidParams(`Not a Java file: ${notJava}`);
+    const folders = new Map(targets.map((target) => [keyOf(path.dirname(target)), path.dirname(target)]));
+    const missing = new Set<string>();
+    await Promise.all(
+      [...folders].map(async ([key, folder]) => {
+        try {
+          await this.guard.existing(folder);
+        } catch (err) {
+          if (!(err instanceof CommandError && err.code === ErrorCode.fileNotFound)) throw err;
+          missing.add(key);
+        }
+      }),
+    );
+    const present = targets.filter((target) => !missing.has(keyOf(path.dirname(target))));
+    const kinds = new Map((await this.javaFileKinds.kindsOf(present)).map((entry) => [entry.path, entry.kind]));
+    return targets.map((target) => ({ path: target, kind: kinds.get(target) ?? 'java' }));
   }
 
   /** Inhalt eines Ordners: Ordner vor Dateien, alphabetisch, ohne `.git`. */
@@ -282,6 +324,7 @@ export class FileService {
         throw err;
       }
       own.settle(await this.stamp(file));
+      this.javaFileKinds.saved(file);
       return { stamp: stampOf(bytes) };
     });
   }
@@ -413,6 +456,7 @@ export class FileService {
     added.settle(await this.stamp(target));
     this.known.update(source, false, isDirectory);
     this.known.update(target, true, isDirectory);
+    this.javaFileKinds.moved(source, target);
     this.host.emit('files.operation', { kind: 'renamed', from: source, to: target, isDirectory });
     return target;
   }
@@ -441,6 +485,7 @@ export class FileService {
         }
         own.settle();
         this.known.update(target, false, isDirectory);
+        this.javaFileKinds.forget(target);
         this.host.emit('files.operation', { kind: 'deleted', path: target, isDirectory });
       }
     });
