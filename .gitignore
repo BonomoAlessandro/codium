@@ -7,3 +7,5 @@ release/
 .claude/settings.local.json
 .test-cache/
 .cache/
+# Entwürfe und Bilder zur Freigabe (HITL); nach Abschluss des Tickets gelöscht
+/entwuerfe/

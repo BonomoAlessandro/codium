@@ -9,6 +9,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
   - Für den Abschnitt **„Abnahme von Hand“** liefert er eine kurze Prüfliste. Die Abnahme machst du selbst, wenn es passt, nicht nach jedem Ticket; Abweichungen erfasst du als neue Tickets. (Für Codium 1 war das Ticket 22, abgeschlossen am 2026-11-23.)
   - Agenten installieren den Installer nicht über eine bestehende Codium-Installation. Zum Prüfen dient `npm start` mit eigenem Entwicklungs-Datenordner bzw. das ungepackte Paket (`release/win-unpacked`).
 - **HITL** (Status `ready-for-human`): Das Ticket braucht dich laufend, zum Beispiel für Rückmeldungen.
+  - **Bilder zur Freigabe** (Entwürfe, Varianten, eingebauter Stand) liegen als Seite `entwuerfe/<ticket>/index.html` im Wurzelordner des Repos, damit du sie im Browser ansehen kannst. Der Ordner ist von Git ausgenommen (`/entwuerfe/` in `.gitignore`), Bilder werden nicht committet; ins Ticket kommt die Entscheidung in Worten. Ist das Ticket abgeschlossen, wird der Ordner gelöscht, sofern nichts davon weiter gebraucht wird (Wunsch des Nutzers, 2026-11-26).
 - **Ablauf pro Ticket:**
   1. **Eigener Branch:** Jedes Ticket wird auf einem eigenen Branch ab `main` umgesetzt, benannt nach dem Ticket (etwa `ticket/05-editor-und-tabs`).
   2. **Umsetzen**, bis die Akzeptanzkriterien erfüllt und alle Testläufe grün sind.

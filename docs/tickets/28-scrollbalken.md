@@ -53,7 +53,7 @@ Will der Nutzer sie ebenfalls angleichen, wird das ein eigenes Ticket. Der Agent
 
 ## Entscheidung (Nutzer, 2026-11-25)
 
-Entwürfe: [docs/entwuerfe/28-scrollbalken/index.html](../entwuerfe/28-scrollbalken/index.html) (bleiben als Beleg liegen). Vorgelegt wurden der heutige Stand und drei Varianten: A (Kapsel über der Übersichtsleiste, immer sichtbar), B (wie IntelliJ: Kapsel und eigener Streifen, Ausblenden) und C (eigener Streifen mit zwei Spuren, immer sichtbar), jeweils in Ruhe, beim Darüberfahren und beim Ziehen, dazu die Vergleichsansicht.
+Entwürfe: lagen unter `docs/entwuerfe/28-scrollbalken/` (Seite, Bilder, Aufnahmeskript) und sind nach dem Abschluss entfernt, auf Wunsch des Nutzers; zuletzt enthalten in Commit c6523d1. Vorgelegt wurden der heutige Stand und drei Varianten: A (Kapsel über der Übersichtsleiste, immer sichtbar), B (wie IntelliJ: Kapsel und eigener Streifen, Ausblenden) und C (eigener Streifen mit zwei Spuren, immer sichtbar), jeweils in Ruhe, beim Darüberfahren und beim Ziehen, dazu die Vergleichsansicht.
 
 Rückmeldung des Nutzers, wörtlich: „ja wir nehmen variante B“
 
@@ -108,7 +108,7 @@ Er antwortete damit auf die Empfehlungen, die ihm vorgelegt wurden; die übrigen
   - `test/renderer/editorScrollbars.test.ts` (5 Tests): Masse und Farben von Variante B, Stufen der Farben, Farben an Monaco, Optionen, app.css nutzt die Variablen und hat im Abschnitt keine eigenen Werte, Kapsel mit `--radius-pill`. `radii.test.ts` kennt `--radius-pill`.
   - `test/ui/scrollbars.test.ts` (3 Tests, lange Datei mit einer langen Zeile in einem Temp-Repository): Rand 16 px mit Schieber in der Greiffläche und Streifen von 5 px ganz rechts; Kapsel 6 px, Radius mindestens die halbe Breite, Farbe in Ruhe und ausgeblendet; waagrechter Balken 12 px, Kapsel 6 px und rund, beim Darüberfahren 9 px und heller; senkrecht beim Darüberfahren sichtbar, 9 px, Farbe; Ziehen scrollt (erste sichtbare Zeile von 1 auf über 21), Farbe beim Ziehen; Ausblenden über dem Text, Einblenden beim Scrollen mit dem Mausrad mit der Farbe in Ruhe und wieder Ausblenden. Git-Änderung im Streifen (über dem Grau der Vorkommen), ein Klick darauf springt zur geänderten Zeile; Suchtreffer im Streifen, einer je Fundstelle. Vergleichsansicht: Rand, Schieber, Streifen, Kapsel und Farbe, beim Darüberfahren 9 px, sichtbar mit der Maus über der Vergleichsübersicht, Kasten durchsichtig.
   - In bestehenden Tests: Vorschau im Peek mit Rand 16 px, auch nach einer neuen Schriftgrösse (`typescript.test.ts`; ohne den verzögerten Aufruf rot mit 14 px), Vorschau der Projektsuche (`search.test.ts`) und Zelleditor über „Open Editor“ (`databaseTables.test.ts`) mit Rand 16 px.
-- **Bilder des eingebauten Stands:** in den Entwürfen unter „Eingebaut“ (`docs/entwuerfe/28-scrollbalken/bilder/eingebaut-*.png`), aufgenommen mit `AUFNAHME_EINGEBAUT=1` über dasselbe Skript, ohne etwas einzuspielen.
+- **Bilder des eingebauten Stands:** in den Entwürfen unter „Eingebaut“ (`docs/entwuerfe/28-scrollbalken/bilder/eingebaut-*.png`, nach dem Abschluss entfernt), aufgenommen mit `AUFNAHME_EINGEBAUT=1` über dasselbe Skript, ohne etwas einzuspielen.
 - **Testläufe vor dem Review (2026-11-25, nacheinander, allein auf dem Rechner):**
   - `npm run typecheck`: sauber.
   - `npm test`: 55 Dateien, 484 Tests grün.
