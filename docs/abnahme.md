@@ -172,6 +172,10 @@ Geprüft wird die installierte App (`release\Codium Setup <version>.exe`), ausse
 - [ ] Nicht getrackte Dateien und Ordner sind auf einen Blick erkennbar (ignorierte orange, nicht versionierte lachsrot), die Farben wirken so satt wie in IntelliJ. (29)
 - [ ] Die Titel der Datei-Tabs tragen die Farbe des Git-Zustands und folgen ihm, etwa nach einem Commit oder Rollback. (29)
 - [ ] In einem grossen Repository, auch mit einem grossen nicht versionierten Ordner, folgen Baum und Änderungsansicht Änderungen so flüssig wie bisher. (29)
+- [ ] In einem echten Java-Projekt sehen Klassen, Interfaces, Enums und Records im Baum aus wie in IntelliJ, ohne `.java`; `package-info.java`, `module-info.java` und Dateien mit mehreren obersten Typen tragen die Tasse und ihre Endung. (32)
+- [ ] Das Aufklappen grosser Pakete bleibt flüssig; die Symbole wechseln kurz danach von der Tasse zur Art. (32)
+- [ ] Wird eine Klasse zum Interface (Speichern im Editor, ein Branch-Wechsel oder eine Änderung von aussen), wechselt das Symbol im Baum und im Tab. (32)
+- [ ] Die Java-Symbole sind bei 100 % und 150 % Skalierung klar, auch auf der Auswahl, und sie passen in den Tabs, in „Recent Files“ und „Go to File“. (32)
 
 ## Frischer Rechner bzw. Windows-Benutzer (22)
 

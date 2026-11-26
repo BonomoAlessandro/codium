@@ -56,6 +56,7 @@ import type { RunningWork } from '../progress';
 import type { ProjectActions } from '../RecentProjects';
 import { relativeLabel } from './filePaths';
 import { Header } from './Header';
+import { JavaKindsContext, JavaKindStore } from './javaKinds';
 import { ProjectView } from './ProjectView';
 import { TerminalToolWindow, type TerminalToolWindowHandle } from '../terminal/TerminalToolWindow';
 import { StatusBar } from './StatusBar';
@@ -137,7 +138,29 @@ interface ActiveDrag {
   release: () => void;
 }
 
-export function ProjectWindow({ api, project, actions, work, notify }: ProjectWindowProps) {
+/**
+ * Das Projektfenster. Es hält die Art der Java-Dateien (Ticket 32) für Dateibaum, Datei-Tabs und Suchfenster an einem
+ * Ort, damit eine Art nur einmal angefragt wird und eine Änderung überall ankommt.
+ */
+export function ProjectWindow(props: ProjectWindowProps) {
+  const { api } = props;
+  const javaKinds = useMemo(
+    () =>
+      new JavaKindStore(
+        (paths) => api.request('files.javaKinds', { paths }),
+        (err) => console.error('Art von Java-Dateien nicht bestimmt:', err),
+      ),
+    [api],
+  );
+  useEffect(() => javaKinds.connect(api), [api, javaKinds]);
+  return (
+    <JavaKindsContext.Provider value={javaKinds}>
+      <ProjectWindowContent {...props} />
+    </JavaKindsContext.Provider>
+  );
+}
+
+function ProjectWindowContent({ api, project, actions, work, notify }: ProjectWindowProps) {
   const { layout, layoutRef, change } = useToolWindowLayout(api);
   const settings = useSettings(api);
   const editorRef = useRef<EditorAreaHandle>(null);

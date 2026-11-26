@@ -11,6 +11,9 @@
 //   ein Ordner von aussen (etwa bei einem Branch-Wechsel), bleibt er gemerkt und ist wieder aufgeklappt, sobald er
 //   zurück ist.
 // - Links nach ausserhalb des Projekts und tote Links zeigt der Baum mit Hinweis, klappt sie aber nicht auf.
+// - Java-Dateien tragen das Symbol der Art ihres obersten Typs und erscheinen ohne `.java`, sobald der Kern die Art
+//   bestimmt hat (Ticket 32, javaKinds.ts); vorher mit vollem Namen und dem allgemeinen Symbol. Angefragt wird je
+//   gelesenem Ordner. Der volle Name bleibt im Tooltip, für Screenreader, in den Dialogen und beim Sortieren.
 
 import {
   useCallback,
@@ -40,6 +43,7 @@ import {
   DeleteIcon,
   FileIcon,
   FolderIcon,
+  JavaKindIcon,
   LinkIcon,
   LocateIcon,
   PasteIcon,
@@ -50,6 +54,7 @@ import type { Notify } from '../Notices';
 import { useAsk, useAskText } from '../popup/Dialogs';
 import { Menu, type MenuEntry } from '../popup/Menu';
 import { baseName, isSameOrInside, parentPath, pathKey, relativeLabel } from './filePaths';
+import { isJavaFileName, treeName, useJavaKinds } from './javaKinds';
 import {
   collapseFolder,
   followPaths,
@@ -114,6 +119,7 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile, openedFi
   };
   const root = project.path;
   const rootKey = pathKey(root);
+  const javaKinds = useJavaKinds();
   const ask = useAsk();
   const askText = useAskText();
 
@@ -260,6 +266,8 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile, openedFi
         (entries) => {
           if (!isLatest()) return;
           inFlight.current.delete(key);
+          // Die Art der Java-Dateien, gebündelt für den Ordner (Ticket 32); bekannte fragt der Zwischenspeicher nicht neu an.
+          javaKinds?.ensure(entries.filter((e) => !e.isDirectory && !e.blockedLink && isJavaFileName(e.name)).map((e) => e.path));
           updateListings((prev) => new Map(prev).set(key, { path: dir, entries }));
           // Was hier als verschwunden galt und jetzt wieder da ist (oder nicht), entscheidet der frische Inhalt.
           updateUnavailable((prev) => {
@@ -282,7 +290,7 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile, openedFi
         },
       );
     },
-    [api, notify, dropListings, updateListings, updateUnavailable],
+    [api, notify, dropListings, updateListings, updateUnavailable, javaKinds],
   );
 
   // Aufgeklappte, sichtbare Ordner ohne Inhalt lesen.
@@ -863,49 +871,54 @@ export function ProjectView({ api, project, notify, onHide, onOpenFile, openedFi
           }}
         >
           <div className="file-tree-content" style={{ height: rows.length * TREE_ROW_HEIGHT }}>
-            {drawn.map(({ row, index }) => (
-              <div
-                key={row.key}
-                id={rowId(index)}
-                role="treeitem"
-                aria-label={row.name}
-                aria-level={row.depth + 1}
-                aria-expanded={row.isDirectory ? row.expanded : undefined}
-                aria-selected={selection.has(row.key)}
-                aria-description={row.blockedLink ? BLOCKED_LINK_HINTS[row.blockedLink] : undefined}
-                data-git={gitOf(row.path)}
-                className={['file-tree-row', selection.has(row.key) && 'selected', index === leadIndex && 'lead', row.blockedLink && 'blocked', gitOf(row.path) && `git-${gitOf(row.path)}`]
-                  .filter(Boolean)
-                  .join(' ')}
-                style={{ top: index * TREE_ROW_HEIGHT, paddingLeft: `calc(${6 + row.depth * 18}px - var(--list-inset))` }}
-                title={row.isRoot ? row.path : row.blockedLink ? BLOCKED_LINK_HINTS[row.blockedLink] : undefined}
-                onMouseDown={(e) => onRowMouseDown(e, row, index)}
-                onDoubleClick={(e) => {
-                  if (e.ctrlKey || e.shiftKey) return;
-                  if (row.isDirectory) toggle(row);
-                  else open(row);
-                }}
-              >
-                <span
-                  className={row.expanded ? 'file-tree-arrow expanded' : 'file-tree-arrow'}
-                  onMouseDown={(e) => {
-                    if (e.button !== 0 || !row.isDirectory) return;
-                    // Der Pfeil klappt nur auf und zu, die Auswahl bleibt.
-                    e.stopPropagation();
-                    toggle(row);
+            {drawn.map(({ row, index }) => {
+              // Java-Dateien (Ticket 32): Symbol der Art, Name ohne Endung, sobald die Art feststeht.
+              const isJava = !row.isDirectory && !row.blockedLink && isJavaFileName(row.name);
+              const javaKind = isJava ? javaKinds?.kindOf(row.path) : undefined;
+              return (
+                <div
+                  key={row.key}
+                  id={rowId(index)}
+                  role="treeitem"
+                  aria-label={row.name}
+                  aria-level={row.depth + 1}
+                  aria-expanded={row.isDirectory ? row.expanded : undefined}
+                  aria-selected={selection.has(row.key)}
+                  aria-description={row.blockedLink ? BLOCKED_LINK_HINTS[row.blockedLink] : undefined}
+                  data-git={gitOf(row.path)}
+                  className={['file-tree-row', selection.has(row.key) && 'selected', index === leadIndex && 'lead', row.blockedLink && 'blocked', gitOf(row.path) && `git-${gitOf(row.path)}`]
+                    .filter(Boolean)
+                    .join(' ')}
+                  style={{ top: index * TREE_ROW_HEIGHT, paddingLeft: `calc(${6 + row.depth * 18}px - var(--list-inset))` }}
+                  title={row.isRoot ? row.path : row.blockedLink ? BLOCKED_LINK_HINTS[row.blockedLink] : isJava ? row.name : undefined}
+                  onMouseDown={(e) => onRowMouseDown(e, row, index)}
+                  onDoubleClick={(e) => {
+                    if (e.ctrlKey || e.shiftKey) return;
+                    if (row.isDirectory) toggle(row);
+                    else open(row);
                   }}
-                  onDoubleClick={(e) => e.stopPropagation()}
                 >
-                  {row.isDirectory && <ChevronRightIcon />}
-                </span>
-                <span className={row.isDirectory ? 'file-tree-icon folder' : 'file-tree-icon'}>
-                  {row.blockedLink ? <LinkIcon /> : row.isDirectory ? <FolderIcon /> : <FileIcon />}
-                </span>
-                <span className={row.isRoot ? 'file-tree-name root' : 'file-tree-name'}>{row.name}</span>
-                {row.isRoot && <span className="file-tree-detail">{row.path}</span>}
-                {row.loading && <span className="file-tree-detail">loading…</span>}
-              </div>
-            ))}
+                  <span
+                    className={row.expanded ? 'file-tree-arrow expanded' : 'file-tree-arrow'}
+                    onMouseDown={(e) => {
+                      if (e.button !== 0 || !row.isDirectory) return;
+                      // Der Pfeil klappt nur auf und zu, die Auswahl bleibt.
+                      e.stopPropagation();
+                      toggle(row);
+                    }}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                  >
+                    {row.isDirectory && <ChevronRightIcon />}
+                  </span>
+                  <span className={row.isDirectory ? 'file-tree-icon folder' : 'file-tree-icon'}>
+                    {row.blockedLink ? <LinkIcon /> : row.isDirectory ? <FolderIcon /> : isJava ? <JavaKindIcon kind={javaKind ?? 'java'} /> : <FileIcon />}
+                  </span>
+                  <span className={row.isRoot ? 'file-tree-name root' : 'file-tree-name'}>{isJava ? treeName(row.name, javaKind) : row.name}</span>
+                  {row.isRoot && <span className="file-tree-detail">{row.path}</span>}
+                  {row.loading && <span className="file-tree-detail">loading…</span>}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

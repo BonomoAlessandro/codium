@@ -34,6 +34,8 @@ import {
 import { errorText } from '../errors';
 import type { ChangeKind } from '../git/fileStatus';
 import { ChevronDownIcon, CloseIcon, FileIcon, PinIcon } from '../icons';
+import { FileTypeIcon } from '../project/FileTypeIcon';
+import { useJavaKindStore } from '../project/javaKinds';
 import { shortcutLabel, type KeyCommand, type ToolWindowCommand } from '../keymap';
 import type { Notify } from '../Notices';
 import { isDialogOpen, useAsk } from '../popup/Dialogs';
@@ -235,6 +237,11 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   const [dirty, setDirty] = useState<ReadonlySet<string>>(() => new Set());
   const [editorReady, setEditorReady] = useState(false);
   const tabsRef = useRef(tabs);
+  // Die Art der Java-Dateien in den Tabs, für ihr Symbol (Ticket 32); angefragt wird nur, was noch nicht bekannt ist.
+  // Neu zeichnet bei einer geänderten Art nur das Symbol (FileTypeIcon), nicht der ganze Code-Bereich.
+  const javaKinds = useJavaKindStore();
+  const tabFiles = useMemo(() => tabs.filter((t) => !isDocumentTab(t.path) && !isJdtPath(t.path)).map((t) => t.path), [tabs]);
+  useEffect(() => javaKinds?.ensure(tabFiles), [javaKinds, tabFiles]);
   /** Herkunft der schreibgeschützten Dokument-Tabs (Schlüssel des Pfads) für ihren Titel. */
   const documentOrigins = useRef(new Map<string, string>());
   const activeRef = useRef(active);
@@ -1712,7 +1719,7 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
                   }}
                 >
                   <span className="editor-tab-icon">
-                    <FileIcon />
+                    {isDocumentTab(tab.path) || isJdtPath(tab.path) ? <FileIcon /> : <FileTypeIcon path={tab.path} />}
                   </span>
                   <span className={git ? `editor-tab-name git-${git}` : 'editor-tab-name'}>{label.name}</span>
                   {label.hint && <span className="editor-tab-hint">{label.hint}</span>}

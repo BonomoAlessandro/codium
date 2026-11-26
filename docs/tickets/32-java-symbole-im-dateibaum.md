@@ -162,30 +162,119 @@ Gebaut vor der Freigabe der Symbole, ohne Anzeige im Baum:
   - `test/main/ioLimiter.test.ts`: ein neuer Test zum Vorrang.
   - Gegenproben: Ohne Zwischenspeicher, ohne Meldung der Überwachung oder des Speicherns, mit Vergessen statt Mitwandern, ohne Vergessen beim Löschen, ohne Schnitt am Zeilenumbruch und ohne Überspringen von Strings im Rumpf wird jeweils der passende Test rot.
 
+## Entscheidung (Nutzer, 2026-11-26)
+
+Vorgelegt wurden Dateibaum, Datei-Tabs, „Recent Files“ und „Go to File“ eines erfundenen Projekts, heute und mit zwei Fassungen der Symbole. Fassung A hat eine dunkle Fläche mit farbigem Ring und Zeichen wie IntelliJ, Fassung B einen vollen farbigen Kreis mit dunklem Zeichen. Dazu kamen das allgemeine Symbol als Tasse oder als „J“ im Kreis und jedes Symbol einzeln vergrössert. Die Seite lag nach den Spielregeln unversioniert unter `entwuerfe/32-java-symbole/` (Aufnahmeskript in `aufnahmen/`). Ein Bildschirmfoto aus IntelliJ lag nicht vor; Farben und Gestalt stammen aus dessen Symbolen (siehe Befund).
+
+Rückmeldung des Nutzers, wörtlich: „deine empfehlung“
+
+Damit gelten die sieben Empfehlungen des Agenten:
+1. **Symbolsatz:** Fassung A, dunkle Fläche mit farbigem Ring und Zeichen, wie IntelliJ.
+2. **Allgemeines Symbol:** die Tasse.
+3. **Datei-Tabs:** zeigen das Symbol der Art, mit vollem Namen wie in IntelliJ.
+4. **„Recent Files“** (Ctrl + E): ebenso, Namen voll.
+5. **„Go to File“** (Ctrl + Shift + N): ebenso, Namen voll.
+6. **Mehrere oberste Typen oder ein Name, der zu keinem Typ passt:** allgemeines Symbol mit Endung, wie im Ticket. IntelliJ zeigt dort das Symbol eines der Typen, lässt den Eintrag aber auch aufklappen; Codium zeigt die Typen einer Datei nicht im Baum.
+7. **`final`:** kein Zusatzzeichen in diesem Ticket. Möglicher Folgepunkt: ein Ticket für die Zusatzzeichen wie in IntelliJ (`final`, Sichtbarkeit, Klasse mit `main`, Test). Die Erkennung liest `final` im Kopf des Typs schon mit, gibt es aber nicht weiter.
+
 ## Akzeptanzkriterien
 
-- [ ] Die Bilder (heute, neu, nach Möglichkeit IntelliJ) wurden dem Nutzer vorgelegt, und seine Entscheidung steht im Ticket.
-- [ ] Einheitstests für das Deuten:
+- [x] Die Bilder (heute, neu, nach Möglichkeit IntelliJ) wurden dem Nutzer vorgelegt, und seine Entscheidung steht im Ticket. (Ein Bildschirmfoto aus IntelliJ lag nicht vor; Farben und Gestalt stammen aus dessen Symbolen.)
+- [x] Einheitstests für das Deuten:
   - jede Art erkannt, auch mit Javadoc, Annotationen, `package` und `import` davor, mit Modifikatoren (`public`, `abstract`, `final`, `sealed`, `non-sealed`, `strictfp`) und mit Generics;
   - Kommentare oder Strings, die wie eine Deklaration aussehen, täuschen nicht;
   - ein Name, der nicht zur Datei passt, sowie mehrere oberste Typen ergeben „Java-Datei“;
   - eine leere Datei und ein Syntaxfehler ergeben „Java-Datei“, ohne Ausnahme.
-- [ ] Ein Test prüft das Zwischenspeichern und das neue Bestimmen nach einer Änderung der Datei.
-- [ ] Ein Playwright-Test im Testmodus prüft:
+- [x] Ein Test prüft das Zwischenspeichern und das neue Bestimmen nach einer Änderung der Datei.
+- [x] Ein Playwright-Test im Testmodus prüft:
   - Der Baum zeigt „OrderService“ ohne `.java` mit dem Symbol für Klasse, dazu je eine Datei für Interface, Enum und Record mit ihrem Symbol.
   - Eine Java-Datei ohne eindeutige Art erscheint mit Endung und allgemeinem Symbol.
   - Der Tooltip zeigt den vollen Namen.
   - „Rename“ schlägt den vollen Dateinamen vor.
-- [ ] Ein Playwright-Test prüft, dass sich das Symbol nach dem Speichern ändert, etwa von `class` zu `interface`.
-- [ ] Werden die Symbole auch in Tabs, „Recent Files“ oder „Go to File“ gezeigt: je ein Test.
+- [x] Ein Playwright-Test prüft, dass sich das Symbol nach dem Speichern ändert, etwa von `class` zu `interface`.
+- [x] Werden die Symbole auch in Tabs, „Recent Files“ oder „Go to File“ gezeigt: je ein Test.
 - [ ] `npm run typecheck`, `npm test` und `npm run test:ui` sind grün.
 
 ## Abnahme von Hand
 
 - [ ] In einem echten Java-Projekt sehen Klassen, Interfaces, Enums und Records im Baum aus wie in IntelliJ, ohne `.java`.
 - [ ] Das Aufklappen grosser Pakete bleibt flüssig.
+- [ ] Wird eine Klasse zum Interface (Speichern im Editor, ein Branch-Wechsel oder eine Änderung von aussen), wechselt das Symbol im Baum und im Tab. (ergänzt bei der Umsetzung)
+- [ ] Die Java-Symbole sind bei 100 % und 150 % Skalierung klar, auch auf der Auswahl, und sie passen in den Tabs, in „Recent Files“ und „Go to File“. (ergänzt bei der Umsetzung)
 
 ## Hinweise
 
 - Die Spielregeln gelten: Die App nur über die Testläufe bzw. `launchCodium` starten, nie direkt. Aufnahmen nur vom verborgenen Testfenster über Playwright, nie vom Desktop. Keine echten Eingaben an den Desktop.
 - Ticket 29 ändert die Git-Farben und das Zuklappen im Dateibaum. Werden beide nacheinander umgesetzt, baut das spätere auf dem früheren auf; Konflikte in `ProjectView.tsx` sind zu erwarten.
+
+## Umsetzung (Agent, 2026-11-26)
+
+### Kern
+
+- **Erkennung, Zwischenspeicher und Vertrag** wie unter „Stand der Erkennung“ beschrieben (`javaKind.ts`, `javaKinds.ts`, `files.javaKinds`, `files.javaKindsChanged`, `IoLimiter.runInBackground`).
+- **Nach dem Abbau** des Projekts liest der Dienst nichts mehr; Bestimmungen, die noch in der Warteschlange stehen, enden ohne Dateizugriff. So liest Codium beim Beenden nicht noch Tausende Dateien.
+- **Speichern während des Bestimmens:** Wird eine Datei gespeichert, während der Kern sie gerade bestimmt (womöglich noch mit dem alten Inhalt), bestimmt er sie danach neu.
+
+### Oberfläche
+
+- **Zwischenspeicher je Projektfenster:** `src/renderer/project/javaKinds.ts`, ohne DOM. Das Projektfenster stellt ihn über einen React-Kontext bereit.
+  - Er fragt gebündelt an (`ensure`) und nur, was weder bekannt noch unterwegs ist, auch nicht nach dem Zu- und Wiederaufklappen eines Ordners; Änderungen meldet der Kern.
+  - Bei grossen Ordnern fragt er in Teilen zu 200 an, nacheinander von oben nach unten (siehe Leistung).
+  - Er folgt `files.javaKindsChanged`, vergisst Gelöschtes und lässt unter einem umbenannten Ordner das Bekannte mitwandern. Eine umbenannte Datei fragt er neu an, denn ihre Art hängt vom Namen ab.
+  - Scheitert eine Anfrage, gilt das allgemeine Symbol, ohne dauernd neu zu fragen.
+- **Symbole:** `JavaKindIcon` in `icons.tsx`, wie freigegeben (Fassung A, Tasse). Die Farben kommen nur aus den Design-Variablen `--java-*` in `tokens.css`, mit den Werten aus dem Befund. Anders als die übrigen Symbole übernehmen sie nicht die Textfarbe; eine Git-Farbe der Zeile färbt deshalb nur den Namen.
+- **Dateibaum** (`ProjectView.tsx`):
+  - Nach jedem Lesen eines Ordners fragt der Baum die Art seiner Java-Dateien an.
+  - Java-Dateien tragen das Symbol ihrer Art und erscheinen ohne `.java`, sobald die Art feststeht; vorher mit vollem Namen und der Tasse.
+  - Der volle Name bleibt im Tooltip (neu für alle Java-Dateien), im zugänglichen Namen der Zeile, im Dialog „Rename“ samt Hinweis zu Java, beim Kopieren von Pfaden, beim Sortieren (der Kern sortiert die vollen Namen) und in allen Dialogen.
+  - Tippen zum Suchen gibt es im Baum nicht; der Punkt entfällt.
+- **Datei-Tabs, „Recent Files“ und „Go to File“:** `FileTypeIcon` zeigt bei Java-Dateien das Symbol der Art, die Namen bleiben voll. Die Tabs und die Listen fragen ihre Java-Dateien selbst an.
+  - Neu zeichnet bei einer geänderten Art nur das Symbol, nicht der ganze Code-Bereich (`useJavaKindStore` ohne Abo zum Anfragen, `useJavaKinds` mit Abo zum Zeichnen).
+  - Dokument-Tabs und Klassen aus Bibliotheken (jdtls) behalten das Dateisymbol.
+
+### Leistung
+
+Gemessen im verborgenen Testfenster (Playwright im Testmodus) mit einem Ordner aus 5'000 Java-Dateien von je etwa 1,5 KB. Zum Vergleich dienten ein gleich grosser Ordner mit Textdateien und ein kleiner Ordner mit 10 Dateien. Rechner: Intel Core i7-12800H, Windows 11. Gemessen wurde im Fenster vom Ereignis, das den Ordner aufklappt, bis die erste Zeile erscheint bzw. ihr Symbol wechselt. Die Zahlen stammen aus drei Läufen mit der eingebauten Fassung, Lauf 3 mit dem endgültigen Stand; das Messskript lag bei den Entwürfen.
+
+| Messung | Lauf 1 | Lauf 2 | Lauf 3 |
+|---|---|---|---|
+| Aufklappen, 5'000 Java-Dateien, zum ersten Mal: erste Zeile | 143 ms | 83 ms | 78 ms |
+| dasselbe: erstes Symbol der Art | 261 ms | 155 ms | 141 ms |
+| Wiederaufklappen (Arten bekannt): erste Zeile mit Symbol, Median aus 3 | 110 ms | 61 ms | 61 ms |
+| Aufklappen, 5'000 Textdateien: erste Zeile, Median aus 3 | 89 ms | 52 ms | 47 ms |
+| kleiner Ordner allein: erste Zeile, Median aus 3 | 7 ms | 4 ms | 3 ms |
+| zweiter kalter Java-Ordner und gleich danach der kleine Ordner: erste Zeile im kleinen | 10 ms | 6 ms | 7 ms |
+| dasselbe: erstes Symbol im Java-Ordner | 203 ms | 136 ms | 143 ms |
+| Kern allein: alle 5'000 Arten in einer Anfrage, zum ersten Mal | 2,2 s | 1,8 s | 1,2 s |
+| Kern allein: dieselben aus dem Zwischenspeicher (nur `lstat`) | 0,6 s | 0,4 s | 0,3 s |
+
+- **Folgerung:** Die erste Zeile eines Ordners mit 5'000 Java-Dateien erscheint 15 bis 55 ms später als bei 5'000 Textdateien (Anfragen der Arten und Zeichnen der Symbole), in allen Läufen unter 0,15 s; das ist nicht merklich. Die obersten Symbole wechseln nach 0,14 bis 0,26 s von der Tasse zur Art. Ein anderer Ordner, der währenddessen aufgeklappt wird, wartet nicht (3 bis 10 ms).
+- **Zwei Änderungen aus der Messung:**
+  - Zuerst gingen die Teile eines Ordners (damals zu 500) gleichzeitig an den Kern. Dort reihten sie sich nach der Prüfung des Ordners in zufälliger Folge ein, und im zweiten kalten Ordner kam das erste Symbol erst nach 1,6 bis 2,1 s. Seit die Teile nacheinander gehen, sind es 0,14 bis 0,2 s.
+  - Das erste Lesen eines Ordners fragte zuerst alle Arten neu an, als Schutz vor veralteten Arten. Das kostete bei jedem Wiederaufklappen 5'000 `lstat` und ist entfallen; der Kern meldet Änderungen selbst.
+- **Beenden:** Bei einem Projekt mit drei aufgeklappten Ordnern zu je 5'000 Dateien streute die Dauer bis zum Ende von Electron in der Testinstanz zwischen 0,4 und 22 s, auch mit Textdateien statt Java-Dateien. Der Kern selbst war jeweils nach etwa 10 ms abgebaut. Eine Gegenprobe mit und ohne den Abbruch nach dem Abbau (je zwei bis drei Läufe) zeigte keinen nachweisbaren Unterschied; die Streuung überwiegt. Das liegt nicht an diesem Ticket und steht unter „Bei der Abnahme besonders prüfen“ in `offene-punkte.md`. Nach zwei der Messläufe hat die Schlussprüfung einen Renderer-Prozess der Messinstanz beendet; eine Nachmessung zeigte, dass ein solcher Prozess sich etwa 1 s später von selbst beendet.
+
+### Entscheidungen und Abweichungen
+
+- **Abstrakte Ausnahme** als eigene Art (`abstractException`), weil IntelliJ dafür ein eigenes Symbol hat.
+- **Fehlertoleranz:** Ein offener Rumpf zählt den Typ, damit das Symbol beim automatischen Speichern nicht springt. Das Ticket verlangt „Java-Datei“ nur bei einem Syntaxfehler am Anfang.
+- **Tooltip:** Alle Java-Dateien im Baum zeigen den vollen Namen als Tooltip, auch die mit Endung; andere Dateien wie bisher keinen.
+- **Bilder:** Die Bilder des eingebauten Stands lagen unversioniert unter `entwuerfe/32-java-symbole/` (Abschnitt „Eingebaut“), aufgenommen mit `AUFNAHME_EINGEBAUT=1`.
+- **Grenzen:** wie unter „Grenzen der Annäherung“, dazu in `offene-punkte.md` unter „Bekannte Grenzen“: Codium kennt keine Quellordner und kürzt überall. Ab 50'000 verschiedenen Java-Dateien in einer Sitzung meldet der Kern Änderungen an den am längsten nicht angefragten nicht mehr; deren Symbol stimmt dann erst nach dem nächsten Öffnen des Fensters.
+- **Spezifikation nachgeführt:** User Story 25; „Oberfläche“, Design (Java-Symbole); „Dateien, Dateiüberwachung und Suche“, Dateibaum (Java-Dateien im Baum).
+
+### Tests
+
+- **Einheitstests:**
+  - `test/main/javaKind.test.ts`: 44 Tests zum Deuten.
+  - `test/main/javaKinds.test.ts`: 8 Tests am Vertrag, darunter Zwischenspeicher und neues Bestimmen.
+  - `test/main/ioLimiter.test.ts`: ein neuer Test zum Vorrang.
+  - `test/renderer/javaKinds.test.ts`: 10 Tests. Sie prüfen den Zwischenspeicher der Oberfläche (einmal anfragen, Teile nacheinander, Löschen, Umbenennen, Fehler, Ereignisse), den Namen im Baum, die Symbole (je Art verschieden, gestrichelt nur Abstraktes, nur Design-Variablen) und die Werte in `tokens.css`.
+- **Oberfläche:** `test/ui/javaSymbols.test.ts`, 5 Tests.
+  - Baum: Symbol je Art ohne `.java`, Java-Datei mit Endung und Tasse, Reihenfolge, Tooltip, Git-Farbe nur am Namen (das Symbol behält seine Farbe), „Rename“ mit vollem Namen, Markierung ohne Endung und Hinweis zu Java.
+  - Speichern von `class` zu `interface`: Symbol im Baum und im Tab wechselt; danach von aussen zur Ausnahme.
+  - je ein Test für Datei-Tabs, „Recent Files“ und „Go to File“.
+- **Gegenproben** (je eine Stelle zurückgebaut, der passende Test wird rot):
+  - Kern: ohne Zwischenspeicher, ohne Meldung der Überwachung oder des Speicherns, mit Vergessen statt Mitwandern, ohne Vergessen beim Löschen, ohne Schnitt am Zeilenumbruch, ohne Überspringen von Strings im Rumpf.
+  - Oberfläche: Name nicht gekürzt, ohne Tooltip, Listen ohne Java-Symbol (3 Tests rot), ohne Meldung des Speicherns.
+  - Die erste Prüfung des gestrichelten Rings war zu schwach (sie hätte auch ohne Striche bestanden) und ist geschärft: acht Bögen, ein Kreis ohne Rand.

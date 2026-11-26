@@ -50,6 +50,9 @@ erklären die Hintergründe.
 - **Maven mit Firmen-Mirror** in der eigenen (`~/.m2/settings.xml`) und in der globalen Einstellung
   (`%MAVEN_HOME%\conf\settings.xml`).
 - **Statusleiste bei Java:** Interne Arbeiten von jdtls („Building“, „Publish Diagnostics“) blinken kurz auf.
+- **Beenden mit sehr grossen aufgeklappten Ordnern:** Mit drei aufgeklappten Ordnern zu je 5'000 Dateien dauerte das
+  Beenden der Testinstanz stark schwankend 0,4 bis 22 s, mit Java- wie mit Textdateien. Der Kern war jeweils nach etwa
+  10 ms abgebaut; die Zeit vergeht danach in Electron. Gesehen bei Ticket 32, nicht weiter untersucht.
 
 ## Bekannte Grenzen (bewusst so gelassen)
 
@@ -79,6 +82,11 @@ erklären die Hintergründe.
   tree/treeitem (mit `aria-level`) für die Branches, die Aktionen davor als eigene Liste (31).
 - Ein eigenes Repository oder ein Worktree in einem Unterordner des Projekts ist im Dateibaum samt Inhalt als „nicht
   versioniert“ gefärbt; seine Dateien erscheinen nicht in der Änderungsansicht, wie bei Git selbst (29).
+- Java-Symbole im Baum (32): Eine Ausnahme erkennt Codium nur am Namen der direkten Oberklasse (`…Exception`, `…Error`,
+  `Throwable`), nicht an der ganzen Vererbung wie IntelliJ. Ein zweiter oberster Typ hinter den ersten 64 KB bleibt
+  ungesehen. Codium kennt keine Quellordner und kürzt Namen überall (IntelliJ nur in Quellordnern). Ab 50'000
+  verschiedenen Java-Dateien in einer Sitzung meldet der Kern Änderungen an den am längsten nicht angefragten nicht
+  mehr; deren Symbol stimmt dann erst nach dem nächsten Öffnen des Fensters.
 
 ## Wackelige Tests (beobachten)
 

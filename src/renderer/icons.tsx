@@ -2,7 +2,7 @@
 // (currentColor) und sind für Screenreader verborgen; den Namen trägt der Knopf.
 
 import type { ReactNode } from 'react';
-import type { ToolWindowId } from '../shared/types';
+import type { JavaKind, ToolWindowId } from '../shared/types';
 
 function Icon({ size = 16, children }: { size?: number; children: ReactNode }) {
   return (
@@ -92,6 +92,86 @@ export const FileIcon = () => (
     <path d="M9 1.7V5h3.3" />
   </Icon>
 );
+
+// ---------- Java-Dateien (Ticket 32) ----------
+// Ein rundes Zeichen je Art wie im neuen IntelliJ: dunkle Fläche, farbiger Ring und Zeichen; Abstraktes mit
+// gestricheltem Ring. Record teilt die Farben der Klasse, Annotation die des Interface. Java-Dateien ohne eindeutige
+// Art tragen eine Tasse. Die Farben kommen nur aus den Design-Variablen `--java-*` in tokens.css; anders als die übrigen
+// Symbole übernehmen diese nicht die Textfarbe, damit eine Git-Farbe nur den Namen färbt.
+
+type JavaPalette = 'class' | 'interface' | 'enum' | 'exception';
+
+/** Die Zeichen als Linien, Mitte bei 8/8. */
+const JAVA_GLYPHS = {
+  C: 'M10.5 5.7A3.2 3.4 0 1 0 10.5 10.3',
+  I: 'M6.2 4.8h3.6M8 4.8v6.4M6.2 11.2h3.6',
+  E: 'M10 4.8H6.3v6.4H10M6.3 8h3.2',
+  R: 'M6.4 11.2V4.8h2.3a1.75 1.75 0 0 1 0 3.5H6.4M8.6 8.3l1.6 2.9',
+  at: 'M9.3 8a1.5 1.5 0 1 1-3 0a1.5 1.5 0 1 1 3 0M9.3 6.4v2.5c0 .8.4 1.2 1 1.2.9 0 1.5-.8 1.5-2.2A3.8 3.8 0 1 0 10.4 11',
+  bolt: 'M8.9 4.5 6.3 8.2h3.4l-2.6 3.6',
+} as const;
+
+const JAVA_SYMBOLS: Record<Exclude<JavaKind, 'java'>, { palette: JavaPalette; glyph: keyof typeof JAVA_GLYPHS; dashed?: true }> = {
+  class: { palette: 'class', glyph: 'C' },
+  abstractClass: { palette: 'class', glyph: 'C', dashed: true },
+  record: { palette: 'class', glyph: 'R' },
+  interface: { palette: 'interface', glyph: 'I' },
+  annotation: { palette: 'interface', glyph: 'at' },
+  enum: { palette: 'enum', glyph: 'E' },
+  exception: { palette: 'exception', glyph: 'bolt' },
+  abstractException: { palette: 'exception', glyph: 'bolt', dashed: true },
+};
+
+/** Der gestrichelte Ring: acht Bögen, Lücken auf den Achsen und Diagonalen (Bögen statt Strichmuster, das einen Rest
+ *  stehen liess). */
+const JAVA_DASHED_RING = Array.from({ length: 8 }, (_, k) => {
+  const point = (degrees: number) => {
+    const rad = (degrees * Math.PI) / 180;
+    return `${(8 + 6.5 * Math.cos(rad)).toFixed(2)} ${(8 + 6.5 * Math.sin(rad)).toFixed(2)}`;
+  };
+  const middle = 22.5 + 45 * k;
+  return `M${point(middle - 15)}A6.5 6.5 0 0 1 ${point(middle + 15)}`;
+}).join('');
+
+function JavaSvg({ kind, children }: { kind: JavaKind; children: ReactNode }) {
+  return (
+    <svg className="icon java-icon" data-java-kind={kind} width={16} height={16} viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">
+      {children}
+    </svg>
+  );
+}
+
+/** Das Symbol einer Java-Datei nach der Art ihres obersten Typs (Ticket 32). */
+export function JavaKindIcon({ kind }: { kind: JavaKind }) {
+  if (kind === 'java') {
+    return (
+      <JavaSvg kind={kind}>
+        <path
+          d="M3.5 4.5h7.5v3.3a3.2 3.2 0 0 1-3.2 3.2H6.7a3.2 3.2 0 0 1-3.2-3.2z"
+          fill="var(--java-file-fill)"
+          stroke="var(--java-file)"
+          strokeLinejoin="round"
+        />
+        <path d="M11 5.6h1.1a1.3 1.3 0 0 1 0 2.6H11M3 13h9.5" stroke="var(--java-file)" strokeLinecap="round" strokeLinejoin="round" />
+      </JavaSvg>
+    );
+  }
+  const { palette, glyph, dashed } = JAVA_SYMBOLS[kind];
+  const line = `var(--java-${palette})`;
+  return (
+    <JavaSvg kind={kind}>
+      {dashed ? (
+        <>
+          <circle cx="8" cy="8" r="6.5" fill={`var(--java-${palette}-fill)`} />
+          <path d={JAVA_DASHED_RING} stroke={line} />
+        </>
+      ) : (
+        <circle cx="8" cy="8" r="6.5" fill={`var(--java-${palette}-fill)`} stroke={line} />
+      )}
+      <path d={JAVA_GLYPHS[glyph]} stroke={line} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </JavaSvg>
+  );
+}
 
 /** Ein Link, dem Codium nicht folgt (nach draussen oder tot): Kettenglied. */
 export const LinkIcon = () => (

@@ -1,10 +1,13 @@
 // Suche nach Namen (Ctrl + Shift + N) und zuletzt geöffnete Dateien (Ctrl + E): eine Eingabe, darunter die Treffer;
-// Pfeiltasten wählen, Enter oder Doppelklick öffnet.
+// Pfeiltasten wählen, Enter oder Doppelklick öffnet. Java-Dateien tragen das Symbol ihrer Art (Ticket 32), die Namen
+// bleiben voll.
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { CodiumApi, FileNameMatch, ProjectInfo, SymbolMatch } from '../../shared/types';
 import { FileIcon } from '../icons';
 import { baseName, parentPath, relativeLabel } from '../project/filePaths';
+import { FileTypeIcon } from '../project/FileTypeIcon';
+import { useJavaKindStore } from '../project/javaKinds';
 import { QuickPopup } from './QuickPopup';
 import { markPositions, moveSelection, type TextPart } from './searchResults';
 
@@ -14,6 +17,8 @@ interface ListItem {
   name: TextPart[];
   folder: string;
   muted?: boolean;
+  /** Ein Eintrag für eine Datei: Symbol nach ihrem Typ (Java-Dateien nach ihrer Art); sonst das Dateisymbol. */
+  file?: true;
 }
 
 function Marked({ parts }: { parts: TextPart[] }) {
@@ -98,7 +103,7 @@ function FileList({ label, placeholder, query, onQuery, items, initialIndex, onO
             }}
             onDoubleClick={() => open(i)}
           >
-            <FileIcon />
+            {item.file ? <FileTypeIcon path={item.path} /> : <FileIcon />}
             <span className="quick-popup-name">
               <Marked parts={item.name} />
             </span>
@@ -147,10 +152,13 @@ export function GotoFilePopup({ api, project, onOpen, onClose }: PopupProps) {
           name: markPositions(m.relative.slice(nameStart), m.positions, nameStart),
           folder: folder === '' ? project.name : folder,
           muted: m.ignored === true,
+          file: true,
         };
       }),
     [matches, project.name],
   );
+  const javaKinds = useJavaKindStore();
+  useEffect(() => javaKinds?.ensure(matches.map((m) => m.path)), [javaKinds, matches]);
   return (
     <FileList
       label="Go to File"
@@ -197,9 +205,11 @@ export function RecentFilesPopup({ api, project, onOpen, onClose }: PopupProps) 
         const at = needle === '' ? -1 : name.toLowerCase().indexOf(needle);
         const positions = at < 0 ? [] : Array.from({ length: needle.length }, (_, i) => at + i);
         const folder = parentPath(file);
-        return { path: file, name: markPositions(name, positions), folder: relativeLabel(project.path, folder) };
+        return { path: file, name: markPositions(name, positions), folder: relativeLabel(project.path, folder), file: true as const };
       });
   }, [files, query, project.path]);
+  const javaKinds = useJavaKindStore();
+  useEffect(() => javaKinds?.ensure(files), [javaKinds, files]);
   return (
     <FileList
       label="Recent Files"

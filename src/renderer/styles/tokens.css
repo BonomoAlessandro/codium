@@ -113,4 +113,19 @@
   --git-ref-local: #4caf6a;
   --git-ref-remote: #c75cc2;
   --git-ref-tag: #4b8ce8;
+
+  /* Java-Symbole (Ticket 32) im Dateibaum, in den Datei-Tabs, in „Recent Files“ und „Go to File“: Linie (Ring und
+     Zeichen) und Fläche je Art. Werte wie die Symbole des neuen IntelliJ-Designs „Dark“ (expui/nodes/*_dark.svg und
+     fileTypes/java_dark.svg). Record nutzt die Farben der Klasse, Annotation die des Interface; Ausnahmen die gelben,
+     Java-Dateien ohne eindeutige Art (Tasse) die braunen. */
+  --java-class: #548af7;
+  --java-class-fill: #25324d;
+  --java-interface: #57965c;
+  --java-interface-fill: #253627;
+  --java-enum: #a571e6;
+  --java-enum-fill: #2f2936;
+  --java-exception: #d6ae58;
+  --java-exception-fill: #3d3223;
+  --java-file: #c77d55;
+  --java-file-fill: #45322b;
 }

@@ -56,7 +56,11 @@ export class JavaKinds {
     this.headBytes = options.headBytes ?? JAVA_HEAD_BYTES;
   }
 
-  /** Nach dem Abbau des Projekts meldet der Dienst nichts mehr. */
+  /**
+   * Nach dem Abbau des Projekts liest und meldet der Dienst nichts mehr; was noch in der Warteschlange steht, endet ohne
+   * Dateizugriff. Sonst las er beim Beenden mit grossen Ordnern noch Tausende Dateien, und Codium endete deutlich
+   * später (Messung im Ticket).
+   */
   dispose(): void {
     this.disposed = true;
   }
@@ -80,9 +84,13 @@ export class JavaKinds {
     void this.recheck([...targets.values()]);
   }
 
-  /** Eine Datei wurde in Codium gespeichert: Ist sie gemerkt, wird sie neu bestimmt. */
+  /**
+   * Eine Datei wurde in Codium gespeichert: Ist sie gemerkt oder wird sie gerade bestimmt (dann womöglich noch mit dem
+   * alten Inhalt), wird sie neu bestimmt.
+   */
   saved(target: string): void {
-    if (this.cache.has(keyOf(target))) void this.recheck([target]);
+    const key = keyOf(target);
+    if (this.cache.has(key) || this.running.has(key)) void this.recheck([target]);
   }
 
   /** Vergisst einen Pfad samt allem darunter, etwa nach dem Löschen in Codium. */
@@ -142,8 +150,10 @@ export class JavaKinds {
   }
 
   private async determine(target: string, key: string): Promise<JavaKind> {
+    if (this.disposed) return 'java';
     try {
       return await this.options.io(async () => {
+        if (this.disposed) return 'java';
         let stat = await fs.promises.lstat(target);
         if (stat.isSymbolicLink()) {
           // Einem Link folgt das Lesen nur, wenn sein Ziel im Projekt liegt; gemerkt wird er nicht.
