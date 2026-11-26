@@ -52,7 +52,7 @@ Typ HITL, weil die Wahl des Logos beim Nutzer liegt: Der Agent legt Entwürfe vo
 
 Gewählt: **Entwurf 1 „Orbit“**. Ein offener Ring in Akzentblau (`#3574f0`) bildet das C; in seiner Öffnung sitzt ein grüner Punkt (`#5fb865`) wie ein Elektron, weil „-ium“ nach einem chemischen Element klingt. Rückmeldung des Nutzers, wörtlich: „den entwurf 1, Orbit finde ich toll“. Er hatte keine Änderungswünsche, deshalb gab es keine zweite Runde.
 
-Zur Wahl standen vier Entwürfe: 1 Orbit, 2 Bausteine, 3 Klammer, 4 Fisch. Die Vorschauseite `docs/entwuerfe/24-logo/index.html` bleibt mit allen Entwürfen als Beleg der Wahl. Die Quelle des Logos liegt seither in `assets/logo`.
+Zur Wahl standen vier Entwürfe: 1 Orbit, 2 Bausteine, 3 Klammer, 4 Fisch. Die Vorschauseite mit allen Entwürfen lag unter `docs/entwuerfe/24-logo/` und ist auf Wunsch des Nutzers entfernt (2026-11-26); zuletzt enthalten in Commit 39feb19. Die Quelle des Logos liegt seither in `assets/logo`.
 
 ## Umsetzung (Agent, 2026-11-23)
 

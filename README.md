@@ -108,7 +108,7 @@ byte-gleiche Dateien. Die erzeugten Dateien sind eingecheckt, damit `npm run dis
 einer Änderung am Logo `npm run icons` ausführen und die Dateien mit committen (ein Test in `npm test` bemerkt
 vergessene). Das ICO tragen `Codium.exe`, Installer, Deinstallierer und die Verknüpfungen (`build` in `package.json`);
 die Fenster setzen es selbst, damit Taskleiste und Alt + Tab es auch unpaketiert zeigen. Das Willkommensfenster zeigt
-`codium.svg`. Die Entwürfe, aus denen das Logo gewählt wurde, liegen unter `docs/entwuerfe/24-logo`.
+`codium.svg`.
 
 ### Tests
 
