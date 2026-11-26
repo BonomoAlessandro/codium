@@ -69,7 +69,7 @@ Die Tickets zerlegen die [Spezifikation](../specs/codium-v1.md) in Abschnitte, d
 
 ## Übersicht
 
-Stand 2026-11-26: Codium 1 ist abgeschlossen, Tickets 01 bis 23 erledigt. Die Abnahme von Hand macht der Nutzer im Alltag ([Prüfliste](../abnahme.md)); Abweichungen werden neue Tickets. Auch die später dazugekommenen Tickets 24 bis 32 sind erledigt. Bei Ticket 30 (Absturz des TypeScript-Servers) blieb die Ursache offen; gebaut sind Protokoll, „Show Log“ und „Restart“, ein erneuter Absturz wird ein neues Ticket. Offene Punkte, Entscheide und bekannte Grenzen: [offene-punkte.md](../offene-punkte.md).
+Stand 2026-11-26: Codium 1 ist abgeschlossen, Tickets 01 bis 23 erledigt. Die Abnahme von Hand macht der Nutzer im Alltag ([Prüfliste](../abnahme.md)); Abweichungen werden neue Tickets. Auch die später dazugekommenen Tickets 24 bis 32 sind erledigt. Bei Ticket 30 (Absturz des TypeScript-Servers) blieb die Ursache offen; dank seines Protokolls ist sie inzwischen gefunden, die Behebung folgt in Ticket 36. Offen sind Ticket 36 (zuerst, Absturz des TypeScript-Servers bei offenen Java-Dateien), Ticket 33 (Branch-Dropdown per Klick), Ticket 34 (Scrollbalken überall) und Ticket 35 (Dateisymbole für JSON, JavaScript, JSX und Markdown). Offene Punkte, Entscheide und bekannte Grenzen: [offene-punkte.md](../offene-punkte.md).
 
 | Nr. | Ticket | Typ | Blockiert durch | Etappe | Stand |
 |---|---|---|---|---|---|
@@ -105,6 +105,10 @@ Stand 2026-11-26: Codium 1 ist abgeschlossen, Tickets 01 bis 23 erledigt. Die Ab
 | 30 | [TypeScript-Server stürzt in einem Java-Projekt mit Web-Oberfläche wiederholt ab](30-typescript-server-absturz.md) | AFK | – | – | erledigt (Ursache offen) |
 | 31 | [Branch-Anzeige breiter, Branches im Dropdown in Ordnern, zuletzt benutzte Branches](31-branch-anzeige-und-ordner.md) | AFK | – | – | erledigt |
 | 32 | [Java-Dateien im Dateibaum mit Symbol je Art, ohne Endung](32-java-symbole-im-dateibaum.md) | HITL | – | – | erledigt |
+| 33 | [Branch-Dropdown: Untermenü erst per Klick, Schliessen bei jedem Klick daneben](33-branch-dropdown-klick.md) | AFK | – | – | offen |
+| 34 | [Scrollbalken in der ganzen App wie im Code-Bereich, 9 px breit](34-scrollbalken-ueberall.md) | AFK | – | – | offen |
+| 35 | [Symbole für JSON-, JavaScript-, JSX- und Markdown-Dateien wie in IntelliJ](35-dateisymbole-json-js-md.md) | HITL | – | – | offen |
+| 36 | [TypeScript-Server stürzt ab, weil er beim Start offene Java-Dateien gemeldet bekommt](36-typescript-absturz-java-dokument.md) | AFK | – | – | offen |
 
 ```mermaid
 flowchart LR
@@ -153,6 +157,11 @@ flowchart LR
   T30[30 TypeScript-Absturz]
   T31[31 Branch-Anzeige und Ordner]
   T32[32 Java-Symbole im Baum]
+  T33[33 Branch-Dropdown per Klick]
+  T34[34 Scrollbalken überall]
+  T35[35 Dateisymbole JSON/JS/MD]
+  T36[36 TypeScript-Absturz: Java-Dokumente]
+  T30 --> T36
 ```
 
 **Reihenfolge:** nach Etappen, also 01 bis 10 und 23 (gleich nach 05, weil Markdown-Dateien im Alltag schon jetzt wichtig sind), dann 11, dann 12 bis 14, dann 15 bis 18, dann 19, dann 20 und 21, zuletzt 22. Die Tickets 24 (Logo), 25 (Oberfläche näher an IntelliJ) und 26 (zweimal Shift für die Dateisuche) kamen nach Codium 1 dazu; sie hängen nicht voneinander ab. Ticket 27 (Testwerkzeuge) kam danach aus den Erfahrungen mit ihren Testläufen dazu. Ticket 28 (Scrollbalken im Code-Bereich wie in IntelliJ) kam danach auf Wunsch des Nutzers dazu und setzt Ticket 25 fort. Ticket 29 (Dateibaum: Zuklappen schliesst Unterordner, Git-Farben wie in IntelliJ) kam gleich danach dazu; beide hängen nicht voneinander ab. Ticket 30 (wiederholter Absturz des TypeScript-Servers im installierten Codium 0.2.0) kam danach als Fehlermeldung des Nutzers dazu und hängt von keinem ab. Ticket 31 (Branch-Anzeige breiter, Branches im Dropdown in Ordnern, zuletzt benutzte Branches) kam danach auf Wunsch des Nutzers dazu; es hängt von keinem ab, sein Zuklappen soll aber zu Ticket 29 passen. Ticket 32 (Java-Dateien im Dateibaum mit Symbol je Art, ohne Endung) kam danach auf Wunsch des Nutzers dazu; es hängt von keinem ab, berührt aber wie Ticket 29 den Dateibaum.

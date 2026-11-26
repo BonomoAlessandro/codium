@@ -298,3 +298,4 @@ Der Nutzer hat entschieden, wörtlich: „vergiss den punkt6 und schliesse das t
 - Der Entwurf einer Meldung an typescript-go bleibt unverschickt.
 - Gebaut und gemergt bleibt die Diagnose: Protokoll der Sprachserver, „Show Log“ und „Restart“. Sie ist ab Codium 0.3.0 im installierten Codium enthalten. Tritt der Absturz wieder auf, wird es ein neues Ticket, mit dem Inhalt von „Show Log“.
 - Die Punkte unter „Abnahme von Hand“ bleiben offen, bis der Nutzer sie prüft.
+- **Nachtrag 2026-11-26:** Der Absturz trat wieder auf, und das Protokoll zeigte die Ursache: Beim Start meldet Codium dem TypeScript-Server auch offene Java-Dateien. Die Behebung folgt in [Ticket 36](36-typescript-absturz-java-dokument.md).
