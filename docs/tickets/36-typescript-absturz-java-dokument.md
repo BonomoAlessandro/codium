@@ -77,14 +77,14 @@ github.com/microsoft/typescript-go/internal/compiler.(*fileLoader).parseSourceFi
 
 ## Akzeptanzkriterien
 
-- [ ] Die Ursache steht mit Beleg im Ticket, also mit dem Test und seiner Gegenprobe.
-- [ ] Ein schneller Test mit nachgemachtem Server prüft:
+- [x] Die Ursache steht mit Beleg im Ticket, also mit dem Test und seiner Gegenprobe.
+- [x] Ein schneller Test mit nachgemachtem Server prüft:
   - Ist eine `.java`-Datei offen und startet danach der TypeScript-Server, bekommt er nur die JavaScript- und TypeScript-Dateien, auch nach einem Neustart.
   - Umgekehrt bekommt der Java-Server keine `.js`/`.jsx`/`.ts`-Dateien.
   - Ohne die Behebung ist der Test rot.
-- [ ] Ein langsamer Test mit dem echten nativen Server prüft: Mit offener `.java`-Datei und danach geöffneter `.jsx`-Datei stürzt er nicht ab, es erscheint keine Meldung „stopped“, und das Protokoll der Sprachserver bleibt leer. Ohne die Behebung ist er rot (Panic „ScriptKind must be specified“).
-- [ ] Die übrigen Stellen sind geprüft und das Ergebnis steht im Ticket.
-- [ ] `npm run typecheck`, `npm test`, `npm run test:slow` und `npm run test:ui` sind grün.
+- [x] Ein langsamer Test mit dem echten nativen Server prüft: Mit offener `.java`-Datei und danach geöffneter `.jsx`-Datei stürzt er nicht ab, es erscheint keine Meldung „stopped“, und das Protokoll der Sprachserver bleibt leer. Ohne die Behebung ist er rot (Panic „ScriptKind must be specified“).
+- [x] Die übrigen Stellen sind geprüft und das Ergebnis steht im Ticket.
+- [x] `npm run typecheck`, `npm test`, `npm run test:slow` und `npm run test:ui` sind grün.
 
 ## Abnahme von Hand
 
@@ -99,3 +99,77 @@ github.com/microsoft/typescript-go/internal/compiler.(*fileLoader).parseSourceFi
   - Keine Messungen oder Proben mit Tausenden Dateien auf der Platte ohne Rückfrage.
 - **Datenschutz:** Pfade, Namen und Inhalte aus dem Projekt des Nutzers gehören nicht in Commits, Tickets oder Tests; das Protokoll oben ist entsprechend gekürzt. Das Testprojekt erfindet der Agent selbst.
 - **Vorrang:** Der Fehler trifft den Nutzer im Alltag. Dieses Ticket sollte vor den Tickets 33 bis 35 umgesetzt werden.
+
+## Umsetzung (Agent, 2026-11-26)
+
+**Vorweg:** Der Befund am Code stimmt. Ein Test mit dem echten nativen Server stellt den Absturz des Nutzers genau nach, mit derselben Panic und demselben Stack; mit der Behebung bleibt der Server stabil. Es war die einzige Stelle mit dieser Verwechslung.
+
+### Ursache, belegt
+
+- **Am Code:** `LanguageService.start` meldete nach `initialized` alle offenen Dokumente über `sendOpen`, und `sendOpen` prüfte nicht, ob ein Dokument zu diesem Server gehört (`doc.server`).
+- **Langsamer Test mit dem echten Server** (`test/slow/typescript.test.ts`, „stürzt nicht ab, wenn beim Start eine Java-Datei offen ist …“):
+  - Testprojekt „Shop“, selbst erfunden: `pom.xml`, `src/main/java/shop/Cart.java`, `src/main/webapp/App.jsx`; kein `package.json`, `tsconfig.json` oder `jsconfig.json` und kein eigenes TypeScript.
+  - Erst `Cart.java` öffnen, dann `App.jsx`. Der mitgelieferte native Server 7.0.2 (`bundled-native`) startet mit der JSX-Datei.
+  - **Gegenprobe ohne Behebung: rot.** Im Protokoll der Sprachserver standen vier Einträge innerhalb von 555 ms, alle mit „Exit: code 2“. Die ersten drei endeten mit „Restarting (restart 1 of 3 …)“ bis „(restart 3 of 3 …)“, der vierte mit „Not restarted: it stopped 4 times within three minutes.“ Jeder Eintrag zeigte auf stderr
+    ```
+    panic: ScriptKind must be specified when parsing source file: c:/…/Shop/src/main/java/shop/Cart.java [recovered, repanicked]
+    ```
+    mit demselben Stack wie beim Nutzer (`parser.go:292`, `parser.go:140`, `parsecache.go:34`, `compilerhost.go:100`, `fileloader.go:370`). Die Panic kommt aus den parallelen Parsern beim Aufbau des Programms (`filesparser.go`, `workgroup.go`), also von einer Goroutine ohne `recover`; deshalb endet der Prozess.
+  - Mit Behebung: grün.
+- **Schneller Test mit nachgemachten Servern** (`test/main/languageDocuments.test.ts`), **Gegenprobe ohne Behebung: beide Tests rot.**
+  - Der TypeScript-Server bekam `Cart.java`, `Price.java`, `app.jsx`, `util.js`, `model.ts` statt nur `app.jsx`, `util.js`, `model.ts`.
+  - Der Java-Server bekam `app.jsx`, `util.js`, `model.ts`, `Cart.java`, `Price.java` statt nur `Cart.java`, `Price.java`.
+
+### Behebung
+
+- **`sendOpen` prüft selbst,** dass das Dokument zum Server gehört (`doc.server === server.id`). So kann kein Weg einem Server ein fremdes Dokument melden. Der Start meldet weiter über `sendOpen`, also nur noch die Dokumente seiner Sprachen; die Kommentare dort und am Kopf des Dienstes sind nachgeführt.
+- **Teststelle für den schnellen Lauf:** `BundledJava.testServer` (`javaServer.ts`) startet statt jdtls ein anderes Programm, hier den nachgemachten Server.
+  - Ohne sie liesse sich jdtls nicht ersetzen: Codium startet immer `java.exe` des JDK mit Argumenten der JVM, und die versteht Node nicht.
+  - Die App setzt das Feld nie. Der Dienst nimmt es erst, wenn der Ordner von jdtls und ein JDK ab 25 da sind, also unter denselben Bedingungen wie jdtls.
+- **`fakeLspServer.ts`** schreibt bei `didOpen` den Namen des Dokuments mit.
+
+### Geprüfte Stellen
+
+Alle Stellen in `languageService.ts`, die über alle Dokumente laufen oder etwas an einen Server schicken:
+
+| Stelle | Was sie schickt | Ergebnis |
+|---|---|---|
+| Start und Neustart (`start`, nach `initialized`) | alle offenen Dokumente | **die Verwechslung**; behoben über `sendOpen` |
+| `didOpen` | `didOpen` an den Server der Datei (`serverIdOf`); hat er sie schon, `didChange` an denselben | richtig |
+| Selbst geöffnete Dokumente (`connectionFor`, für Definition, Verwendungen, Implementierungen, Hover, Vervollständigung, semantische Token) | `didOpen` an den Server der Datei | richtig; im schnellen Test mit `Price.java` und `model.ts` abgedeckt |
+| `didChange` | an `doc.server`, nur wenn er das Dokument offen hat (`sent`) | richtig |
+| `didClose`, `closeImplicit` | `didClose` an `doc.server`, nur wenn er das Dokument offen hat | richtig |
+| Ende eines Servers (`onExit`) | entfernt nur die selbst geöffneten Dokumente dieses Servers | richtig |
+| `restart` („Restart“, anderes JDK) | startet nur mit Kennzeichen oder offenem Dokument dieser Sprache | richtig |
+| Fehler (`scheduleAllDiagnostics`, `scheduleDiagnostics`, `pullDiagnostics`, auch nach `workspace/diagnostic/refresh`) | läuft über alle Dokumente, fragt aber jedes bei `doc.server` | richtig |
+| Semantische Token | Legende und Anfrage beim Server der Datei | richtig |
+| Details eines Vorschlags (`resolveCompletion`) | an den Server der letzten Vervollständigung | richtig |
+| Klasseninhalte (`readTarget`) | `jdt://` nur an jdtls | richtig |
+| Symbolsuche | `workspace/symbol` an alle laufenden Server, ohne Dokument | so gewollt (Spezifikation: über alle Sprachserver) |
+| Dateiänderungen (`notifyWatched`, `pendingWatched`) | `workspace/didChangeWatchedFiles` mit allen Änderungen an alle laufenden Server, ohne Filter nach Endung | so gewollt (Spezifikation). Das sind keine Dokumente: Der Server liest daraus nur Dateien seines Programms. In Ticket 30 hielt der native Server Zehntausende solcher Änderungen aus, auch an Dateien fremder Art. Einen Filter nach Endungen hat der Nutzer verworfen. |
+| Eingehende Fehler (`publishDiagnostics`, vom Server an Codium) | – | Codium nimmt sie von jedem Server zu jeder Datei an. Da kein Server mehr fremde Dokumente bekommt, kommen auch keine Fehler aus der falschen Sprache. Bewusst nicht gefiltert. |
+
+### Tests
+
+- **Schnell, `test/main/languageDocuments.test.ts`:** Zwei nachgemachte Server schreiben auf, welche Dokumente sie geöffnet bekommen, einer als TypeScript-Server (über ein TypeScript 5 im Projekt), einer statt jdtls.
+  - **TypeScript-Server bei offenen Java-Dateien:** Wie beim Nutzer läuft der Java-Server schon (`pom.xml`). Offen sind `Cart.java` und, selbst geöffnet für eine Anfrage, `Price.java`; dann startet `app.jsx` den TypeScript-Server. Er bekommt `app.jsx`, `util.js` und das selbst geöffnete `model.ts`, nach einem Absturz und nach „Restart“ jeweils `app.jsx` und `util.js`, nie eine Java-Datei.
+  - **Java-Server bei offenen JavaScript- und TypeScript-Dateien:** umgekehrt, ohne `pom.xml`; `Cart.java` startet den Java-Server. Er bekommt `Cart.java` und das selbst geöffnete `Price.java`, nach Absturz und „Restart“ nur `Cart.java`, nie eine `.js`-, `.jsx`- oder `.ts`-Datei.
+- **Langsam, `test/slow/typescript.test.ts`:** wie oben unter „Ursache, belegt“. Geprüft werden nach dem Start, nach „Restart“ (die Java-Datei bleibt offen) und nach einem Absturz (der Test beendet den Server):
+  - Hover und Definition in der JSX-Datei gehen;
+  - der Server läuft 2,5 s danach noch mit derselben Prozessnummer;
+  - keine Meldung „stopped“;
+  - das Protokoll der Sprachserver bleibt leer, nach dem Absturz steht darin genau dessen Eintrag, ohne Panic.
+
+  Den Typ-Zwischenspeicher des Servers (ATA) legt der Test über `LOCALAPPDATA` in seinen Temp-Ordner. `%LOCALAPPDATA%\Microsoft\TypeScript\7.0` blieb in den Einzelläufen und in den vollen Läufen unverändert (keine Datei neuer als vor dem ersten Lauf).
+
+### Testläufe (2026-11-26, nacheinander und allein im Checkout)
+
+| Lauf | Ergebnis | Dauer |
+|---|---|---|
+| `npm run typecheck` | grün | 3 s |
+| `npm test` | 579 von 579 grün (61 Dateien) | 130 s |
+| `npm run test:slow` | 41 von 41 grün (9 Dateien), nichts übersprungen | 204 s |
+| `npm run test:ui` | 106 von 106 grün (29 Dateien) | 641 s mit Bau |
+
+- Laut Ereignisprotokoll kein Standby während der Läufe; das letzte Kernel-Power-Ereignis lag vor allen Läufen. Kein anderer Testlauf im Checkout; auf dem Rechner liefen daneben nur Sprachserver von Editoren und ein Entwicklungsserver eines anderen Projekts.
+- Danach: keine Prozesse aus dem Checkout, keine `codium-*`-Ordner im Temp-Ordner, keine Meldung der Schlussprüfung. Das Vorlesen der gebauten App meldete `mermaid.js` mit 18,1 s (Virenscanner).

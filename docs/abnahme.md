@@ -176,6 +176,8 @@ Geprüft wird die installierte App (`release\Codium Setup <version>.exe`), ausse
 - [ ] Das Aufklappen grosser Pakete bleibt flüssig; die Symbole wechseln kurz danach von der Tasse zur Art. (32)
 - [ ] Wird eine Klasse zum Interface (Speichern im Editor, ein Branch-Wechsel oder eine Änderung von aussen), wechselt das Symbol im Baum und im Tab. (32)
 - [ ] Die Java-Symbole sind bei 100 % und 150 % Skalierung klar, auch auf der Auswahl, und sie passen in den Tabs, in „Recent Files“ und „Go to File“. (32)
+- [ ] Im eigenen Java-Projekt mit Web-Oberfläche: Java-Dateien offen, dann eine `.jsx`- bzw. `.js`-Datei öffnen. Der TypeScript-Server bleibt stabil (keine Meldung „stopped … times“), und Hover, Ctrl + Linksklick, Fehler und Vervollständigung gehen in der `.jsx`-Datei. (36)
+- [ ] Auch nach einem Neustart bleibt er stabil, mit weiterhin offenen Java-Dateien: `tsc.exe` unter Codium im Task-Manager beenden; Codium startet ihn neu. Nach dem vierten Beenden kommt die Meldung, „Restart“ startet ihn wieder. „Show Log“ zeigt dann nur diese vier Enden, keine Panic „ScriptKind must be specified“. Die Sprachfunktionen in den Java-Dateien gehen weiter. (36)
 
 ## Frischer Rechner bzw. Windows-Benutzer (22)
 

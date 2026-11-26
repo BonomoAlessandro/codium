@@ -53,6 +53,10 @@ erklären die Hintergründe.
   Terminals); der Tab schliesst sofort (11).
 - „Neustart höchstens dreimal in drei Minuten“ des Sprachservers: drei Neustarts, der vierte Absturz gibt auf (12);
   seit Ticket 30 mit „Show Log“ und „Restart“ an der Meldung.
+- Der mitgelieferte native TypeScript-Server 7.0.2 endet mit einer Panic („ScriptKind must be specified“), wenn er eine
+  Datei unbekannter Art als Quelldatei laden soll, statt sie abzulehnen; behoben ist das laut Ticket 30 erst im
+  Quelltext nach 7.0.2. Codium meldet ihm seit Ticket 36 nur Dokumente seiner Sprachen, auch beim Start und nach
+  Neustarts; eine neuere Version würde das Risiko ganz beseitigen (36).
 - Vervollständigung ohne Herkunftsmodul (`labelDetails`); Ctrl + N findet Type-Aliase mit TypeScript 6 nicht (13).
 - Zu Zeile (Ctrl + G) über wenige Zeilen erzeugt keinen Eintrag im Zurück/Vor-Verlauf (erst ab Dateiwechsel oder mehr
   als 10 Zeilen; 13).

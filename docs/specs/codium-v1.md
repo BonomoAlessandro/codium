@@ -469,6 +469,7 @@ Die Beschriftungen der Oberfläche sind englisch. Wo diese Spezifikation Menüs 
   - Stürzt ein Server ab, startet der Sprach-Dienst ihn neu, höchstens dreimal in drei Minuten, danach erscheint ein Fehlerhinweis. Er trägt die Knöpfe „Show Log“ (öffnet das Protokoll der Sprachserver, die Meldung bleibt stehen) und „Restart“ (startet den Server neu, ohne das Projekt neu zu öffnen; die Zählung beginnt von vorn). Seit Ticket 30.
   - **Protokoll der Sprachserver** (Ticket 30): Jede Verbindung hebt die letzten 64 KB dessen auf, was ihr Server auf stderr schreibt. Endet ein Server unerwartet, schreibt der Sprach-Dienst Zeitpunkt, Projekt, Server, Art (`kind`), Programm, Exit-Code bzw. Signal, wie es weitergeht, und das aufgehobene stderr nach `logs\language-servers.log` im Datenordner (im Testmodus im Datenordner des Tests). Würde ein Eintrag das Protokoll über 1 MB bringen, wird es zu `language-servers.old.log`, und ein neues beginnt; „Show Log“ zeigt erst das ersetzte, dann das aktuelle. Ein normales Beenden durch Codium kommt nicht ins Protokoll. Beim Beenden von Codium wartet der Kern bis 2 s auf Einträge, die noch geschrieben werden.
   - Beim Abbau des Projekt-Kerns beendet der Dienst alle Server samt Kindprozessen.
+- **Dokumente:** Jeder Server bekommt nur die Dokumente seiner Sprachen (TypeScript/JavaScript: `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`; Java: `.java`). Das gilt beim Öffnen einer Datei, für Dateien, die der Dienst für eine Anfrage selbst öffnet, und für die offenen Dokumente, die ein Server bei seinem Start und nach jedem Neustart gemeldet bekommt. Dateiänderungen meldet der Dienst dagegen allen Servern. Seit Ticket 36: Vorher bekam ein startender Server alle offenen Dokumente, und der native TypeScript-Server stürzte an einer offenen Java-Datei ab, nach jedem Neustart wieder.
 - **Laufzeiten:**
   - jdtls braucht seit Oktober 2026 mindestens **Java 25**. Codium startet es mit dem neuesten erkannten JDK ab 25, unabhängig von JAVA_HOME; in den Einstellungen lässt sich ein anderes JDK ab 25 wählen.
   - Der TypeScript-Server läuft als native Programmdatei (TypeScript 7) bzw. mit der Node-Laufzeit von Electron (typescript-language-server); ein installiertes Node.js ist nicht nötig.
@@ -729,11 +730,16 @@ Für Teststelle 2 und jede automatische Prüfung der echten App gibt es einen Te
     - Speichern und Wirkung
     - Hinweise bei fehlendem Git und fehlendem JDK 25 (über das nachgemachte System)
     - JDK-Erkennung aus vorgegebenen Ordnern
+  - **Sprach-Dienst mit nachgemachten Sprachservern** (`test/support/fakeLspServer.ts`; für Java statt jdtls über `BundledJava.testServer`, das die App nie setzt):
+    - nichts vor `initialized`, auch nach einem Neustart (Ticket 27)
+    - Protokoll der Sprachserver, Aufgeben nach vier Abstürzen, „Restart“ (Ticket 30)
+    - jeder Server nur mit Dokumenten seiner Sprachen, beim Start, nach Absturz und nach „Restart“ (Ticket 36)
 - **Langsamer Testlauf** (eigener Befehl, getrennt vom schnellen):
   - **TypeScript** an kleinen Beispielprojekten, je eines mit TypeScript 7, mit TypeScript 6 und ohne eigenes TypeScript:
     - Definition über Dateigrenzen, Verwendungen, Implementierungen, Hover, Fehler vor dem Speichern, Vervollständigung, semantische Token, Symbolsuche
     - Ziel in einer Typdefinition unter node_modules
     - Neustart nach Absturz, Beenden beim Abbau
+    - ohne eigenes TypeScript: offene Java-Datei beim Start des Servers, auch nach „Restart“ und Absturz (Ticket 36)
   - **Java** an kleinen Beispielprojekten mit Maven, mit Lombok und mit Gradle-Wrapper (ein älterer Gradle 8):
     - Definition, Verwendungen, Implementierungen, Hover, Fehler, Vervollständigung, semantische Token, Symbolsuche
     - Sprung in eine JDK-Klasse mit Quelltext
