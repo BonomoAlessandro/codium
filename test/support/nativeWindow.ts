@@ -118,6 +118,9 @@ public static class CodiumHit {
     var results = new System.Collections.Generic.List<string>();
     for (int i = 0; i + 1 < xy.Length; i += 2) {
       int x = o.X + (int)Math.Round(xy[i] * scale), y = o.Y + (int)Math.Round(xy[i + 1] * scale);
+      // WM_NCHITTEST trägt jede Koordinate in 16 Bit mit Vorzeichen; ausserhalb träfe die Abfrage still daneben.
+      if (x < short.MinValue || x > short.MaxValue || y < short.MinValue || y > short.MaxValue)
+        throw new Exception("Punkt " + x + ", " + y + " liegt ausserhalb des Wertebereichs von WM_NCHITTEST (16 Bit); das Fenster liegt zu weit ausserhalb des Bildschirms.");
       long l = ((long)unchecked((ushort)y) << 16) | unchecked((ushort)x);
       IntPtr r;
       if (SendMessageTimeoutW(h, 0x84, IntPtr.Zero, new IntPtr(l), 2, 5000, out r) == IntPtr.Zero) throw new Exception("WM_NCHITTEST ohne Antwort");
@@ -131,7 +134,8 @@ public static class CodiumHit {
  * Was ein Fenster der eigenen Testinstanz an Punkten seiner Seite meldet, wenn Windows fragt, was dort liegt
  * (WM_NCHITTEST über SendMessageTimeout). Damit entscheidet Windows, ob ein Klick die Seite erreicht (HTCLIENT) oder
  * als Klick auf die Titelleiste gilt (HTCAPTION). Die Punkte sind CSS-Pixel der Seite; umgerechnet wird über die Breite
- * der Client-Fläche (`cssWidth` ist `innerWidth`), damit es bei jeder Skalierung stimmt. Nur eine Abfrage: keine
+ * der Client-Fläche (`cssWidth` ist `innerWidth`), damit es bei jeder Skalierung stimmt. Liegt ein Punkt ausserhalb von
+ * 16 Bit (die Nachricht trägt nicht mehr), bricht die Abfrage mit einer Meldung ab. Nur eine Abfrage: keine
  * Eingabe, keine Aktivierung, keine Bewegung; die Seite bekommt davon nichts mit (Ticket 33).
  */
 export function hitTest(hwnd: bigint | string, cssWidth: number, points: ReadonlyArray<{ x: number; y: number }>): number[] {

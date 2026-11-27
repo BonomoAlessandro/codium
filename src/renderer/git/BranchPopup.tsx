@@ -22,7 +22,7 @@
 // Grössenänderung oder ein Tastenkürzel der App schliesst das Dropdown (Ticket 33, popup/dismiss.ts). Der Fokus liegt
 // danach auf dem Branch-Knopf, ausser ein angeklicktes Element oder das Kürzel nimmt ihn.
 
-import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { CodiumApi, GitBranches, GitState } from '../../shared/types';
 import { errorText } from '../errors';
@@ -152,6 +152,15 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
   onOpenFoldersChangeRef.current = onOpenFoldersChange;
   const submenuRef = useRef(submenu);
   submenuRef.current = submenu;
+  // Das ganze Dropdown schliesst gerade. Ein offenes Untermenü schliesst dabei mit; es gibt den Fokus dann nicht ins
+  // Suchfeld (Review): Der Aufrufer legt ihn auf den Branch-Knopf, das Menü bemerkt den Fokuswechsel und schlösse sich
+  // mitten darin, und Blink bräche den Wechsel zum Knopf ab, der Fokus landete im Nirgendwo.
+  const closing = useRef(false);
+  /** Schliesst das ganze Dropdown (auf jedem Weg); liest nur Refs. */
+  const close = (reason: BranchPopupCloseReason) => {
+    closing.current = true;
+    onCloseRef.current(reason);
+  };
   const id = useId();
   const rowId = (index: number) => `${id}-row-${index}`;
 
@@ -230,13 +239,13 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
   useLayoutEffect(() => fitRef.current(), [rows, error]);
 
   // Angemeldet wie ein Menü: Tastenkürzel der App schliessen das Dropdown zuerst.
-  useEffect(() => registerOpenMenu(() => onCloseRef.current('action')), []);
+  useEffect(() => registerOpenMenu(() => close('action')), []);
 
   // Ein Klick daneben schliesst, auch auf die leere Kopfzeile; ebenso der Fokusverlust und eine Grössenänderung des
   // Fensters (dismiss.ts). Zum Dropdown gehören der Branch-Knopf (sein Klick schaltet es selbst um) und das Untermenü.
   useDismiss(
     (target) => !!ref.current?.contains(target) || anchor.contains(target) || (target instanceof Element && !!target.closest('[role="menu"]')),
-    (reason) => onCloseRef.current(reason),
+    (reason) => close(reason),
   );
 
   // Escape schliesst (ist das Untermenü offen, schliesst dieses sich selbst). Ein getipptes Zeichen in einem
@@ -256,7 +265,7 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
       if (e.key !== 'Escape') return;
       e.preventDefault();
       e.stopPropagation();
-      onCloseRef.current('escape');
+      close('escape');
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
@@ -264,7 +273,7 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
 
   const run = (fn: () => void) => () => {
     setSubmenu(null);
-    onCloseRef.current('action');
+    close('action');
     fn();
   };
   const openSubmenu = (index: number, openedBy: OpenedBy) => {
@@ -273,7 +282,7 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
   };
   const closeSubmenu = () => {
     setSubmenu(null);
-    inputRef.current?.focus({ preventScroll: true });
+    if (!closing.current) inputRef.current?.focus({ preventScroll: true });
   };
   /** Klappt einen Ordner auf oder zu; zu heisst auch alle Ordner darin (Ticket 29). */
   const toggleFolder = (row: FolderRow) => {
@@ -304,14 +313,16 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
       { kind: 'item', label: `New Branch from '${name}'…`, icon: <PlusIcon />, run: run(() => actions.newBranch(name)) },
     ];
   };
-  const activate = (index: number, openedBy: OpenedBy) => {
+  /** `repeated`: der zweite (oder weitere) Klick eines Doppelklicks. */
+  const activate = (index: number, openedBy: OpenedBy, repeated = false) => {
     const row = rows[index];
     if (row?.kind === 'action') run(row.run)();
     else if (row?.kind === 'folder') toggleFolder(row);
     // Ein Klick auf die Zeile des offenen Untermenüs schliesst es, wie der Branch-Knopf das Dropdown und ein Klick
-    // einen Ordner umschaltet (Ticket 33).
-    else if (isBranch(row) && openedBy === 'click' && submenu?.index === index) closeSubmenu();
-    else if (isBranch(row)) openSubmenu(index, openedBy);
+    // einen Ordner umschaltet (Ticket 33). Der zweite Klick eines Doppelklicks lässt es offen (Review).
+    else if (isBranch(row) && openedBy === 'click' && submenu?.index === index) {
+      if (!repeated) closeSubmenu();
+    } else if (isBranch(row)) openSubmenu(index, openedBy);
   };
   /** Pfeil rechts und links auf Ordnern und Branches, wie im Dateibaum; liefert, ob die Taste etwas bewirkt hat. */
   const treeKey = (key: string, index: number): boolean => {
@@ -353,7 +364,8 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
       role: 'option',
       'aria-selected': isSelected,
       onMouseMove: () => hover(i),
-      onClick: () => activate(i, 'click'),
+      // Klicks per Tastatur haben `detail` 0, ein Doppelklick beim zweiten Klick 2.
+      onClick: (e: MouseEvent) => activate(i, 'click', e.detail > 1),
     } as const;
     if (row.kind === 'action') {
       return (

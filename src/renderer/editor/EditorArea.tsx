@@ -1910,7 +1910,6 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
   );
 });
 
-/** Was ein Tab ohne Editor zeigt: Bild, Hinweise für Binärdateien und zu grosse Dateien, Laden. */
 /**
  * Alter Stand eines Änderungsblocks mit „Rollback Lines“ (Ticket 17). Ein Klick daneben schliesst es; die Kopfzeile ist
  * solange keine Zieh-Fläche, damit das auch für einen Klick auf sie gilt (Ticket 33, popup/dismiss.ts).
@@ -1956,6 +1955,7 @@ function ChangePopup({ block, x, y, onClose, onRollback }: { block: ChangeBlock;
   );
 }
 
+/** Was ein Tab ohne Editor zeigt: Bild, Hinweise für Binärdateien und zu grosse Dateien, Laden. */
 function TabNotice({ tab }: { tab: Tab }) {
   const content = tab.content;
   if (content === null || content.kind === 'loading') return <div className="editor-notice" aria-busy="true" />;

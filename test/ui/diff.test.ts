@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import type { Locator, Page } from 'playwright-core';
 import { describe, expect, it } from 'vitest';
 import { createRepoWithRemote } from '../support/git';
+import { clickEmptyHeader, headerRegion } from '../support/header';
 import { launchCodium, prepareAppState } from '../support/launchApp';
 import { useTempDirs } from '../support/tempDir';
 
@@ -117,17 +118,10 @@ describe('Vergleich und Änderungsbalken', () => {
 
       // Solange es offen ist, ist die Kopfzeile keine Zieh-Fläche; ein Klick auf ihre leere Fläche schliesst es
       // (Ticket 33, Abfrage über die Entwicklerwerkzeuge).
-      const headerRegion = () =>
-        page.evaluate(() => {
-          const style = getComputedStyle(document.querySelector('header.header')!);
-          return style.getPropertyValue('-webkit-app-region') || style.getPropertyValue('app-region');
-        });
-      expect(await headerRegion()).toBe('no-drag');
-      const header = await page.locator('.header-content').boundingBox();
-      if (!header) throw new Error('Kopfzeile ist nicht sichtbar.');
-      await page.mouse.click(header.x + header.width - 24, header.y + header.height / 2);
+      expect(await headerRegion(page)).toBe('no-drag');
+      await clickEmptyHeader(page);
       await expect.poll(() => popup.count()).toBe(0);
-      expect(await headerRegion()).toBe('drag');
+      expect(await headerRegion(page)).toBe('drag');
 
       await bar.first().click();
       await popup.waitFor();

@@ -16,6 +16,7 @@ import type { Locator, Page } from 'playwright-core';
 import { describe, expect, it } from 'vitest';
 import type { TestEvent } from '../../src/main/testMode';
 import { createRepoWithRemote, type RepoWithRemote } from '../support/git';
+import { clickEmptyHeader, emptyHeaderPoint, headerRegion } from '../support/header';
 import { launchCodium, prepareAppState, type LaunchedApp } from '../support/launchApp';
 import { HTCAPTION, HTCLIENT, hitTest } from '../support/nativeWindow';
 import { useTempDirs } from '../support/tempDir';
@@ -54,14 +55,6 @@ function selectedLabel(page: Page): Promise<string | null> {
   return dropdown(page).locator('[role="option"][aria-selected="true"]').getAttribute('aria-label');
 }
 
-/** Zieh-Fläche laut Stil: `drag` oder `no-drag`. */
-function headerRegion(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    const style = getComputedStyle(document.querySelector('header.header')!);
-    return style.getPropertyValue('-webkit-app-region') || style.getPropertyValue('app-region');
-  });
-}
-
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -85,25 +78,18 @@ async function expectClosed(page: Page): Promise<void> {
  * die Seite.
  */
 async function headerHits(codium: LaunchedApp, page: Page): Promise<{ empty: number; button: number }> {
+  const empty = await emptyHeaderPoint(page);
   const css = await page.evaluate(() => {
-    const content = document.querySelector('.header-content')!.getBoundingClientRect();
-    const header = document.querySelector('header.header')!.getBoundingClientRect();
     const button = document.querySelector('.branch-widget')!.getBoundingClientRect();
-    return {
-      width: window.innerWidth,
-      points: [
-        { x: content.right - 24, y: header.top + header.height / 2 },
-        { x: button.left + button.width / 2, y: button.top + button.height / 2 },
-      ],
-    };
+    return { width: window.innerWidth, button: { x: button.left + button.width / 2, y: button.top + button.height / 2 } };
   });
   const hwnd = await codium.app.evaluate(({ BrowserWindow }, title) => {
     const win = BrowserWindow.getAllWindows().find((w) => w.getTitle() === title);
     if (!win) throw new Error(`Kein Fenster „${title}“.`);
     return win.getNativeWindowHandle().readBigUInt64LE(0).toString();
   }, TITLE);
-  const [empty, button] = hitTest(hwnd, css.width, css.points);
-  return { empty, button };
+  const [onEmpty, onButton] = hitTest(hwnd, css.width, [empty, css.button]);
+  return { empty: onEmpty, button: onButton };
 }
 
 /** Klickt auf den Teil einer Zeile im Dateibaum, den das Dropdown nicht überdeckt (es hängt unter dem Branch-Knopf). */
@@ -114,16 +100,6 @@ async function clickBesideDropdown(page: Page, row: Locator): Promise<void> {
   const free = popup.x - box.x;
   if (free < 8) throw new Error('Das Dropdown überdeckt die ganze Zeile.');
   await row.click({ position: { x: free / 2, y: box.height / 2 } });
-}
-
-/** Klickt über die Entwicklerwerkzeuge auf die leere Fläche der Kopfzeile. */
-async function clickEmptyHeader(page: Page): Promise<void> {
-  const at = await page.evaluate(() => {
-    const content = document.querySelector('.header-content')!.getBoundingClientRect();
-    const header = document.querySelector('header.header')!.getBoundingClientRect();
-    return { x: content.right - 24, y: header.top + header.height / 2 };
-  });
-  await page.mouse.click(at.x, at.y);
 }
 
 describe('Branch-Dropdown: Untermenü per Klick, Schliessen bei Klick daneben (Ticket 33)', () => {
@@ -184,8 +160,12 @@ describe('Branch-Dropdown: Untermenü per Klick, Schliessen bei Klick daneben (T
       expect(await popup.count()).toBe(1);
       expect(await focusedLabel(page)).toBe('Search branches');
 
-      // Ein weiterer Klick öffnet es wieder; „Checkout“ darin wechselt den Branch.
-      await beta.click();
+      // Ein Doppelklick öffnet es und lässt es offen: Der zweite Klick schaltet nicht zurück (Review). „Checkout“ darin
+      // wechselt den Branch.
+      await beta.dblclick();
+      await submenu(page, 'beta').waitFor();
+      await wait(300);
+      expect(await submenu(page, 'beta').count()).toBe(1);
       await submenu(page, 'beta').getByRole('menuitem', { name: 'Checkout', exact: true }).click();
       await branchButton(page, 'beta').waitFor();
     } finally {
@@ -266,21 +246,34 @@ describe('Branch-Dropdown: Untermenü per Klick, Schliessen bei Klick daneben (T
       expect(await focusedLabel(page)).toBe('Branch main');
       expect(await headerRegion(page)).toBe('drag');
 
-      // Grössenänderung (Fensterrand, Maximieren): schliesst ebenfalls.
+      // Grössenänderung (Fensterrand, Maximieren): schliesst ebenfalls, der Fokus liegt danach auf dem Branch-Knopf.
+      const shrink = () =>
+        codium.app.evaluate(({ BrowserWindow }) => {
+          for (const w of BrowserWindow.getAllWindows()) w.setSize(w.getSize()[0] - 40, w.getSize()[1]);
+        });
       await openDropdown(page);
-      await codium.app.evaluate(({ BrowserWindow }) => {
-        for (const w of BrowserWindow.getAllWindows()) w.setSize(w.getSize()[0] - 40, w.getSize()[1]);
-      });
+      await shrink();
       await expectClosed(page);
+      expect(await focusedLabel(page)).toBe('Branch main');
       expect(await headerRegion(page)).toBe('drag');
 
-      // Ein Fokusverlust, solange das Untermenü offen ist, schliesst beides.
-      await (await openDropdown(page)).getByRole('option', { name: 'main', exact: true }).click();
-      await submenu(page, 'main').waitFor();
-      await page.evaluate(() => window.dispatchEvent(new FocusEvent('blur')));
-      await expectClosed(page);
-      expect(await page.getByRole('menu').count()).toBe(0);
-      expect(await headerRegion(page)).toBe('drag');
+      // Bei offenem Untermenü (es hat den Fokus) schliessen Fokusverlust, Grössenänderung und ein Tastenkürzel der App
+      // beides, und der Fokus liegt danach auf dem Branch-Knopf (Review). Ctrl + T (Pull) nimmt den Fokus nicht.
+      const closeWithSubmenu = async (name: string, close: () => Promise<unknown>) => {
+        await (await openDropdown(page)).getByRole('option', { name: 'main', exact: true }).click();
+        await submenu(page, 'main').waitFor();
+        expect(await focusedLabel(page)).toBe('main');
+        await close();
+        await expectClosed(page);
+        expect(await page.getByRole('menu').count()).toBe(0);
+        // Weich, damit ein Fehler jeden der drei Wege einzeln meldet.
+        expect.soft(await focusedLabel(page), name).toBe('Branch main');
+        expect(await headerRegion(page)).toBe('drag');
+      };
+      await closeWithSubmenu('Fokusverlust', () => page.evaluate(() => window.dispatchEvent(new FocusEvent('blur'))));
+      await closeWithSubmenu('Grössenänderung', shrink);
+      await closeWithSubmenu('Tastenkürzel', () => page.keyboard.press('Control+T'));
+      await expect.poll(() => page.getByRole('status').filter({ hasText: 'Pulled.' }).count(), { timeout: 30_000 }).toBe(1);
     } finally {
       await codium.close();
     }
