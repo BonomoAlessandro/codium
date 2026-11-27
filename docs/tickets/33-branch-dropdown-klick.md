@@ -69,7 +69,7 @@ Dieses Ticket kam nach Ticket 32 dazu, auf Wunsch des Nutzers. Er arbeitet mit d
 - [x] Ein Test prüft das Schliessen bei einem Klick auf die Zieh-Fläche der Kopfzeile und bei Fokusverlust des Fensters.
   - Lässt sich die echte Lage im Testmodus nicht herbeiführen, prüft der Test den gewählten Mechanismus, etwa: Die Kopfzeile ist bei offenem Dropdown nicht ziehbar, oder ein `blur` des Fensters schliesst. Der Fall kommt dann zusätzlich in die Abnahme von Hand.
 - [x] Haben andere Popups der Kopfzeile dieselbe Lücke gezeigt: je ein Test, dass auch sie schliessen.
-- [ ] `npm run typecheck`, `npm test` und `npm run test:ui` sind grün.
+- [x] `npm run typecheck`, `npm test` und `npm run test:ui` sind grün.
 
 ## Abnahme von Hand
 
@@ -120,3 +120,12 @@ Dieses Ticket kam nach Ticket 32 dazu, auf Wunsch des Nutzers. Er arbeitet mit d
   - **Fokusverlust** ist im Testmodus nicht echt auslösbar (Fenster nicht aktivierbar, Ticket 27); der Test prüft den gewählten Mechanismus mit einem `blur` am Fenster. Der echte Fall und der echte Klick auf die Kopfzeile bleiben in „Abnahme von Hand“.
   - Angepasst: `test/ui/branchDropdown.test.ts` öffnet das Untermenü per Klick statt durch Überfahren (der Fokus geht hinein, ein getipptes Zeichen schliesst es und geht ins Suchfeld). `test/ui/diff.test.ts`: Das Popup eines Änderungsblocks nimmt der Kopfzeile die Zieh-Fläche, ein Klick auf sie schliesst es. Die Tastatur (Enter, Pfeil rechts und links) prüfen `branchDropdown.test.ts` und `branchFolders.test.ts` unverändert.
   - **Gegenprobe:** Mit dem alten Stand (`git stash` der Änderungen unter `src/`, neu gebaut) waren 3 der 4 neuen UI-Tests rot: Überfahren öffnete das Untermenü; die Kopfzeile blieb bei offenem Dropdown und bei offenem Projektmenü `drag`. Der Test zu Editor, Baum, Vorschau und Terminal war grün (siehe Befund).
+- **Testläufe** (2026-11-27, nacheinander und allein auf dem Rechner). typecheck und `npm test` liefen im Vordergrund; der UI-Lauf schrieb in eine Log-Datei, auf sein Ende wurde im Vordergrund aktiv gewartet. Im Ereignisprotokoll (Kernel-Power 506/507) lag kein Standby im UI-Lauf (letzter Standby endete 07:59:55, Lauf 14:23:41 bis 14:35:05).
+
+  | Lauf | Ergebnis | Dauer |
+  |---|---|---|
+  | `npm run typecheck` | grün | wenige Sekunden |
+  | `npm test` | 582 von 582 grün (62 Dateien) | 106 s |
+  | `npm run test:ui` | 110 von 110 grün (30 Dateien) | 677 s |
+
+  Keine Meldung der Schlussprüfung, danach keine Prozesse aus dem Checkout und keine `codium-*`-Ordner im Temp-Ordner. Das Vorlesen der gebauten App meldete `mermaid.js` mit 19,3 s (Virenscanner).
