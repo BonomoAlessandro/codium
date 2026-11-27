@@ -6,6 +6,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronRightIcon } from '../icons';
+import { useDismiss } from './dismiss';
 import { menuKey } from './menuKeys';
 
 /** Ein Eintrag im Menü: Trennlinie, wählbarer Eintrag oder Untermenü. */
@@ -79,11 +80,9 @@ interface MenuProps {
    * Popup statt darüber; passt auch das nicht, liegt es am rechten Rand unter der eigenen Zeile.
    */
   container?: HTMLElement;
-  /** Den Fokus übernehmen (Standard). Ein beim Überfahren geöffnetes Untermenü lässt ihn, wo er ist. */
-  takeFocus?: boolean;
   /** Breite der Symbolspalte in Pixeln, etwa 20 für die Farbkürzel der Projekte; sonst 16. */
   iconWidth?: number;
-  /** Das Menü schliesst sich (Escape, Klick daneben, Fenster verliert den Fokus, Eintrag gewählt). */
+  /** Das Menü schliesst sich (Escape, Klick daneben, Fenster verliert den Fokus oder ändert die Grösse, Eintrag gewählt). */
   onClose(): void;
 }
 
@@ -103,7 +102,6 @@ export function Menu({
   highlightFirst = false,
   placement = 'below',
   container,
-  takeFocus = true,
   iconWidth,
   onClose,
 }: MenuProps) {
@@ -140,7 +138,7 @@ export function Menu({
     const r = anchor instanceof HTMLElement ? anchor.getBoundingClientRect() : null;
     if (r && placement === 'beside') {
       placeBeside(el, r, container?.getBoundingClientRect());
-      if (takeFocus) el.focus({ preventScroll: true });
+      el.focus({ preventScroll: true });
       return;
     }
     const left = point ? point.x : (r?.left ?? 0);
@@ -150,24 +148,10 @@ export function Menu({
     el.style.left = `${clamp(left, MARGIN, window.innerWidth - el.offsetWidth - MARGIN)}px`;
     el.style.top = `${clamp(top, MARGIN, window.innerHeight - el.offsetHeight - MARGIN)}px`;
     el.focus({ preventScroll: true });
-  }, [anchor, placement, container, takeFocus]);
+  }, [anchor, placement, container]);
 
-  // Klick daneben, Fokusverlust und Grössenänderung schliessen das Menü.
-  useEffect(() => {
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target as Node;
-      if (!ref.current?.contains(target) && !(anchor instanceof HTMLElement && anchor.contains(target))) close();
-    };
-    window.addEventListener('pointerdown', onPointerDown, true);
-    window.addEventListener('blur', close);
-    window.addEventListener('resize', close);
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown, true);
-      window.removeEventListener('blur', close);
-      window.removeEventListener('resize', close);
-    };
-    // `close` liest nur aus Refs und braucht deshalb keine Abhängigkeit.
-  }, [anchor]);
+  // Klick daneben (auch auf die Kopfzeile), Fokusverlust und Grössenänderung schliessen das Menü (Ticket 33, dismiss.ts).
+  useDismiss((target) => !!ref.current?.contains(target) || (anchor instanceof HTMLElement && anchor.contains(target)), close);
 
   return createPortal(
     <MenuPanel

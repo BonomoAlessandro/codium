@@ -151,6 +151,15 @@ input[type='checkbox']:disabled {
 }
 
 /*
+ * Solange ein Popup offen ist (Menü, Branch-Dropdown, Suchfenster), ist die Kopfzeile keine Zieh-Fläche (Ticket 33,
+ * popup/dismiss.ts). Sonst behandelte Windows einen Klick auf ihre leere Fläche als Klick auf die Titelleiste: Die Seite
+ * sähe ihn nie, und das Popup bliebe offen. So schliesst der Klick das Popup; gezogen wird mit dem nächsten.
+ */
+.popup-open .header {
+  -webkit-app-region: no-drag;
+}
+
+/*
  * Die Trennlinie unter der Kopfzeile gehört zur Fläche darunter, damit sie auch unter den Fensterknöpfen durchgeht.
  * Im Projektfenster trennt stattdessen der Abstand zu den Inseln (Ticket 25).
  */

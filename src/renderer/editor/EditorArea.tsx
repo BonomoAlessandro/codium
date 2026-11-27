@@ -39,6 +39,7 @@ import { useJavaKindStore } from '../project/javaKinds';
 import { shortcutLabel, type KeyCommand, type ToolWindowCommand } from '../keymap';
 import type { Notify } from '../Notices';
 import { isDialogOpen, useAsk } from '../popup/Dialogs';
+import { useHeaderNoDrag } from '../popup/dismiss';
 import { Menu, type MenuAnchor, type MenuEntry } from '../popup/Menu';
 import { baseName, isSameOrInside, movedPath, pathKey, relativeLabel } from '../project/filePaths';
 import {
@@ -1910,9 +1911,13 @@ export const EditorArea = forwardRef<EditorAreaHandle, EditorAreaProps>(function
 });
 
 /** Was ein Tab ohne Editor zeigt: Bild, Hinweise für Binärdateien und zu grosse Dateien, Laden. */
-/** Alter Stand eines Änderungsblocks mit „Rollback Lines“ (Ticket 17). */
+/**
+ * Alter Stand eines Änderungsblocks mit „Rollback Lines“ (Ticket 17). Ein Klick daneben schliesst es; die Kopfzeile ist
+ * solange keine Zieh-Fläche, damit das auch für einen Klick auf sie gilt (Ticket 33, popup/dismiss.ts).
+ */
 function ChangePopup({ block, x, y, onClose, onRollback }: { block: ChangeBlock; x: number; y: number; onClose: () => void; onRollback: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  useHeaderNoDrag();
   useEffect(() => {
     ref.current?.querySelector('button')?.focus();
     const onDown = (e: MouseEvent) => {

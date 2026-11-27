@@ -1,8 +1,11 @@
 // Rahmen der Suchfenster über dem Editor (Ctrl + Shift + N, Ctrl + E, Ctrl + Shift + F) wie in IntelliJ: oben in der
-// Mitte des Fensters, Escape oder ein Klick daneben schliesst es, danach geht der Fokus dorthin zurück, wo er war.
+// Mitte des Fensters, Escape oder ein Klick daneben schliesst es, danach geht der Fokus dorthin zurück, wo er war. Den
+// Klick daneben fängt ein Hintergrund über dem ganzen Fenster; damit er auch über der Kopfzeile ankommt, ist diese
+// solange keine Zieh-Fläche (Ticket 33, popup/dismiss.ts).
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useHeaderNoDrag } from '../popup/dismiss';
 
 /** Wohin der Fokus nach einem offenen Suchfenster zurückgeht, für den Wechsel von einem Suchfenster ins andere. */
 const focusBefore = new WeakMap<Element, Element | null>();
@@ -31,6 +34,7 @@ export function QuickPopup({ label, className, onClose, children }: QuickPopupPr
   const ref = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  useHeaderNoDrag();
   // Escape schliesst auch, wenn der Fokus nicht mehr im Fenster liegt (etwa nach einem Klick in den Editor darunter).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

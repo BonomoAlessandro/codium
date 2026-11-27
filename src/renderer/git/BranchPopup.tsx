@@ -11,12 +11,16 @@
 // würden. Beim Filtern sind alle Ordner mit Treffern offen; nach dem Leeren des Suchfelds gilt wieder der gemerkte
 // Zustand.
 //
-// Eine Branch-Zeile öffnet ihr Untermenü rechts daneben (Enter, Pfeil rechts, Klick oder Überfahren): lokal
-// „Checkout“, „New Branch from '…'…“, „Rename…“, „Delete“; remote „Checkout“ und „New Branch from '…'…“. Pfeil links
-// schliesst es wieder. Ein beim Überfahren geöffnetes Untermenü lässt den Fokus im Suchfeld; tippt man in einem
-// fokussierten Untermenü ein Zeichen, schliesst es und das Zeichen geht ins Suchfeld. Escape, ein Klick daneben oder
-// ein Tastenkürzel der App schliesst das Dropdown; der Fokus liegt danach auf dem Branch-Knopf, ausser ein angeklicktes
-// Element oder das Kürzel nimmt ihn.
+// Eine Branch-Zeile öffnet ihr Untermenü rechts daneben, nur per Klick, Enter oder Pfeil rechts (Ticket 33): lokal
+// „Checkout“, „New Branch from '…'…“, „Rename…“, „Delete“; remote „Checkout“ und „New Branch from '…'…“. Überfahren
+// hebt die Zeile nur hervor; es öffnet kein Untermenü und wechselt oder schliesst auch kein offenes. Ein Klick auf eine
+// andere Branch-Zeile öffnet deren Untermenü an seiner Stelle, ein Klick auf die Zeile des offenen schliesst es wieder.
+// Pfeil links und Escape schliessen es ebenfalls; tippt man im Untermenü ein Zeichen, schliesst es und das Zeichen
+// geht ins Suchfeld.
+//
+// Escape, ein Klick daneben (überall im Fenster, auch auf die leere Kopfzeile), der Fokusverlust des Fensters, eine
+// Grössenänderung oder ein Tastenkürzel der App schliesst das Dropdown (Ticket 33, popup/dismiss.ts). Der Fokus liegt
+// danach auf dem Branch-Knopf, ausser ein angeklicktes Element oder das Kürzel nimmt ihn.
 
 import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -39,6 +43,7 @@ import {
   PushIcon,
 } from '../icons';
 import { shortcutLabel } from '../keymap';
+import { useDismiss, type DismissReason } from '../popup/dismiss';
 import { Menu, registerOpenMenu, type MenuEntry } from '../popup/Menu';
 import { moveSelection } from '../search/searchResults';
 import {
@@ -70,9 +75,10 @@ export interface BranchActions {
 
 /**
  * Warum sich das Dropdown schliesst; davon hängt ab, wohin der Fokus geht. `action`: Eine Aktion läuft gleich danach
- * (auch ein Tastenkürzel der App); der Fokus geht vorher an den Branch-Knopf, damit sich Dialoge ihn merken.
+ * (auch ein Tastenkürzel der App); der Fokus geht vorher an den Branch-Knopf, damit sich Dialoge ihn merken. Dazu die
+ * Gründe aus dismiss.ts: Klick daneben (`outside`), Fokusverlust (`blur`) und Grössenänderung des Fensters (`resize`).
  */
-export type BranchPopupCloseReason = 'escape' | 'outside' | 'action';
+export type BranchPopupCloseReason = 'escape' | 'action' | DismissReason;
 
 interface BranchPopupProps {
   api: CodiumApi;
@@ -85,8 +91,9 @@ interface BranchPopupProps {
   /** Der Nutzer hat ohne Filter einen Ordner auf- oder zugeklappt. */
   onOpenFoldersChange: (folders: ReadonlySet<string>) => void;
   /**
-   * Das Dropdown schliesst sich: mit Escape, durch einen Klick daneben oder weil eine Aktion läuft. Der Aufrufer gibt
-   * den Fokus an den Branch-Knopf zurück (nach einem Klick daneben nur, wenn der Klick ihn niemandem gegeben hat).
+   * Das Dropdown schliesst sich: mit Escape, durch einen Klick daneben, weil das Fenster den Fokus verliert oder seine
+   * Grösse ändert, oder weil eine Aktion läuft. Der Aufrufer gibt den Fokus an den Branch-Knopf zurück (nach einem
+   * Klick daneben nur, wenn der Klick ihn niemandem gegeben hat).
    */
   onClose: (reason: BranchPopupCloseReason) => void;
 }
@@ -96,14 +103,12 @@ type Row = { kind: 'action'; label: string; icon: ReactNode; shortcut?: string; 
 type BranchRow = Extract<Row, { kind: 'local' | 'remote' }>;
 type FolderRow = Extract<Row, { kind: 'folder' }>;
 
-/** Wie ein Untermenü aufging: per Tastatur mit dem ersten Eintrag hervorgehoben, per Klick oder Überfahren ohne. */
-type OpenedBy = 'keyboard' | 'click' | 'hover';
+/** Wie ein Untermenü aufging: per Tastatur mit dem ersten Eintrag hervorgehoben, per Klick ohne. */
+type OpenedBy = 'keyboard' | 'click';
 
 /** Abstand zum Knopf und zum Fensterrand, wie bei den Menüs. */
 const GAP = 4;
 const MARGIN = 6;
-/** So lange ruht die Maus auf einer Branch-Zeile, bis ihr Untermenü aufgeht. */
-const HOVER_DELAY_MS = 200;
 const NO_FOLDERS: ReadonlySet<string> = new Set();
 
 function isBranch(row: Row | undefined): row is BranchRow {
@@ -139,7 +144,6 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fetchRef = useRef<HTMLButtonElement>(null);
-  const hoverTimer = useRef<{ index: number; timer: ReturnType<typeof setTimeout> } | null>(null);
   /** Die Auswahl kam von der Tastatur; nur dann rollt die Liste zu ihr (beim Überfahren spränge sie unter der Maus). */
   const selectedByKeyboard = useRef(false);
   const onCloseRef = useRef(onClose);
@@ -191,15 +195,9 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
   const selectable = rows.map((r, i) => (r.kind === 'action' || r.kind === 'folder' || isBranch(r) ? i : -1)).filter((i) => i >= 0);
   const selectedRow = selectable[Math.min(selected, selectable.length - 1)];
 
-  const cancelHover = () => {
-    if (hoverTimer.current) clearTimeout(hoverTimer.current.timer);
-    hoverTimer.current = null;
-  };
-
-  // Neuer Suchtext: Auswahl von vorn, ein offenes oder angekündigtes Untermenü gehört zu einer anderen Liste.
+  // Neuer Suchtext: Auswahl von vorn, ein offenes Untermenü gehört zu einer anderen Liste.
   useEffect(() => {
     setSelected(0);
-    cancelHover();
     setSubmenu(null);
   }, [query]);
   useEffect(() => {
@@ -209,7 +207,7 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
 
   // Unter dem Knopf, links bündig, im Fenster gehalten; die Liste scrollt, wenn unten der Platz fehlt. Die Breite folgt
   // dem Inhalt (zwischen Mindest- und Höchstbreite, app.css) und wird beim Aufklappen höchstens grösser, nie kleiner,
-  // damit das Dropdown beim Tippen und Zuklappen nicht springt.
+  // damit das Dropdown beim Tippen und Zuklappen nicht springt. Ändert das Fenster seine Grösse, schliesst es (Ticket 33).
   const place = () => {
     const el = ref.current;
     if (!el) return;
@@ -219,29 +217,30 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
     el.style.top = `${top}px`;
     el.style.maxHeight = `${Math.max(120, window.innerHeight - top - MARGIN)}px`;
   };
-  /** Hält die erreichte Breite fest; `reset` beginnt neu (etwa nach dem Verkleinern des Fensters). */
-  const fit = (reset: boolean) => {
+  /** Hält die erreichte Breite fest. */
+  const fit = () => {
     const el = ref.current;
     if (!el) return;
-    if (reset) el.style.minWidth = '';
     const width = el.getBoundingClientRect().width;
     if (width > parseFloat(el.style.minWidth || '0')) el.style.minWidth = `${width}px`;
     place();
   };
   const fitRef = useRef(fit);
   fitRef.current = fit;
-  useLayoutEffect(() => fitRef.current(false), [rows, error]);
-  useLayoutEffect(() => {
-    const onResize = () => fitRef.current(true);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
+  useLayoutEffect(() => fitRef.current(), [rows, error]);
 
   // Angemeldet wie ein Menü: Tastenkürzel der App schliessen das Dropdown zuerst.
   useEffect(() => registerOpenMenu(() => onCloseRef.current('action')), []);
 
-  // Escape schliesst (ist das Untermenü offen, schliesst dieses sich selbst); ein Klick daneben ebenso. Ein getipptes
-  // Zeichen in einem fokussierten Untermenü schliesst es und geht ins Suchfeld.
+  // Ein Klick daneben schliesst, auch auf die leere Kopfzeile; ebenso der Fokusverlust und eine Grössenänderung des
+  // Fensters (dismiss.ts). Zum Dropdown gehören der Branch-Knopf (sein Klick schaltet es selbst um) und das Untermenü.
+  useDismiss(
+    (target) => !!ref.current?.contains(target) || anchor.contains(target) || (target instanceof Element && !!target.closest('[role="menu"]')),
+    (reason) => onCloseRef.current(reason),
+  );
+
+  // Escape schliesst (ist das Untermenü offen, schliesst dieses sich selbst). Ein getipptes Zeichen in einem
+  // fokussierten Untermenü schliesst es und geht ins Suchfeld.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (submenuRef.current) {
@@ -259,34 +258,16 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
       e.stopPropagation();
       onCloseRef.current('escape');
     };
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target as Element | null;
-      if (!target || ref.current?.contains(target) || anchor.contains(target) || target.closest('[role="menu"]')) return;
-      onCloseRef.current('outside');
-    };
     window.addEventListener('keydown', onKeyDown, true);
-    window.addEventListener('pointerdown', onPointerDown, true);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown, true);
-      window.removeEventListener('pointerdown', onPointerDown, true);
-    };
-  }, [anchor]);
-
-  useEffect(
-    () => () => {
-      if (hoverTimer.current) clearTimeout(hoverTimer.current.timer);
-    },
-    [],
-  );
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, []);
 
   const run = (fn: () => void) => () => {
-    cancelHover();
     setSubmenu(null);
     onCloseRef.current('action');
     fn();
   };
   const openSubmenu = (index: number, openedBy: OpenedBy) => {
-    cancelHover();
     const element = listRef.current?.querySelector<HTMLElement>(`[data-row="${index}"]`);
     if (element && isBranch(rows[index])) setSubmenu({ index, anchor: element, openedBy });
   };
@@ -296,7 +277,6 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
   };
   /** Klappt einen Ordner auf oder zu; zu heisst auch alle Ordner darin (Ticket 29). */
   const toggleFolder = (row: FolderRow) => {
-    cancelHover();
     setSubmenu(null);
     if (q === '') setFolders(toggleFolderState(folders, row.key, !row.expanded));
     else setFilterOpen({ query: q, folders: row.expanded ? collapseFolder(shownFolders, row.key) : expandFolder(shownFolders, row.key) });
@@ -328,6 +308,9 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
     const row = rows[index];
     if (row?.kind === 'action') run(row.run)();
     else if (row?.kind === 'folder') toggleFolder(row);
+    // Ein Klick auf die Zeile des offenen Untermenüs schliesst es, wie der Branch-Knopf das Dropdown und ein Klick
+    // einen Ordner umschaltet (Ticket 33).
+    else if (isBranch(row) && openedBy === 'click' && submenu?.index === index) closeSubmenu();
     else if (isBranch(row)) openSubmenu(index, openedBy);
   };
   /** Pfeil rechts und links auf Ordnern und Branches, wie im Dateibaum; liefert, ob die Taste etwas bewirkt hat. */
@@ -350,25 +333,13 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
     }
     return false;
   };
+  /** Überfahren hebt die Zeile nur hervor; ein Untermenü öffnet, wechselt und schliesst es nicht (Ticket 33). */
   const hover = (index: number) => {
     const position = selectable.indexOf(index);
     if (position >= 0 && position !== selected) {
       selectedByKeyboard.current = false;
       setSelected(position);
     }
-    const row = rows[index];
-    if (!isBranch(row)) {
-      cancelHover();
-      if (submenuRef.current) closeSubmenu();
-      return;
-    }
-    if (submenuRef.current?.index === index || hoverTimer.current?.index === index) return;
-    cancelHover();
-    const timer = setTimeout(() => {
-      hoverTimer.current = null;
-      openSubmenu(index, 'hover');
-    }, HOVER_DELAY_MS);
-    hoverTimer.current = { index, timer };
   };
 
   const renderRow = (row: Row, i: number): ReactNode => {
@@ -531,7 +502,6 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
         className="branch-dropdown-list"
         role="listbox"
         aria-label="Branches"
-        onMouseLeave={cancelHover}
         // Ein offenes Untermenü hängt an seiner Zeile; rollt die Liste, schliesst es.
         onScroll={() => {
           if (submenuRef.current) closeSubmenu();
@@ -560,7 +530,6 @@ export function BranchPopup({ api, state, actions, anchor, openFolders, onOpenFo
           anchor={submenu.anchor}
           placement="beside"
           container={ref.current ?? undefined}
-          takeFocus={submenu.openedBy !== 'hover'}
           highlightFirst={submenu.openedBy === 'keyboard'}
           onClose={closeSubmenu}
         />

@@ -906,7 +906,9 @@ function ProjectWindowContent({ api, project, actions, work, notify }: ProjectWi
           onClose={(reason) => {
             setBranchAnchor(null);
             // Nach Escape und vor einer Aktion sofort an den Knopf: Dialoge (etwa „New Branch…“) merken ihn sich so als
-            // Ziel für den Fokus danach, und was den Fokus selbst nimmt (etwa „Commit…“), nimmt ihn danach.
+            // Ziel für den Fokus danach, und was den Fokus selbst nimmt (etwa „Commit…“), nimmt ihn danach. Ebenso nach
+            // Fokusverlust und Grössenänderung des Fensters (Ticket 33); `focus()` aktiviert das Fenster dabei nicht, der
+            // Fokus liegt erst wieder auf dem Knopf, wenn der Nutzer zurückkommt.
             if (reason !== 'outside') {
               branchAnchor.focus({ preventScroll: true });
               return;
