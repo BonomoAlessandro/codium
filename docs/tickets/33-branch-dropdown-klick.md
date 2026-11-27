@@ -1,6 +1,6 @@
 # 33 – Branch-Dropdown: Untermenü erst per Klick, Schliessen bei jedem Klick daneben
 
-Status: `ready-for-agent` · Typ: AFK
+Status: `erledigt` (2026-11-27) · Typ: AFK
 Blockiert durch: –
 User Stories: 94–96 (Branch-Menü)
 Spezifikation: „Git“ (Branch-Menü), „Oberfläche“ (Kopfzeile)
