@@ -114,6 +114,23 @@ describe('Vergleich und Änderungsbalken', () => {
       const popup = page.getByRole('dialog', { name: 'Change' });
       await popup.waitFor();
       expect(await popup.getByLabel('Previous Content').innerText()).toBe('zwei');
+
+      // Solange es offen ist, ist die Kopfzeile keine Zieh-Fläche; ein Klick auf ihre leere Fläche schliesst es
+      // (Ticket 33, Abfrage über die Entwicklerwerkzeuge).
+      const headerRegion = () =>
+        page.evaluate(() => {
+          const style = getComputedStyle(document.querySelector('header.header')!);
+          return style.getPropertyValue('-webkit-app-region') || style.getPropertyValue('app-region');
+        });
+      expect(await headerRegion()).toBe('no-drag');
+      const header = await page.locator('.header-content').boundingBox();
+      if (!header) throw new Error('Kopfzeile ist nicht sichtbar.');
+      await page.mouse.click(header.x + header.width - 24, header.y + header.height / 2);
+      await expect.poll(() => popup.count()).toBe(0);
+      expect(await headerRegion()).toBe('drag');
+
+      await bar.first().click();
+      await popup.waitFor();
       await popup.getByRole('button', { name: 'Rollback Lines' }).click();
       await expect.poll(() => lines.innerText()).not.toContain('zwei!');
       await expect.poll(() => bar.count(), { timeout: 15_000 }).toBe(0);

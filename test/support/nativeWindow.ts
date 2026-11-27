@@ -93,3 +93,49 @@ export function windowsOfProcess(pid: number): { windows: NativeWindow[]; screen
     }));
   return { windows, screen: { left: sl, top: st, right: sr, bottom: sb } };
 }
+
+/** Antworten auf WM_NCHITTEST: Fläche der Seite bzw. Titelleiste (also Zieh-Fläche). */
+export const HTCLIENT = 1;
+export const HTCAPTION = 2;
+
+const HIT_TEST = `
+using System;
+using System.Runtime.InteropServices;
+public static class CodiumHit {
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L; public int T; public int R; public int B; }
+  [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr c);
+  [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr h, ref POINT p);
+  [DllImport("user32.dll")] static extern IntPtr SendMessageTimeoutW(IntPtr h, uint m, IntPtr w, IntPtr l, uint f, uint t, out IntPtr r);
+  public static string Test(long hwnd, double cssWidth, double[] xy) {
+    // Bildpunkte ohne Umrechnung durch Windows, egal wie die PowerShell skaliert (-4: per Monitor, Version 2).
+    SetThreadDpiAwarenessContext(new IntPtr(-4));
+    var h = new IntPtr(hwnd);
+    RECT c; GetClientRect(h, out c);
+    var o = new POINT(); ClientToScreen(h, ref o);
+    double scale = (c.R - c.L) / cssWidth;
+    var results = new System.Collections.Generic.List<string>();
+    for (int i = 0; i + 1 < xy.Length; i += 2) {
+      int x = o.X + (int)Math.Round(xy[i] * scale), y = o.Y + (int)Math.Round(xy[i + 1] * scale);
+      long l = ((long)unchecked((ushort)y) << 16) | unchecked((ushort)x);
+      IntPtr r;
+      if (SendMessageTimeoutW(h, 0x84, IntPtr.Zero, new IntPtr(l), 2, 5000, out r) == IntPtr.Zero) throw new Exception("WM_NCHITTEST ohne Antwort");
+      results.Add(r.ToInt64().ToString());
+    }
+    return string.Join(",", results);
+  }
+}`;
+
+/**
+ * Was ein Fenster der eigenen Testinstanz an Punkten seiner Seite meldet, wenn Windows fragt, was dort liegt
+ * (WM_NCHITTEST über SendMessageTimeout). Damit entscheidet Windows, ob ein Klick die Seite erreicht (HTCLIENT) oder
+ * als Klick auf die Titelleiste gilt (HTCAPTION). Die Punkte sind CSS-Pixel der Seite; umgerechnet wird über die Breite
+ * der Client-Fläche (`cssWidth` ist `innerWidth`), damit es bei jeder Skalierung stimmt. Nur eine Abfrage: keine
+ * Eingabe, keine Aktivierung, keine Bewegung; die Seite bekommt davon nichts mit (Ticket 33).
+ */
+export function hitTest(hwnd: bigint | string, cssWidth: number, points: ReadonlyArray<{ x: number; y: number }>): number[] {
+  const xy = points.flatMap(({ x, y }) => [x, y]).map((v) => v.toFixed(2));
+  const script = `Add-Type -TypeDefinition @'${HIT_TEST}\n'@; [CodiumHit]::Test(${BigInt(hwnd)}, ${cssWidth}, [double[]]@(${xy.join(',')}))`;
+  return powershell(script).trim().split(',').map(Number);
+}

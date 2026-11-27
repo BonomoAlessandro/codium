@@ -186,16 +186,18 @@ describe('Branch-Dropdown', () => {
       expect(await focusedLabel(page)).toBe('Branch main');
       expect(await branchButton(page).getAttribute('aria-expanded')).toBe('false');
 
-      // Mit der Maus: Überfahren öffnet das Untermenü, der Fokus bleibt im Suchfeld, Tippen filtert weiter.
+      // Mit der Maus: Ein Klick öffnet das Untermenü, der Fokus geht hinein (Überfahren öffnet keines mehr, Ticket 33,
+      // branchDropdownClick.test.ts). Ein getipptes Zeichen schliesst es und geht ins Suchfeld, Tippen filtert weiter.
       await openDropdown(page, 'feature');
-      await popup.getByRole('option', { name: 'feature', exact: true }).hover();
+      await popup.getByRole('option', { name: 'feature', exact: true }).click();
       await submenu.waitFor();
-      expect(await focusedLabel(page)).toBe('Search branches');
+      expect(await focusedLabel(page)).toBe('feature');
       await page.keyboard.type('fea');
       await expect.poll(() => search.inputValue(), APP).toBe('fea');
       await expect.poll(() => submenu.count(), APP).toBe(0);
+      expect(await focusedLabel(page)).toBe('Search branches');
 
-      // Ein getipptes Zeichen im fokussierten Untermenü schliesst es und geht ins Suchfeld.
+      // Ebenso im per Tastatur geöffneten Untermenü.
       await page.keyboard.press('Enter');
       await submenu.waitFor();
       expect(await focusedLabel(page)).toBe('feature');
