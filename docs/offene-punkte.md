@@ -79,6 +79,12 @@ erklären die Hintergründe.
   verschiedenen Java-Dateien in einer Sitzung meldet der Kern Änderungen an den am längsten nicht angefragten nicht
   mehr; deren Symbol stimmt dann erst nach dem nächsten Öffnen des Fensters. Links merkt der Kern nicht (ändert sich nur das
   Ziel, bleibt das Symbol); eine gesperrte Datei ist „Java-Datei“, bis sie sich ändert.
+- Solange ein Popup offen ist, ist die Kopfzeile keine Zieh-Fläche: Der erste Klick auf sie schliesst nur, erst der
+  nächste verschiebt das Fenster (33). Suchfenster und das Popup eines Änderungsblocks schliessen bei Fokusverlust des
+  Fensters nicht, nur bei einem Klick daneben; das Branch-Dropdown und die Menüs schon (33). Den echten Fokusverlust und
+  den echten Klick auf die Zieh-Fläche prüfen die Tests nicht nach (Fenster im Testmodus nicht aktivierbar, keine
+  echten Eingaben); sie prüfen das `blur` des Fensters und fragen das Fenster über WM_NCHITTEST, ob ein Klick an die
+  Oberfläche ginge.
 
 ## Wackelige Tests (beobachten)
 
